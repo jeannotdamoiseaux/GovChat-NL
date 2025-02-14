@@ -27,7 +27,7 @@ Organisaties hebben de keuze om GovChat-NL te implementeren op lokale servers of
 
 ### Specifieke Implementatie: Provincie Limburg 
 
-Een praktijkvoorbeeld van GovChat-NL is de implementatie bij de **Provincie Limburg**, waarbij gebruik wordt gemaakt van een Docker Image gehost in Elestio. Taalmodellen worden gehost in Microsoft Azure en Google Vertex AI. Voor meer informatie over deze specifieke uitrol kunt u [deze pagina](/docs/ProvincieLimburg.md) raadplegen. 
+Een praktijkvoorbeeld van GovChat-NL is de implementatie bij de **Provincie Limburg**, waarbij gebruik wordt gemaakt van een Docker Image gehost in Elestio. Taalmodellen worden gehost in Microsoft Azure en Google Vertex AI. Voor meer informatie over deze specifieke uitrol kunt u [deze pagina](/docs/Implementaties/ProvincieLimburg.md) raadplegen. 
 
 ![Schermafbeelding 2025-01-31 102730](https://github.com/user-attachments/assets/ac30f57d-fdfa-4cf6-a1da-abb56dad1ad7)
 
@@ -79,13 +79,16 @@ flowchart TD
 
     %% Repositories met standaardstijl 
 
-    OpenWebUI --> LokaleLLMs[Lokale LLMs]; 
-
     OpenWebUI --> OpenAI-standaard; 
 
     OpenWebUI --> Ollama-standaard; 
 
-    OpenAI-standaard --> LiteLLM:::repo; 
+    OpenAI-standaard --> LiteLLM:::repo;
+
+    Ollama-standaard --> Lokale_LLMs((Lokale LLMs)):::provider;
+
+    LiteLLM --> LLM_Provider((Cloud LLM <br> Provider)):::provider;
+
 
  
 
@@ -94,6 +97,8 @@ flowchart TD
     classDef main fill:#ffcc00,stroke:#333,stroke-width:3px,rounded-corners, font-size:16px, color:#000000; 
 
     classDef repo fill:#f9f,stroke:#333,stroke-width:2px,rounded-corners,color:#000000; 
+
+    classDef provider fill:#a3d5ff,stroke:#000,stroke-width:2px,color:#000,stroke-linejoin:round;
 
  
 
@@ -105,7 +110,7 @@ GovChat-NL wordt geleverd met uitgebreide documentatie voor installatie, configu
 
 - **Implementatiehandleiding**: Stapsgewijze uitleg voor het implementeren van GovChat-NL.  
 - **Admin Paneel Handleiding**: Handleiding voor het beheren van gebruikers, instellingen en thema-aanpassingen 
-- **Thema-aanpassingen**: Gedetailleerde uitleg over hoe organisaties hun chatbot kunnen aanpassen aan specifieke huisstijlrichtlijnen 
+- [**Thema-aanpassingen**](/docs/Handleidingen/Thema-aanpassingen.md): Gedetailleerde uitleg over hoe organisaties hun chatbot kunnen aanpassen aan specifieke huisstijlrichtlijnen 
 - **Beveiligingsrichtlijnen**: Documentatie over de veiligheidsmaatregelen en aanbevelingen voor het waarborgen van privacy 
 - **Authenticatieopties**: Uitleg over authenticatiemethoden, zoals SSO (Single Sign-On) en OAuth-integratie.
 

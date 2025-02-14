@@ -92,6 +92,7 @@ log_sources = [
     "RAG",
     "WEBHOOK",
     "SOCKET",
+    "OAUTH",
 ]
 
 SRC_LOG_LEVELS = {}
@@ -105,10 +106,10 @@ for source in log_sources:
 
 log.setLevel(SRC_LOG_LEVELS["CONFIG"])
 
-
-WEBUI_NAME = os.environ.get("WEBUI_NAME", "Open WebUI")
-if WEBUI_NAME != "Open WebUI":
-    WEBUI_NAME += " (Open WebUI)"
+# GovChat-NL
+WEBUI_NAME = os.environ.get("WEBUI_NAME", "GovChat-NL") 
+if WEBUI_NAME != "GovChat-NL":
+    WEBUI_NAME += " (GovChat-NL)"
 
 WEBUI_FAVICON_URL = "https://openwebui.com/favicon.png"
 
@@ -356,14 +357,22 @@ WEBUI_SECRET_KEY = os.environ.get(
     ),  # DEPRECATED: remove at next major version
 )
 
-WEBUI_SESSION_COOKIE_SAME_SITE = os.environ.get(
-    "WEBUI_SESSION_COOKIE_SAME_SITE",
-    os.environ.get("WEBUI_SESSION_COOKIE_SAME_SITE", "lax"),
+WEBUI_SESSION_COOKIE_SAME_SITE = os.environ.get("WEBUI_SESSION_COOKIE_SAME_SITE", "lax")
+
+WEBUI_SESSION_COOKIE_SECURE = (
+    os.environ.get("WEBUI_SESSION_COOKIE_SECURE", "false").lower() == "true"
 )
 
-WEBUI_SESSION_COOKIE_SECURE = os.environ.get(
-    "WEBUI_SESSION_COOKIE_SECURE",
-    os.environ.get("WEBUI_SESSION_COOKIE_SECURE", "false").lower() == "true",
+WEBUI_AUTH_COOKIE_SAME_SITE = os.environ.get(
+    "WEBUI_AUTH_COOKIE_SAME_SITE", WEBUI_SESSION_COOKIE_SAME_SITE
+)
+
+WEBUI_AUTH_COOKIE_SECURE = (
+    os.environ.get(
+        "WEBUI_AUTH_COOKIE_SECURE",
+        os.environ.get("WEBUI_SESSION_COOKIE_SECURE", "false"),
+    ).lower()
+    == "true"
 )
 
 if WEBUI_AUTH and WEBUI_SECRET_KEY == "":

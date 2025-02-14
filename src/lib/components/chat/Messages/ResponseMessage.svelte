@@ -4,12 +4,18 @@
 
 	import { createEventDispatcher } from 'svelte';
 	import { onMount, tick, getContext } from 'svelte';
+	import type { Writable } from 'svelte/store';
+	import type { i18n as i18nType } from 'i18next';
 
 	const i18n = getContext<Writable<i18nType>>('i18n');
 
 	const dispatch = createEventDispatcher();
 
-	import { config, models, settings, user } from '$lib/stores';
+	import { createNewFeedback, getFeedbackById, updateFeedbackById } from '$lib/apis/evaluations';
+	import { getChatById } from '$lib/apis/chats';
+	import { generateTags } from '$lib/apis';
+
+	import { config, models, settings, TTSWorker, user } from '$lib/stores';
 	import { synthesizeOpenAISpeech } from '$lib/apis/audio';
 	import { imageGenerations } from '$lib/apis/images';
 	import {
@@ -34,13 +40,8 @@
 	import Error from './Error.svelte';
 	import Citations from './Citations.svelte';
 	import CodeExecutions from './CodeExecutions.svelte';
-
-	import type { Writable } from 'svelte/store';
-	import type { i18n as i18nType } from 'i18next';
 	import ContentRenderer from './ContentRenderer.svelte';
-	import { createNewFeedback, getFeedbackById, updateFeedbackById } from '$lib/apis/evaluations';
-	import { getChatById } from '$lib/apis/chats';
-	import { generateTags } from '$lib/apis';
+	import { KokoroWorker } from '$lib/workers/KokoroWorker';
 
 	interface MessageType {
 		id: string;
@@ -114,6 +115,7 @@
 	export let saveMessage: Function;
 	export let rateMessage: Function;
 	export let actionMessage: Function;
+	export let deleteMessage: Function;
 
 	export let submitMessage: Function;
 	export let continueResponse: Function;
@@ -192,62 +194,7 @@
 
 		speaking = true;
 
-		if ($config.audio.tts.engine !== '') {
-			loadingSpeech = true;
-
-			const messageContentParts: string[] = getMessageContentParts(
-				message.content,
-				$config?.audio?.tts?.split_on ?? 'punctuation'
-			);
-
-			if (!messageContentParts.length) {
-				console.log('No content to speak');
-				toast.info($i18n.t('No content to speak'));
-
-				speaking = false;
-				loadingSpeech = false;
-				return;
-			}
-
-			console.debug('Prepared message content for TTS', messageContentParts);
-
-			audioParts = messageContentParts.reduce(
-				(acc, _sentence, idx) => {
-					acc[idx] = null;
-					return acc;
-				},
-				{} as typeof audioParts
-			);
-
-			let lastPlayedAudioPromise = Promise.resolve(); // Initialize a promise that resolves immediately
-
-			for (const [idx, sentence] of messageContentParts.entries()) {
-				const res = await synthesizeOpenAISpeech(
-					localStorage.token,
-					$settings?.audio?.tts?.defaultVoice === $config.audio.tts.voice
-						? ($settings?.audio?.tts?.voice ?? $config?.audio?.tts?.voice)
-						: $config?.audio?.tts?.voice,
-					sentence
-				).catch((error) => {
-					console.error(error);
-					toast.error(`${error}`);
-
-					speaking = false;
-					loadingSpeech = false;
-				});
-
-				if (res) {
-					const blob = await res.blob();
-					const blobUrl = URL.createObjectURL(blob);
-					const audio = new Audio(blobUrl);
-					audio.playbackRate = $settings.audio?.tts?.playbackRate ?? 1;
-
-					audioParts[idx] = audio;
-					loadingSpeech = false;
-					lastPlayedAudioPromise = lastPlayedAudioPromise.then(() => playAudio(idx));
-				}
-			}
-		} else {
+		if ($config.audio.tts.engine === '') {
 			let voices = [];
 			const getVoicesLoop = setInterval(() => {
 				voices = speechSynthesis.getVoices();
@@ -282,6 +229,97 @@
 					speechSynthesis.speak(speak);
 				}
 			}, 100);
+		} else {
+			loadingSpeech = true;
+
+			const messageContentParts: string[] = getMessageContentParts(
+				message.content,
+				$config?.audio?.tts?.split_on ?? 'punctuation'
+			);
+
+			if (!messageContentParts.length) {
+				console.log('No content to speak');
+				toast.info($i18n.t('No content to speak'));
+
+				speaking = false;
+				loadingSpeech = false;
+				return;
+			}
+
+			console.debug('Prepared message content for TTS', messageContentParts);
+
+			audioParts = messageContentParts.reduce(
+				(acc, _sentence, idx) => {
+					acc[idx] = null;
+					return acc;
+				},
+				{} as typeof audioParts
+			);
+
+			let lastPlayedAudioPromise = Promise.resolve(); // Initialize a promise that resolves immediately
+
+			if ($settings.audio?.tts?.engine === 'browser-kokoro') {
+				if (!$TTSWorker) {
+					await TTSWorker.set(
+						new KokoroWorker({
+							dtype: $settings.audio?.tts?.engineConfig?.dtype ?? 'fp32'
+						})
+					);
+
+					await $TTSWorker.init();
+				}
+
+				for (const [idx, sentence] of messageContentParts.entries()) {
+					const blob = await $TTSWorker
+						.generate({
+							text: sentence,
+							voice: $settings?.audio?.tts?.voice ?? $config?.audio?.tts?.voice
+						})
+						.catch((error) => {
+							console.error(error);
+							toast.error(`${error}`);
+
+							speaking = false;
+							loadingSpeech = false;
+						});
+
+					if (blob) {
+						const audio = new Audio(blob);
+						audio.playbackRate = $settings.audio?.tts?.playbackRate ?? 1;
+
+						audioParts[idx] = audio;
+						loadingSpeech = false;
+						lastPlayedAudioPromise = lastPlayedAudioPromise.then(() => playAudio(idx));
+					}
+				}
+			} else {
+				for (const [idx, sentence] of messageContentParts.entries()) {
+					const res = await synthesizeOpenAISpeech(
+						localStorage.token,
+						$settings?.audio?.tts?.defaultVoice === $config.audio.tts.voice
+							? ($settings?.audio?.tts?.voice ?? $config?.audio?.tts?.voice)
+							: $config?.audio?.tts?.voice,
+						sentence
+					).catch((error) => {
+						console.error(error);
+						toast.error(`${error}`);
+
+						speaking = false;
+						loadingSpeech = false;
+					});
+
+					if (res) {
+						const blob = await res.blob();
+						const blobUrl = URL.createObjectURL(blob);
+						const audio = new Audio(blobUrl);
+						audio.playbackRate = $settings.audio?.tts?.playbackRate ?? 1;
+
+						audioParts[idx] = audio;
+						loadingSpeech = false;
+						lastPlayedAudioPromise = lastPlayedAudioPromise.then(() => playAudio(idx));
+					}
+				}
+			}
 		}
 	};
 
@@ -461,6 +499,10 @@
 		feedbackLoading = false;
 	};
 
+	const deleteMessageHandler = async () => {
+		deleteMessage(message.id);
+	};
+
 	$: if (!edit) {
 		(async () => {
 			await tick();
@@ -500,7 +542,7 @@
 					<div
 						class=" self-center text-xs invisible group-hover:visible text-gray-400 font-medium first-letter:capitalize ml-0.5 translate-y-[1px]"
 					>
-						<Tooltip content={dayjs(message.timestamp * 1000).format('dddd, DD MMMM YYYY HH:mm')}>
+						<Tooltip content={dayjs(message.timestamp * 1000).format('LLLL')}>
 							<span class="line-clamp-1">{formatDate(message.timestamp * 1000)}</span>
 						</Tooltip>
 					</div>
@@ -674,12 +716,29 @@
 										floatingButtons={message?.done}
 										save={!readOnly}
 										{model}
-										onSourceClick={(e) => {
+										onSourceClick={async (e) => {
 											console.log(e);
-											const sourceButton = document.getElementById(`source-${e}`);
+											let sourceButton = document.getElementById(`source-${e}`);
+											const sourcesCollapsible = document.getElementById(`collapsible-sources`);
 
 											if (sourceButton) {
 												sourceButton.click();
+											} else if (sourcesCollapsible) {
+												// Open sources collapsible so we can click the source button
+												sourcesCollapsible
+													.querySelector('div:first-child')
+													.dispatchEvent(new PointerEvent('pointerup', {}));
+
+												// Wait for next frame to ensure DOM updates
+												await new Promise((resolve) => {
+													requestAnimationFrame(() => {
+														requestAnimationFrame(resolve);
+													});
+												});
+
+												// Try clicking the source button again
+												sourceButton = document.getElementById(`source-${e}`);
+												sourceButton && sourceButton.click();
 											}
 										}}
 										onAddMessages={({ modelId, parentId, messages }) => {
@@ -1175,6 +1234,36 @@
 											</svg>
 										</button>
 									</Tooltip>
+
+									{#if siblings.length > 1}
+										<Tooltip content={$i18n.t('Delete')} placement="bottom">
+											<button
+												type="button"
+												id="continue-response-button"
+												class="{isLastMessage
+													? 'visible'
+													: 'invisible group-hover:visible'} p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg dark:hover:text-white hover:text-black transition regenerate-response-button"
+												on:click={() => {
+													deleteMessageHandler();
+												}}
+											>
+												<svg
+													xmlns="http://www.w3.org/2000/svg"
+													fill="none"
+													viewBox="0 0 24 24"
+													stroke-width="2"
+													stroke="currentColor"
+													class="w-4 h-4"
+												>
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"
+													/>
+												</svg>
+											</button>
+										</Tooltip>
+									{/if}
 
 									{#if isLastMessage}
 										{#each model?.actions ?? [] as action}

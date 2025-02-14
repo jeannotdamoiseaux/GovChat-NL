@@ -41,6 +41,8 @@ export const shortCodesToEmojis = writable(
 	}, {})
 );
 
+export const TTSWorker = writable(null);
+
 export const chatId = writable('');
 export const chatTitle = writable('');
 
@@ -78,6 +80,8 @@ export const isLastActiveTab = writable(true);
 export const playingNotificationSound = writable(false);
 
 export type Model = OpenAIModel | OllamaModel;
+
+export const customization: Writable<CustomizationGovChatNL | undefined> = writable(undefined); // Customization for GovChat-NL
 
 type BaseModel = {
 	id: string;
@@ -206,6 +210,7 @@ type Config = {
 		enable_admin_export: boolean;
 		enable_admin_chat_access: boolean;
 		enable_community_sharing: boolean;
+		enable_autocomplete_generation: boolean;
 	};
 	oauth: {
 		providers: {
