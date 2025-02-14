@@ -16,6 +16,8 @@
 	import EyeSlash from '$lib/components/icons/EyeSlash.svelte';
 	import MessageInput from './MessageInput.svelte';
 
+	const placeholderMessage = $config?.customization?.empty_chat_welcome_message; // GovChat-NL
+
 	const i18n = getContext('i18n');
 
 	export let transparentBackground = false;
@@ -135,14 +137,14 @@
 						{/each}
 					</div>
 				</div>
+				
+				<!-- GovChat-NL -->
+				{#if $user?.name}
+					{`${$i18n.t('Hello, {{name}}', { name: $user.name }).split(', ')[0]} ${$i18n.t('Hello, {{name}}', { name: $user.name }).split(', ').slice(-1)}, ${placeholderMessage}`}
+				{:else}
+					{`${$i18n.t('Hello')}, ${placeholderMessage.charAt(0).toUpperCase()}${placeholderMessage.slice(1)}`}
+				{/if}
 
-				<div class=" text-3xl @sm:text-4xl line-clamp-1" in:fade={{ duration: 100 }}>
-					{#if models[selectedModelIdx]?.name}
-						{models[selectedModelIdx]?.name}
-					{:else}
-						{$i18n.t('Hello, {{name}}', { name: $user.name })}
-					{/if}
-				</div>
 			</div>
 
 			<div class="flex mt-1 mb-2">

@@ -274,6 +274,8 @@ from open_webui.config import (
     QUERY_GENERATION_PROMPT_TEMPLATE,
     AUTOCOMPLETE_GENERATION_PROMPT_TEMPLATE,
     AUTOCOMPLETE_GENERATION_INPUT_MAX_LENGTH,
+    # Customization for GovChat-NL
+    EMPTY_CHAT_WELCOME_MESSAGE,
     AppConfig,
     reset_config,
 )
@@ -1071,6 +1073,10 @@ async def get_app_config(request: Request):
                 name: config.get("name", name)
                 for name, config in OAUTH_PROVIDERS.items()
             }
+        },
+         # Customization for GovChat-NL
+        "customization": {
+            "empty_chat_welcome_message": EMPTY_CHAT_WELCOME_MESSAGE.value,
         },
         "features": {
             "auth": WEBUI_AUTH,

@@ -81,6 +81,8 @@ export const playingNotificationSound = writable(false);
 
 export type Model = OpenAIModel | OllamaModel;
 
+export const customization: Writable<CustomizationGovChatNL | undefined> = writable(undefined); // Customization for GovChat-NL
+
 type BaseModel = {
 	id: string;
 	name: string;
