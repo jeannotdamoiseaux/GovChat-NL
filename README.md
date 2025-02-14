@@ -79,13 +79,16 @@ flowchart TD
 
     %% Repositories met standaardstijl 
 
-    OpenWebUI --> LokaleLLMs[Lokale LLMs]; 
-
     OpenWebUI --> OpenAI-standaard; 
 
     OpenWebUI --> Ollama-standaard; 
 
-    OpenAI-standaard --> LiteLLM:::repo; 
+    OpenAI-standaard --> LiteLLM:::repo;
+
+    Ollama-standaard --> Lokale_LLMs((Lokale LLMs)):::provider;
+
+    LiteLLM --> LLM_Provider((Cloud LLM <br> Provider)):::provider;
+
 
  
 
@@ -94,6 +97,8 @@ flowchart TD
     classDef main fill:#ffcc00,stroke:#333,stroke-width:3px,rounded-corners, font-size:16px, color:#000000; 
 
     classDef repo fill:#f9f,stroke:#333,stroke-width:2px,rounded-corners,color:#000000; 
+
+    classDef provider fill:#a3d5ff,stroke:#000,stroke-width:2px,color:#000,stroke-linejoin:round;
 
  
 
