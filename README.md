@@ -105,7 +105,7 @@ GovChat-NL wordt geleverd met uitgebreide documentatie voor installatie, configu
 
 - **Implementatiehandleiding**: Stapsgewijze uitleg voor het implementeren van GovChat-NL.  
 - **Admin Paneel Handleiding**: Handleiding voor het beheren van gebruikers, instellingen en thema-aanpassingen 
-- **[Thema-aanpassingen]**(/docs/Thema-aanpassingen.md): Gedetailleerde uitleg over hoe organisaties hun chatbot kunnen aanpassen aan specifieke huisstijlrichtlijnen 
+- [**Thema-aanpassingen**](/docs/Thema-aanpassingen.md): Gedetailleerde uitleg over hoe organisaties hun chatbot kunnen aanpassen aan specifieke huisstijlrichtlijnen 
 - **Beveiligingsrichtlijnen**: Documentatie over de veiligheidsmaatregelen en aanbevelingen voor het waarborgen van privacy 
 - **Authenticatieopties**: Uitleg over authenticatiemethoden, zoals SSO (Single Sign-On) en OAuth-integratie.
 
