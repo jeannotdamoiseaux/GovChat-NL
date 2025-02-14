@@ -21,3 +21,13 @@ Als de voornaam niet beschikbaar is, zal de gebruiker alleen het welkomstbericht
 ```plaintext
 Hallo, <EMPTY_CHAT_WELCOME_MESSAGE>
 ```
+
+### `LOGIN_SCREEN_SUBTITLE` (Default: `None`)
+De variabele `LOGIN_SCREEN_SUBTITLE` biedt de mogelijkheid om een aangepaste subtitel weer te geven op het inlogscherm van de chatbot. Deze subtitel kan worden gebruikt om extra uitleg of een slogan toe te voegen die aansluit bij de communicatiebehoefte van de organisatie. 
+
+Als de variabele niet wordt ingesteld (of als deze expliciet `None` is), zal er geen subtitel worden weergegeven.
+
+Voorbeeldinstelling:
+```plaintext
+LOGIN_SCREEN_SUBTITLE="Jouw kennisassistent voor de Provincie Limburg"
+```
