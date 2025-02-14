@@ -18,6 +18,8 @@
 
 	const i18n = getContext('i18n');
 
+	const subtitleMessage = $config?.customization?.login_screen_subtitle; // GovChat-NL
+
 	let loaded = false;
 
 	let mode = $config?.features.enable_ldap ? 'ldap' : 'signin';
@@ -151,7 +153,7 @@
 						class=" w-6 rounded-full dark:invert"
 						alt="logo"
 					/>
-				</div>
+				</div>	
 			</div>
 		</div>
 
@@ -184,16 +186,27 @@
 						>
 							<div class="mb-1">
 								<div class=" text-2xl font-medium">
-									{#if $config?.onboarding ?? false}
-										{$i18n.t(`Get started with {{WEBUI_NAME}}`, { WEBUI_NAME: $WEBUI_NAME })}
-									{:else if mode === 'ldap'}
-										{$i18n.t(`Sign in to {{WEBUI_NAME}} with LDAP`, { WEBUI_NAME: $WEBUI_NAME })}
-									{:else if mode === 'signin'}
-										{$i18n.t(`Sign in to {{WEBUI_NAME}}`, { WEBUI_NAME: $WEBUI_NAME })}
-									{:else}
-										{$i18n.t(`Sign up to {{WEBUI_NAME}}`, { WEBUI_NAME: $WEBUI_NAME })}
-									{/if}
+									<h1 class="font-bold text-4xl mb-4 text-black dark:text-gray-300 dark:hover:text-white">
+										{#if $config?.onboarding ?? false}
+											{$i18n.t(`Get started with {{WEBUI_NAME}}`, { WEBUI_NAME: $WEBUI_NAME })}
+										{:else if mode === 'ldap'}
+											{$i18n.t(`Sign in to {{WEBUI_NAME}} with LDAP`, { WEBUI_NAME: $WEBUI_NAME })}
+										{:else if mode === 'signin'}
+											{$i18n.t(`Sign in to {{WEBUI_NAME}}`, { WEBUI_NAME: $WEBUI_NAME })}
+										{:else}
+											{$i18n.t(`Sign up to {{WEBUI_NAME}}`, { WEBUI_NAME: $WEBUI_NAME })}
+										{/if}
+									</h1>
 								</div>
+
+								<!-- GovChat-NL -->
+								{#if subtitleMessage}
+									<div class="mt-4 text-center">
+										<p class="text-gray-500 text-lg">
+											{subtitleMessage}
+										</p>
+									</div>
+								{/if}
 
 								{#if $config?.onboarding ?? false}
 									<div class=" mt-1 text-xs font-medium text-gray-500">
