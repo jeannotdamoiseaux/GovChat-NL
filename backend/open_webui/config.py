@@ -2249,3 +2249,9 @@ EMPTY_CHAT_WELCOME_MESSAGE = PersistentConfig(
     "customization.empty_chat_welcome_message",
     os.getenv("EMPTY_CHAT_WELCOME_MESSAGE", "welkom bij GovChat-NL")
 )
+
+LOGIN_SCREEN_SUBTITLE = PersistentConfig(
+    "LOGIN_SCREEN_SUBTITLE",
+    "customization.login_screen_subtitle",
+    os.getenv("LOGIN_SCREEN_SUBTITLE", None)
+)
