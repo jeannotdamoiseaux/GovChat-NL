@@ -14,8 +14,10 @@ De variabele `EMPTY_CHAT_WELCOME_MESSAGE` wordt gebruikt voor het instellen van 
 
 ```plaintext
 Hallo <voornaam>, <EMPTY_CHAT_WELCOME_MESSAGE>
+```
 
 Als de voornaam niet beschikbaar is, zal de gebruiker alleen het welkomstbericht zien, zonder voornaam:
 
 ```plaintext
-Hallo, <EMPTY_CHAT_WELCOME_MESSAGE.title()>
+Hallo, <EMPTY_CHAT_WELCOME_MESSAGE>
+```
