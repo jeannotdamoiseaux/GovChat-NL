@@ -1,6 +1,6 @@
 {
-  "name": "Open WebUI",
-  "short_name": "WebUI",
+  "name": "GovChat-NL",
+  "short_name": "GovChat",
   "icons": [
     {
       "src": "/favicon/web-app-manifest-192x192.png",
