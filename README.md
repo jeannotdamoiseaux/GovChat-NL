@@ -33,8 +33,8 @@ Onderstaande tabel geeft een overzicht van de huidige en geplande apps in de App
 
 | **App**            | **Beschrijving**                                      | **Status**       | **Initiatiefnemer**       | **Meer informatie**         |
 |---------------------|------------------------------------------------------|------------------|---------------------------|-----------------------------|
-| **B1-Taalniveau**   | Vereenvoudigt teksten naar B1-taalniveau.            | Onder ontwikkeling | Provincie Limburg       | [Meer informatie](docs/B1-taalniveau.md) |
-| **Subsidies**       | Beoordeelt subsidieaanvragen en genereert rapportages.| Onder ontwikkeling | Provincie Limburg      | [Meer informatie](docs/subsidies.md)     |
+| **B1-Taalniveau**   | Vereenvoudigt teksten naar B1-taalniveau.            | Onder ontwikkeling | Provincie Limburg       | [Meer informatie](docs/App Launcher/B1-taalniveau.md) |
+| **Subsidies**       | Beoordeelt subsidieaanvragen en genereert rapportages.| Onder ontwikkeling | Provincie Limburg      | [Meer informatie](docs/App Launcher/subsidies.md)     |
 | **Transcriptie**    | Converteert audiobestanden naar tekst.               | Gepland          | -                         | Beschikbaar binnenkort     |
 
 ---
