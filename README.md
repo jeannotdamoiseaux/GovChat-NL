@@ -8,11 +8,36 @@ Dit project is ontworpen voor Nederlandse **overheidsinstanties**, met als doel 
 
 ## Voordelen van GovChat-NL 
 
-- **Kant-en-klare applicatie**: Een veilig alternatief voor openbare chatbots (zoals ChatGPT, DeepSeek) of dure oplossingen (zoals Copilot) met ondersteuning voor diverse LLM's (OpenAI, Ollama, Azure AI e.a.). 
-- **AI-toepassingen specifiek ontwikkeld voor de overheid**: Denk aan toepassingen op B1-taalniveau of gericht op subsidies, beschikbaar via de App Launcher 
-- **Veiligheid**: Integratie met bestaande IAM-systemen (OAuth2, SSO, bv Microsoft Entra ID). 
-- **Flexibele implementatie**: Aanpasbaar aan de bestaande IT-omgeving van de organisatie. 
-- **Beheer**: Gebruikersrechten zijn eenvoudig te beheren via een admin paneel.
+GovChat-NL biedt een breed scala aan voordelen die zijn afgestemd op de behoeften van Nederlandse overheidsinstanties:
+
+- **Gebruiksklare oplossingen**  
+  Het platform fungeert als een veilig alternatief voor openbare chatbots (zoals ChatGPT of DeepSeek) en dure commerciële oplossingen (zoals Copilot). GovChat-NL ondersteunt vrijwel iedere LLM-provider, waaronder **OpenAI**, **Ollama**, **Azure AI** en **Vertex AI**.
+
+- **Specifieke AI-toepassingen voor de publieke sector**  
+  Het platform bevat een **App Launcher** met applicaties die specifiek zijn ontworpen voor overheidstaken, zoals het vereenvoudiging van teksten naar **B1-taalniveau**, het geautomatiseerd beoordelen van **subsidieaanvragen**, en **audiotranscriptie**.
+
+- **Geavanceerde beveiligingsopties**  
+  Veiligheid staat centraal, met integratie van bestaande Identity and Access Management (IAM)-systemen zoals **OAuth2**, **Single Sign-On (SSO)** en **Microsoft Entra ID**. 
+
+- **Aanpasbare en flexibele implementatie**  
+  GovChat-NL is ontworpen om makkelijk te integreren binnen bestaande IT-omgevingen van overheidsorganisaties. Het platform is flexibel en kan op allerlei manier worden gehost, zowel op lokale servers als in cloudomgevingen. 
+
+- **Beheer en controle**  
+  Het beheer is eenvoudig via een admin paneel binnen GovChat-NL, waarmee gebruikersrollen, rechten en instellingen in enkele klikken te beheren zijn. Dit biedt organisaties volledige controle over de applicatie zonder complexe technische vereisten.
+
+## App Launcher
+
+De **App Launcher** is een centrale plek in het GovChat-NL platform waar de beschikbare AI-toepassingen eenvoudig toegankelijk zijn voor gebruikers. Via de App Launcher kunnen overheden AI-tools gebruiken die specifiek zijn afgestemd op hun behoeften, zoals vereenvoudiging van teksten, subsidiebeoordeling of automatische transcriptie.
+
+Onderstaande tabel geeft een overzicht van de huidige en geplande apps in de App Launcher:
+
+| **App**            | **Beschrijving**                                      | **Status**       | **Initiatiefnemer**       | **Meer informatie**         |
+|---------------------|------------------------------------------------------|------------------|---------------------------|-----------------------------|
+| **B1-Taalniveau**   | Vereenvoudigt teksten naar B1-taalniveau.            | Onder ontwikkeling | Provincie Limburg       | [Meer informatie](docs/B1-taalniveau.md) |
+| **Subsidies**       | Beoordeelt subsidieaanvragen en genereert rapportages.| Onder ontwikkeling | Provincie Limburg      | [Meer informatie](docs/subsidies.md)     |
+| **Transcriptie**    | Converteert audiobestanden naar tekst.               | Gepland          | -                         | Beschikbaar binnenkort     |
+
+---
 
 ![image](https://github.com/user-attachments/assets/04da966a-05c2-4a95-ad8c-f0de95dcb60c)
 
