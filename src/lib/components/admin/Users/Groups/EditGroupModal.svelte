@@ -47,7 +47,13 @@
 			web_search: true,
 			image_generation: true,
 			code_interpreter: true
-		}
+		},
+		// GovChat-NL
+		appLauncher: {
+			b1_taalniveau: false,
+			subsidies: false,
+			transcriptie: false
+    	}
 	};
 	export let userIds = [];
 
