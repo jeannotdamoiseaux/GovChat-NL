@@ -10,6 +10,7 @@ Welkom bij de **GovChat-NL ontwikkel handleiding**
   Gebruik VS Code om code te bewerken. 
   Installeer de "Remote Development"-extensie en het "WSL" Expansion Pack om WSL-projecten direct te openen.
 
+
 - **1. Installatie van WSL**  
   Open PowerShell als Administrator.
   Voer het volgende commando uit om WSL2 te activeren:
@@ -59,6 +60,15 @@ Welkom bij de **GovChat-NL ontwikkel handleiding**
 
   conda --version
 
+
+## Troubleshooting
+**Error Backend Required**
+
+![Backend Required](Backendrequired.png)
+
+Verander onderstreepte naar local host zoals aangegeven hierboven, standaard staat dit op CORS_ALLOW_ORIGIN.
+
+
 ## Quickstart
 
 - **1. WSL in VS code**
@@ -76,6 +86,7 @@ Open twee WSL-terminals in VS Code
 
   cd GovChat-NL
 
+
 - **2. Frontend eerste terminal**  
   Maak het .env bestand aan. Voer deze command uit en pas dit bestand vervolgens aan met je eigen LiteLLM key
 
@@ -88,6 +99,7 @@ Open twee WSL-terminals in VS Code
   Start Frontend:
 
   npm run dev
+
 
 - **3. Backend tweede terminal**  
   Ga naar:
@@ -110,15 +122,18 @@ Open twee WSL-terminals in VS Code
 
   sh dev.sh
 
+
 - **4. Admin inlog**  
   Gebruikersnaam: root
   Email: root@toor.nl
   Wachtwoord: toor
 
+
 ## Lite LLM API Connectie
 Download en installeer Docker van:
 
 https://www.docker.com/
+
 
 **1. Configureer credentials**
 Update de vereiste credential-bestanden:
@@ -127,12 +142,6 @@ Bestand 1: .env
 
 Bestand 2: litellm/litellm_config.yaml
 
+
 **2. Run Docker-services**
 Klik op "Run all services" in het docker-compose-light.yaml bestand in VS Code of klik op docker als dit al eerder gedaan is.
-
-## Troubleshooting
-**Error Backend Required**
-
-![Backend Required](Backendrequired.png)
-
-Verander onderstreepte naar local host zoals aangegeven hierboven, standaard staat dit op CORS_ALLOW_ORIGIN.
