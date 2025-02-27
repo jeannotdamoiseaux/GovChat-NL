@@ -1,0 +1,13 @@
+model_list:
+  - model_name: azure-gpt-4o
+    litellm_params:
+      model: azure/gpt-4o
+      api_base: ${AZURE_API_BASE} # runs os.getenv("AZURE_API_BASE")
+      api_key: ${AZURE_API_KEY} # runs os.getenv("AZURE_API_KEY")
+      api_version: ${AZURE_API_VERSION} # runs os.getenv("AZURE_API_VERSION")
+  - model_name: azure-text-embedding-3-large
+    litellm_params:
+      model: azure/text-embedding-3-large
+      api_base: ${AZURE_API_BASE} 
+      api_key: ${AZURE_API_KEY} 
+      api_version: ${AZURE_API_VERSION}
