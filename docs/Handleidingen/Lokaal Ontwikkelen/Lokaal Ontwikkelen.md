@@ -110,6 +110,11 @@ Open twee WSL-terminals in VS Code
 
   sh dev.sh
 
+- **4. Admin inlog**  
+  Gebruikersnaam: root
+  Email: root@toor.nl
+  Wachtwoord: toor
+
 ## Lite LLM API Connectie
 Download en installeer Docker van:
 

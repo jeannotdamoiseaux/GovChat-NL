@@ -1,0 +1,22 @@
+version: "3.3"
+services:
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    restart: always
+    ports:
+      - "4000:4000"
+    environment:
+      - AZURE_API_KEY=${AZURE_API_KEY}
+      - AZURE_API_BASE=${AZURE_API_BASE}
+      - AZURE_API_VERSION=${AZURE_API_VERSION}
+    volumes:
+      - ./litellm/litellm_config.yaml:/app/config.yaml
+      - ./litellm/calcium-alchemy-416511-58b3843781ae.json:/app/calcium-alchemy-416511-58b3843781ae.json
+    command: --config /app/config.yaml --detailed_debug
+    #deploy:
+    #  resources:
+    #    reservations:
+    #      devices:
+    #        - driver: nvidia
+    #          count: all
+    #          capabilities: [gpu]
