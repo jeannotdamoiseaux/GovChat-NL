@@ -1,0 +1,68 @@
+version: "3.3"
+services:
+  open-webui:
+    image: ghcr.io/jeannotdamoiseaux/open-webui:limburg2
+    restart: always
+    ports:
+      - "18462:8080"
+    environment:
+      - "OLLAMA_BASE_URL=http://ollama:11434"
+      - "WEBUI_SECRET_KEY="
+      - "ADMIN_EMAIL=${ADMIN_EMAIL}"
+      - "ENV=${ENV}"
+      - "ENABLE_SIGNUP=${ENABLE_SIGNUP}"
+      - "SCARF_NO_ANALYTICS=${SCARF_NO_ANALYTICS}"
+      - "DO_NOT_TRACK=${DO_NOT_TRACK}"
+      - "ANONYMIZED_TELEMETRY=${ANONYMIZED_TELEMETRY}"
+      - "WEBUI_NAME=${WEBUI_NAME}"
+      - "WEBUI_URL=${WEBUI_URL}"
+      - "OAUTH_PROVIDER_NAME=${OAUTH_PROVIDER_NAME}"
+      - "MICROSOFT_OAUTH_SCOPE=${MICROSOFT_OAUTH_SCOPE}"
+      - "ENABLE_OAUTH_SIGNUP=${ENABLE_OAUTH_SIGNUP}"
+      - "ENABLE_LOGIN_FORM=${ENABLE_LOGIN_FORM}"
+      - "MICROSOFT_REDIRECT_URI=${MICROSOFT_REDIRECT_URI}"
+      - "MICROSOFT_CLIENT_ID=${MICROSOFT_CLIENT_ID}"
+      - "MICROSOFT_CLIENT_SECRET=${MICROSOFT_CLIENT_SECRET}"
+      - "MICROSOFT_CLIENT_TENANT_ID=${MICROSOFT_CLIENT_TENANT_ID}"
+      - "OPENAI_API_BASE_URL=http://litellm:4000"
+      - "ENABLE_OAUTH_GROUP_MANAGEMENT=${ENABLE_OAUTH_GROUP_MANAGEMENT}"
+      - "EMPTY_CHAT_WELCOME_MESSAGE=${EMPTY_CHAT_WELCOME_MESSAGE}"
+      - "LOGIN_SCREEN_SUBTITLE=${LOGIN_SCREEN_SUBTITLE}"
+    volumes:
+      - ./open-webui:/app/backend/data
+    depends_on:
+      - ollama
+      - litellm
+    extra_hosts:
+      - host.docker.internal:host-gateway
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: always
+    expose:
+      - "11434"
+    pull_policy: always
+    tty: true
+    volumes:
+      - ./ollama:/root/.ollama
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    restart: always
+    ports:
+      - "4000:4000"
+    environment:
+      - AZURE_API_KEY=${AZURE_API_KEY}
+      - AZURE_API_BASE=${AZURE_API_BASE}
+      - AZURE_API_VERSION=${AZURE_API_VERSION}
+    volumes:
+      - ./litellm/litellm_config.yaml:/app/config.yaml
+      - ./litellm/calcium-alchemy-416511-58b3843781ae.json:/app/calcium-alchemy-416511-58b3843781ae.json
+    command: --config /app/config.yaml --detailed_debug
+    #deploy:
+    #  resources:
+    #    reservations:
+    #      devices:
+    #        - driver: nvidia
+    #          count: all
+    #          capabilities: [gpu]
