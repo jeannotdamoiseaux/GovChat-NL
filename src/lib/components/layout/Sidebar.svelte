@@ -537,6 +537,48 @@
 			</a>
 		</div>
 
+		<!-- App Launcher (GovChat-NL) -->
+		{#if $user?.role === 'admin' || Object.values($user.permissions.appLauncher).some(permission => permission)}
+			<div class="px-1.5 flex justify-center text-gray-800 dark:text-gray-200">
+				<a
+					class="flex-grow flex space-x-3 rounded-lg px-2 py-[7px] hover:bg-gray-100 dark:hover:bg-gray-900 transition"
+					href="/app-launcher"
+					on:click={() => {
+						selectedChatId = null;
+						chatId.set('');
+						if ($mobile) {
+							showSidebar.set(false);
+						}
+					}}
+					draggable="false"
+				>
+					<div class="self-center">
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							fill="none"
+							viewBox="0 0 24 24"
+							stroke-width="2"
+							stroke="currentColor"
+							class="size-[1.1rem]"
+						>
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								d="M4 4h4v4H4V4zM10 4h4v4h-4V4zM16 4h4v4h-4V4zM4 10h4v4H4v-4zM10 10h4v4h-4V4zM16 10h4v4H4v-4zM4 16h4v4H4v-4zM10 16h4v4H4v-4zM16 16h4v4H16z"
+							/>
+						</svg>
+					</div>
+					<div class="flex self-center">
+						<div class="self-center font-medium text-sm font-primary">
+							App Launcher (Beta)
+						</div>
+					</div>
+				</a>
+			</div>
+		{/if}
+
+		
+
 		<!-- {#if $user?.role === 'admin'}
 			<div class="px-1.5 flex justify-center text-gray-800 dark:text-gray-200">
 				<a
