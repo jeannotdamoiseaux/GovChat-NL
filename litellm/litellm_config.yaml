@@ -1,0 +1,13 @@
+model_list:
+  - model_name: azure-gpt-4o
+    litellm_params:
+      model: azure/gpt-4o
+      api_base: os.environ/AZURE_API_BASE # runs os.getenv("AZURE_API_BASE"), change in your environment (.env file) after "cp -RPp .env.example .env"
+      api_key: os.environ/AZURE_API_KEY # runs os.getenv("AZURE_API_KEY")
+      api_version: os.environ/AZURE_API_VERSION # runs os.getenv("AZURE_API_VERSION")
+  - model_name: azure-text-embedding-3-large
+    litellm_params:
+      model: azure/text-embedding-3-large
+      api_base: os.environ/AZURE_API_BASE 
+      api_key: os.environ/AZURE_API_KEY 
+      api_version: os.environ/AZURE_API_VERSION
