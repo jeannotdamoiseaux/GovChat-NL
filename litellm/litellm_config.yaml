@@ -11,29 +11,3 @@ model_list:
       api_base: os.environ/AZURE_API_BASE 
       api_key: os.environ/AZURE_API_KEY 
       api_version: os.environ/AZURE_API_VERSION
-  # - model_name: azure-deepseek-r1
-  #   litellm_params:
-  #     model: azure_ai/DeepSeek-R1-wlvjj
-  #     api_base: https://DeepSeek-R1-wlvjj.westus.models.ai.azure.com
-  #     api_key: #
-  #     api_version: os.environ/AZURE_API_VERSION
-  # - model_name: azure-mistral-large
-  #   litellm_params:
-  #     model: azure_ai/Mistral-Large-2411-ngerb
-  #     api_base: https://Mistral-Large-2411-ngerb.swedencentral.models.ai.azure.com
-  #     api_key: #
-  #     api_version: os.environ/AZURE_API_VERSION 
-  # - model_name: vertex-claude-3.5-sonnet
-  #   litellm_params:
-  #     model: vertex_ai/claude-3-5-sonnet@20240620 #claude-3-5-sonnet-20240620
-  #     # api_base: https://europe-west1-aiplatform.googleapis.com/v1/projects/calcium-alchemy-416511/locations/europe-west1/publishers/anthropic/models/claude-3-5-sonnet@20240620:rawPredict
-  #     vertex_project: calcium-alchemy-416511
-  #     vertex_location: europe-west1
-  #     vertex_credentials: #
-  # - model_name: vertex-claude-3.5-sonnet-v2
-  #   litellm_params:
-  #     model: vertex_ai/claude-3-5-sonnet-v2@20241022
-  #     # api_base: https://europe-west1-aiplatform.googleapis.com/v1/projects/calcium-alchemy-416511/locations/europe-west1/publishers/anthropic/models/claude-3-5-sonnet@20240620:rawPredict
-  #     vertex_project: calcium-alchemy-416511
-  #     vertex_location: europe-west1
-  #     vertex_credentials: #
