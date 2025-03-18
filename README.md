@@ -50,9 +50,9 @@ GovChat-NL wordt geleverd in twee vormen:
 
 Organisaties hebben de keuze om GovChat-NL te implementeren op lokale servers of in een cloudomgeving. Deze flexibiliteit maakt het mogelijk om GovChat-NL volledig af te stemmen op de bestaande infrastructuur. 
 
-### Specifieke Implementatie: Provincie Limburg 
+### Specifieke Implementatie: Provincie Limburg (incl. DPIA)
 
-Een praktijkvoorbeeld van GovChat-NL is de implementatie bij de **Provincie Limburg**, waarbij gebruik wordt gemaakt van een Docker Image gehost in Elestio. Taalmodellen worden gehost in Microsoft Azure en Google Vertex AI. Bij de implementatie van het platform bij de Provincie Limburg is een uitgebreide Data Protection Impact Assessment (DPIA) uitgevoerd. Deze DPIA beoordeelt de potentiële risico's voor privacy en gegevensbescherming en beschrijft de maatregelen die zijn genomen om deze risico's te mitigeren. De DPIA is goedgekeurd en beschikbaar gesteld als referentie voor andere overheidsorganisaties die met GovChat-NL willen werken. Je kunt de volledige DPIA [hier](/docs/implementaties/provincie-limburg-dpia.pdf) raadplegen.
+Een praktijkvoorbeeld van GovChat-NL is de implementatie bij de **Provincie Limburg**, waarbij gebruik wordt gemaakt van een Docker Image gehost in Elestio. Taalmodellen worden gehost in Microsoft Azure en Google Vertex AI. Bij de implementatie van het platform bij de Provincie Limburg is een uitgebreide **Data Protection Impact Assessment (DPIA)** uitgevoerd. Deze DPIA beoordeelt de potentiële risico's voor privacy en gegevensbescherming en beschrijft de maatregelen die zijn genomen om deze risico's te mitigeren. De DPIA is goedgekeurd en beschikbaar gesteld als referentie voor andere overheidsorganisaties die met GovChat-NL willen werken. Je kunt de volledige DPIA [hier](/docs/implementaties/provincie-limburg-dpia.pdf) raadplegen.
 
 Voor meer informatie over deze specifieke uitrol kunt u [deze pagina](/docs/implementaties/provincie-limburg.md) raadplegen. 
 
