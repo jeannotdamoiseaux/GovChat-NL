@@ -56,9 +56,13 @@ Een praktijkvoorbeeld van GovChat-NL is de implementatie bij de **Provincie Limb
 
 ![Schermafbeelding 2025-01-31 102730](https://github.com/user-attachments/assets/ac30f57d-fdfa-4cf6-a1da-abb56dad1ad7)
 
+### Lokale Ontwikkelomgeving  
+GovChat-NL biedt een krachtige lokale ontwikkelomgeving, inclusief **hot-reloading**, waarmee wijzigingen in de broncode automatisch worden toegepast zonder herstart van de applicatie. Dit versnelt het ontwikkelproces. Voor meer informatie over de setup, raadpleeg de [Developer Mode documentatie](docs/handleidingen/developer-mode.md).
+
 ### Andere Deploymentmogelijkheden 
 
 GovChat-NL biedt echter vele verschillende deploymentopties. Raadpleeg hiervoor de upstream documentatie. 
+
 
 ## Balans tussen Centraal en Decentraal 
 
