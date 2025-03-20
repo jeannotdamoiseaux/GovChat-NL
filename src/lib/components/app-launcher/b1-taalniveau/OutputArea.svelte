@@ -4,10 +4,13 @@
 
 <div>
   <textarea
-    class="w-full h-48 p-2 border rounded bg-gray-100"
+    class="absolute top-0 left-208 w-100 h-131 p-15 border rounded bg-gray-100"
     readonly
     value={value}
-    placeholder="Hier verschijnt de vereenvoudigde tekst..."
+    placeholder="
+
+
+Hier verschijnt de vereenvoudigde tekst..."
   ></textarea>
 </div>
 

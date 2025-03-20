@@ -836,7 +836,7 @@ async def inspect_websocket(request: Request, call_next):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins="http://localhost:5173", #Dit veranderen naar "http://localhost:5173", standaard is dit CORS_ALLOW_ORIGIN
+    allow_origins=["http://localhost:5173"], #Dit veranderen naar "http://localhost:5173", standaard is dit CORS_ALLOW_ORIGIN
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -951,7 +951,7 @@ async def get_base_models(request: Request, user=Depends(get_admin_user)):
 async def chat_completion(
     request: Request,
     form_data: dict,
-    user=Depends(get_verified_user),
+    #user=Depends(get_verified_user),
 ):
     if not request.app.state.MODELS:
         await get_all_models(request)

@@ -11,11 +11,11 @@
 </script>
 
 <div class="mt-4">
-  <label class="block text-gray-700">Uitsluit woorden (komma-gescheiden):</label>
+  <label class="block text-white">Uitsluit woorden (komma-gescheiden):</label>
   <input
     type="text"
-    class="w-full p-2 border rounded"
-    placeholder="Bijv.: gedeputeerde, subsidie"
+    class="w-full h-11 p-2 border rounded bg-gray-100"
+    placeholder="Uitsluitwoorden Bijv.: gedeputeerde, subsidie"
     bind:value={words}
   />
   <button
