@@ -40,8 +40,9 @@
     isLoading = true;
 
     try {
-      // Gebruik de juiste API-endpoint voor chat completions
-      // In GovChat-NL is dit waarschijnlijk /v1/chat/completions of /api/v1/chat/completions
+      // Get the authentication token
+      const token = localStorage.getItem('token');
+    
       const payload = {
         model: selectedModel,
         messages: [
@@ -66,10 +67,15 @@
       const response = await fetch('http://localhost:8080/api/chat/completions', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` // Add the authentication token
         },
         body: JSON.stringify(payload)
       });
+
+      if (response.status === 403) {
+        throw new Error("Je hebt geen toegang tot dit model. Probeer een ander model te selecteren.");
+      }
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);

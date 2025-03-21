@@ -951,7 +951,7 @@ async def get_base_models(request: Request, user=Depends(get_admin_user)):
 async def chat_completion(
     request: Request,
     form_data: dict,
-    #user=Depends(get_verified_user),
+    user=Depends(get_verified_user),
 ):
     if not request.app.state.MODELS:
         await get_all_models(request)
