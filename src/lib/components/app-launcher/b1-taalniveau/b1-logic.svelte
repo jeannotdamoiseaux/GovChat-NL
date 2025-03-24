@@ -1,21 +1,22 @@
 <script>
   import { onMount } from 'svelte';
   import { user, models as modelsStore } from '$lib/stores';
+  import { WEBUI_BASE_URL } from '$lib/constants';  // Importeer WEBUI_BASE_URL
+  
+  // Props - ontvang selectedModels van de parent component
+  export let selectedModels = [''];
   
   let inputText = '';
   let outputText = '';
   let isLoading = false;
-  let selectedModel = '';
   let error = null;
+  let preservedWords = []; 
+  let newPreservedWord = '';
   let models = [];
-
+  
   // Gebruik de modelsStore om modellen op te halen
   const unsubscribe = modelsStore.subscribe(value => {
     models = value;
-    if (models.length > 0 && !selectedModel) {
-      // Selecteer standaard het eerste model
-      selectedModel = models[0].id;
-    }
   });
 
   onMount(() => {
@@ -25,14 +26,28 @@
     };
   });
 
+  // Functie om een woord toe te voegen aan de lijst van te behouden woorden
+  function addPreservedWord() {
+    if (newPreservedWord.trim()) {
+      preservedWords = [...preservedWords, newPreservedWord.trim()];
+      newPreservedWord = '';
+    }
+  }
+
+  // Functie om een woord te verwijderen uit de lijst
+  function removePreservedWord(index) {
+    preservedWords = preservedWords.filter((_, i) => i !== index);
+  }
+
   async function translateToB1() {
     if (!inputText.trim()) {
       error = "Voer tekst in om te vertalen";
       return;
     }
 
-    if (!selectedModel) {
-      error = "Selecteer een model";
+    // Controleer of er een model is geselecteerd
+    if (!selectedModels[0]) {
+      error = "Selecteer eerst een model in de navigatiebalk rechtsboven";
       return;
     }
 
@@ -42,13 +57,25 @@
     try {
       // Get the authentication token
       const token = localStorage.getItem('token');
+      
+      // Vind het model_item object dat overeenkomt met het geselecteerde model
+      const model_item = models.find(m => m.id === selectedModels[0]);
     
+      // Maak een aangepaste instructie die de te behouden woorden bevat
+      let systemPrompt = "Je bent een expert in het vereenvoudigen van tekst naar B1-taalniveau. B1-taalniveau betekent dat je korte zinnen gebruikt, eenvoudige woorden kiest, en complexe concepten uitlegt in begrijpelijke taal. Vermijd jargon, lange zinnen en moeilijke woorden. Behoud de betekenis van de originele tekst maar maak deze toegankelijk voor mensen met beperkte taalvaardigheid.";
+      
+      // Voeg instructies toe over woorden die niet vereenvoudigd moeten worden
+      if (preservedWords.length > 0) {
+        systemPrompt += ` De volgende woorden/termen mag je NIET vereenvoudigen of veranderen, gebruik ze exact zoals ze zijn: ${preservedWords.join(', ')}.`;
+      }
+      
       const payload = {
-        model: selectedModel,
+        model: selectedModels[0],
+        model_item: model_item,
         messages: [
           {
             role: "system",
-            content: "Je bent een expert in het vereenvoudigen van tekst naar B1-taalniveau. B1-taalniveau betekent dat je korte zinnen gebruikt, eenvoudige woorden kiest, en complexe concepten uitlegt in begrijpelijke taal. Vermijd jargon, lange zinnen en moeilijke woorden. Behoud de betekenis van de originele tekst maar maak deze toegankelijk voor mensen met beperkte taalvaardigheid."
+            content: systemPrompt
           },
           {
             role: "user",
@@ -64,7 +91,8 @@
 
       console.log("Request payload:", payload);
 
-      const response = await fetch('http://localhost:8080/api/chat/completions', {
+      // Gebruik WEBUI_BASE_URL voor de API-aanroep
+      const response = await fetch(`${WEBUI_BASE_URL}/api/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -102,23 +130,55 @@
       </div>
     {/if}
     
+    <!-- Instructie voor model selectie -->
+    <div class="mb-4 text-sm text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 p-3 rounded">
+      {#if selectedModels[0]}
+        <div class="font-medium">Geselecteerd model: <span class="text-blue-600 dark:text-blue-400">{models.find(m => m.id === selectedModels[0])?.name || selectedModels[0]}</span></div>
+      {:else}
+        <div class="font-medium text-yellow-600">Geen model geselecteerd. Selecteer eerst een model in de navigatiebalk rechtsboven.</div>
+      {/if}
+    </div>
+    
+    <!-- Sectie voor woorden die behouden moeten blijven -->
     <div class="mb-4">
-      <label for="model" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-        Selecteer model
+      <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+        Woorden die niet vereenvoudigd moeten worden
       </label>
-      <select 
-        id="model"
-        bind:value={selectedModel}
-        class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-      >
-        {#if models.length === 0}
-          <option value="">Geen modellen beschikbaar</option>
-        {:else}
-          {#each models as model}
-            <option value={model.id}>{model.name || model.id}</option>
+      <div class="flex mb-2">
+        <input
+          type="text"
+          bind:value={newPreservedWord}
+          placeholder="Voer een woord of term in"
+          class="flex-grow px-3 py-2 border border-gray-300 rounded-l-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+          on:keydown={(e) => e.key === 'Enter' && addPreservedWord()}
+        />
+        <button
+          on:click={addPreservedWord}
+          class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-r-md focus:outline-none focus:shadow-outline"
+        >
+          Toevoegen
+        </button>
+      </div>
+      
+      {#if preservedWords.length > 0}
+        <div class="flex flex-wrap gap-2 mt-2">
+          {#each preservedWords as word, index}
+            <div class="bg-blue-100 text-blue-800 px-2 py-1 rounded-md flex items-center">
+              <span>{word}</span>
+              <button 
+                on:click={() => removePreservedWord(index)}
+                class="ml-2 text-blue-600 hover:text-blue-800 focus:outline-none"
+              >
+                ×
+              </button>
+            </div>
           {/each}
-        {/if}
-      </select>
+        </div>
+      {:else}
+        <p class="text-sm text-gray-500 dark:text-gray-400">
+          Geen woorden toegevoegd. Woorden die je hier toevoegt worden niet vereenvoudigd in de vertaling.
+        </p>
+      {/if}
     </div>
     
     <div class="mb-4">
@@ -137,11 +197,11 @@
     <div class="mb-4">
       <button 
         on:click={translateToB1}
-        disabled={isLoading || models.length === 0}
+        disabled={isLoading || !selectedModels[0]}
         class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline disabled:opacity-50"
       >
-        {#if models.length === 0}
-          Geen modellen beschikbaar
+        {#if !selectedModels[0]}
+          Selecteer eerst een model in de navigatiebalk rechtsboven
         {:else if isLoading}
           Bezig met vertalen...
         {:else}
