@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { user, models as modelsStore } from '$lib/stores';
-  import { WEBUI_BASE_URL } from '$lib/constants';  // Importeer WEBUI_BASE_URL
+  import { WEBUI_BASE_URL } from '$lib/constants';
   
   // Props - ontvang selectedModels van de parent component
   export let selectedModels = [''];
@@ -58,45 +58,19 @@
       // Get the authentication token
       const token = localStorage.getItem('token');
       
-      // Vind het model_item object dat overeenkomt met het geselecteerde model
-      const model_item = models.find(m => m.id === selectedModels[0]);
-    
-      // Maak een aangepaste instructie die de te behouden woorden bevat
-      let systemPrompt = "Je bent een expert in het vereenvoudigen van tekst naar B1-taalniveau. B1-taalniveau betekent dat je korte zinnen gebruikt, eenvoudige woorden kiest, en complexe concepten uitlegt in begrijpelijke taal. Vermijd jargon, lange zinnen en moeilijke woorden. Behoud de betekenis van de originele tekst maar maak deze toegankelijk voor mensen met beperkte taalvaardigheid.";
-      
-      // Voeg instructies toe over woorden die niet vereenvoudigd moeten worden
-      if (preservedWords.length > 0) {
-        systemPrompt += ` De volgende woorden/termen mag je NIET vereenvoudigen of veranderen, gebruik ze exact zoals ze zijn: ${preservedWords.join(', ')}.`;
-      }
-      
+      // Maak een payload voor de backend API
       const payload = {
         model: selectedModels[0],
-        model_item: model_item,
-        messages: [
-          {
-            role: "system",
-            content: systemPrompt
-          },
-          {
-            role: "user",
-            content: `Vertaal de volgende tekst naar B1-taalniveau: "${inputText}"`
-          }
-        ],
-        temperature: 0.3,
-        metadata: {
-          user_id: $user?.id || "anonymous",
-          session_id: "b1-taalniveau-tool"
-        }
+        text: inputText,
+        preserved_words: preservedWords
       };
 
-      console.log("Request payload:", payload);
-
       // Gebruik WEBUI_BASE_URL voor de API-aanroep
-      const response = await fetch(`${WEBUI_BASE_URL}/api/chat/completions`, {
+      const response = await fetch(`${WEBUI_BASE_URL}/api/b1/translate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` // Add the authentication token
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify(payload)
       });

@@ -1035,6 +1035,62 @@ async def chat_completion(
 generate_chat_completions = chat_completion
 generate_chat_completion = chat_completion
 
+@app.post("/api/b1/translate")
+async def translate_to_b1(
+    request: Request,
+    form_data: dict,
+    user=Depends(get_verified_user),
+):
+    """
+    Endpoint voor het vertalen van tekst naar B1-taalniveau.
+    """
+    # Haal de benodigde gegevens uit de request
+    input_text = form_data.get("text", "")
+    preserved_words = form_data.get("preserved_words", [])
+    model_id = form_data.get("model", None)
+    
+    if not input_text:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Geen tekst opgegeven om te vertalen",
+        )
+    
+    # Maak de system prompt voor B1-taalniveau
+    system_prompt = "Je bent een expert in het vereenvoudigen van tekst naar B1-taalniveau. B1-taalniveau betekent dat je korte zinnen gebruikt, eenvoudige woorden kiest, en complexe concepten uitlegt in begrijpelijke taal. Vermijd jargon, lange zinnen en moeilijke woorden. Behoud de betekenis van de originele tekst maar maak deze toegankelijk voor mensen met beperkte taalvaardigheid."
+    
+    # Voeg instructies toe over woorden die niet vereenvoudigd moeten worden
+    if preserved_words:
+        system_prompt += f" De volgende woorden/termen mag je NIET vereenvoudigen of veranderen, gebruik ze exact zoals ze zijn: {', '.join(preserved_words)}."
+    
+    # Bereid de payload voor die chat_completion verwacht
+    chat_request = {
+        "model": model_id,
+        "messages": [
+            {
+                "role": "system",
+                "content": system_prompt
+            },
+            {
+                "role": "user",
+                "content": f"Vertaal de volgende tekst naar B1-taalniveau: \"{input_text}\""
+            }
+        ],
+        "temperature": 0.3
+    }
+    
+    try:
+        # Gebruik de bestaande chat_completion functie
+        # We laten chat_completion alle validatie en verwerking doen
+        response = await chat_completion(request, form_data=chat_request, user=user)
+        
+        # Geef de response direct terug
+        return response
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
 
 @app.post("/api/chat/completed")
 async def chat_completed(
