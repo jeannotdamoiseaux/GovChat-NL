@@ -1495,8 +1495,24 @@ async def translate_to_b1(
         # Sorteer de resultaten op paragraaf index om de originele volgorde te behouden
         all_selections.sort(key=lambda x: x["paragraph_index"])
         
-        # Combineer alle geselecteerde paragrafen tot één tekst
+        # In the select_best_version function or before combining the results
+        import re
+
+        # Extract content between delimiters
+        def extract_content(text):
+            pattern = r'<<<(.*?)>>>'
+            match = re.search(pattern, text, re.DOTALL)
+            if match:
+                return match.group(1).strip()
+            return text  # Return original if no delimiters found
+
+        # Then when processing the results:
+        for result in all_selections:
+            result["translated"] = extract_content(result["translated"])
+
+        # Now combine without delimiters
         combined_text = "\n\n".join([result["translated"] for result in all_selections])
+
         
         # Bereid de uiteindelijke response voor
         final_response = {
