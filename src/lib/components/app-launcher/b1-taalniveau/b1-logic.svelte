@@ -47,7 +47,7 @@
 
     // Controleer of er een model is geselecteerd
     if (!selectedModels[0]) {
-      error = "Selecteer eerst een model in de navigatiebalk rechtsboven";
+      error = "Selecteer eerst een model in de navigatiebalk linksboven";
       return;
     }
 

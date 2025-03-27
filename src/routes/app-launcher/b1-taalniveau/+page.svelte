@@ -15,7 +15,7 @@
   }
 </script>
 
-<div class="flex h-screen bg-gray-100 dark:bg-gray-900">
+<div class="flex h-screen bg-gray-100 dark:bg-gray-900 text-white">
   <!-- Sidebar -->
   <Sidebar />
 
@@ -25,7 +25,7 @@
     <NavBar bind:selectedModels />
 
     <!-- Inhoud van de B1-Taalniveau-app -->
-    <main class="flex-1 p-6 overflow-y-auto">
+    <main class="flex-1 p-6 overflow-y-auto text-white">
       <B1Tool {selectedModels} />
     </main>
   </div>
