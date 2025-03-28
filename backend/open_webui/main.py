@@ -1043,7 +1043,7 @@ async def translate_to_b1(
     user=Depends(get_verified_user),
 ):
     """
-    Endpoint voor het vertalen van tekst naar B1-taalniveau.
+    Endpoint voor het vertalen van tekst naar B1- of B2-taalniveau.
     Splitst grote teksten in paragrafen, genereert drie versies per paragraaf gelijktijdig
     met verschillende temperatuurwaarden en selecteert de beste versie voor elke paragraaf.
     Alle generaties en vergelijkingen worden parallel uitgevoerd.
@@ -1052,6 +1052,7 @@ async def translate_to_b1(
     input_text = form_data.get("text", "")
     preserved_words = form_data.get("preserved_words", [])
     model_id = form_data.get("model", None)
+    language_level = form_data.get("language_level", "B1")  # Standaard B1 als niet gespecificeerd
     
     if not input_text:
         raise HTTPException(
@@ -1059,26 +1060,42 @@ async def translate_to_b1(
             detail="Geen tekst opgegeven om te vertalen",
         )
     
-    # Maak de system prompt voor B1-taalniveau
-    system_prompt = """Je taak is om de volgende tekst te analyseren en te herschrijven naar een versie die voldoet aan het B1-taalniveau.
-    Hierbij is het belangrijk om de informatie zo letterlijk mogelijk over te brengen en de structuur zoveel mogelijk te behouden, zonder onnodige weglatingen.
-    Het B1-niveau kenmerkt zich door duidelijk en eenvoudig taalgebruik, geschikt voor een breed publiek met basisvaardigheden in de taal.
-    Hier zijn enkele richtlijnen om je te helpen bij deze taak:
-    - Gebruik korte zinnen en vermijd lange, complexe zinsconstructies.
-    - Vervang moeilijke woorden door meer gangbare alternatieven.
-    - Leg technische termen en (ambtelijk) jargon uit in eenvoudige bewoordingen.
-    - Gebruik actieve zinsconstructies waar mogelijk.
-    - Vermijd passieve zinnen en ingewikkelde grammaticale constructies.
-    - Gebruik concrete voorbeelden om abstracte concepten te verduidelijken.
+    # Maak de system prompt voor het gekozen taalniveau
+    if language_level == "B1":
+        system_prompt = """Je taak is om onderstaande tekst zorgvuldig te analyseren en vervolgens te herschrijven naar helder, begrijpelijk Nederlands op taalniveau B1. Hierbij is het essentieel dat je de informatie zo letterlijk en nauwkeurig mogelijk weergeeft en de structuur en betekenis van de originele tekst behoudt, zonder belangrijke informatie weg te laten.
 
-    Hier zijn enkele voorbeelden van woorden op C1-niveau en hun eenvoudigere B1-equivalenten:
-    - Betreffende -> Over
-    - Creëren -> Ontwerpen, vormen, vormgeven, maken
-    - Prioriteit -> Voorrang, voorkeur
-    - Relevant -> Belangrijk
-    - Verstrekken -> Geven
-    Zorg ervoor dat de hoofdboodschap van de tekst behouden blijft en dat de vereenvoudigde versie nog steeds een accurate weergave is van de oorspronkelijke inhoud.
-    Plaats de verbeterde paragraaf tussen <<< en >>> tekens. Als de tekst te kort is om te verbeteren neem je de tekst een-op-een over en plaats deze tussen de genoemende tekens, bijv. <<< Artikel 3.2 >>>."""
+Houd je hierbij aan onderstaande richtlijnen:
+-Gebruik korte en actieve zinnen.
+-Vervang moeilijke woorden door eenvoudige, dagelijkse alternatieven.
+-Vermijd technische termen en ambtelijke taal; als dit niet kan, leg deze dan uit met eenvoudige woorden of verduidelijk ze met een kort voorbeeld.
+-Vermijd passieve en ingewikkelde grammaticale structuren.
+-Maak abstracte begrippen concreet met duidelijke voorbeelden.
+
+Gebruik als hulpmiddel onderstaande voorbeelden van woorden en hun eenvoudiger B1-alternatieven:
+-Betreffende → Over
+-Creëren → Ontwerpen, maken, vormen
+-Prioriteit → Voorrang, voorkeur
+-Relevant → Belangrijk
+-Verstrekken → Geven
+
+Controleer tot slot grondig of de vereenvoudigde versie een accurate weergave is van de oorspronkelijke inhoud.
+
+Plaats jouw definitieve herschreven tekst altijd tussen <<< en >>> tekens. Als blijkt dat de tekst al volledig aan B1-niveau voldoet en niet verbeterd kan worden, neem deze dan letterlijk tussen <<< en >>> tekens over (bijvoorbeeld <<< Artikel 3.2 >>>)."""
+    else:  # B2 taalniveau
+        system_prompt = """Je taak is om onderstaande tekst zorgvuldig te analyseren en vervolgens te herschrijven naar helder, begrijpelijk Duits op taalniveau B2. Hierbij is het essentieel dat je de informatie zo letterlijk en nauwkeurig mogelijk weergeeft en de structuur en betekenis van de originele tekst behoudt, zonder belangrijke informatie weg te laten.
+
+Houd je hierbij aan onderstaande richtlijnen voor B2-niveau:
+-Gebruik duidelijke zinnen van gemiddelde lengte.
+-Complexe zinnen mogen, maar zorg dat ze logisch opgebouwd zijn.
+-Vaktermen mogen gebruikt worden als ze uitgelegd worden.
+-Gebruik een mix van actieve en passieve zinnen waar passend.
+-Abstracte begrippen zijn toegestaan maar moeten duidelijk zijn uit de context.
+
+B2-niveau is iets complexer dan B1 en geschikt voor mensen met een redelijk goede taalvaardigheid. Je mag dus iets complexere woorden en zinsstructuren gebruiken dan bij B1, maar de tekst moet nog steeds toegankelijk blijven.
+
+Controleer tot slot grondig of de herschreven versie een accurate weergave is van de oorspronkelijke inhoud.
+
+Plaats jouw definitieve herschreven tekst altijd tussen <<< en >>> tekens. Als blijkt dat de tekst al volledig aan B2-niveau voldoet en niet verbeterd kan worden, neem deze dan letterlijk tussen <<< en >>> tekens over."""
 
     # Voeg instructies toe over woorden die niet vereenvoudigd moeten worden
     if preserved_words:
@@ -1087,6 +1104,7 @@ async def translate_to_b1(
     # Definieer verschillende temperatuurwaarden voor variatie
     temperatures = [0.5, 0.75, 1]
     
+    # Rest van de functie blijft hetzelfde...
     # Functie om tekst op te splitsen in paragrafen
     def split_into_paragraphs(text, max_tokens=1500):
         # Eerst splitsen op dubbele newlines (paragrafen)
@@ -1152,7 +1170,7 @@ async def translate_to_b1(
                 },
                 {
                     "role": "user",
-                    "content": f"Vertaal de volgende tekst naar B1-taalniveau. Behoud de structuur en opmaak zoals alinea's en opsommingen:\n\n{paragraph}"
+                    "content": f"Vertaal de volgende tekst naar {language_level}-taalniveau. Behoud de structuur en opmaak zoals alinea's en opsommingen:\n\n{paragraph}"
                 }
             ],
             "temperature": temperature
@@ -1176,31 +1194,14 @@ async def translate_to_b1(
             "model": model_id,
             "messages": [
                 {
-
                     "role": "system",
-                    "content": "Je taak is om de volgende tekst te analyseren en te herschrijven naar een versie die voldoet aan het B1-taalniveau."
-                    "Hierbij is het belangrijk om de informatie zo letterlijk mogelijk over te brengen en de structuur zoveel mogelijk te behouden, zonder onnodige weglatingen."
-                    "Het B1-niveau kenmerkt zich door duidelijk en eenvoudig taalgebruik, geschikt voor een breed publiek met basisvaardigheden in de taal."
-                    "Hier zijn enkele richtlijnen om je te helpen bij deze taak: "
-                    "- Gebruik korte zinnen en vermijd lange, complexe zinsconstructies. "
-                    "- Vervang moeilijke woorden door meer gangbare alternatieven. "
-                    "- Leg technische termen en (ambtelijk) jargon uit in eenvoudige bewoordingen. "
-                    "- Gebruik actieve zinsconstructies waar mogelijk. "
-                    "- Vermijd passieve zinnen en ingewikkelde grammaticale constructies. "
-                    "- Gebruik concrete voorbeelden om abstracte concepten te verduidelijken. "
-                    "Hier zijn enkele voorbeelden van woorden op C1-niveau en hun eenvoudigere B1-equivalenten: "
-                    "- Betreffende -> Over "
-                    "- Creëren -> Ontwerpen, vormen, vormgeven, maken "
-                    "- Prioriteit -> Voorrang, voorkeur "
-                    "- Relevant -> Belangrijk "
-                    "- Verstrekken -> Geven "
-                    "Zorg ervoor dat de inhoud en nuances van de oorspronkelijke tekst behouden blijven en dat de vereenvoudigde versie nog steeds een accurate weergave is van de oorspronkelijke inhoud. "
-                    "Je ontvangt de originele paragraaf, samen met enkele varianten van deze tekst in eenvoudigere taal (b1). Het is jouw taak om tot een definitieve B1-versie te komen."
-                    "Plaats de verbeterde paragraaf tussen <<< en >>> tekens. Als de tekst te kort is om te verbeteren neem je de tekst een-op-een over en plaats deze tussen de genoemende tekens, bijv. <<< Artikel 3.2 >>>."
+                    "content": f'''Je taak is om onderstaande tekst zorgvuldig te analyseren en vervolgens te herschrijven naar helder, begrijpelijk Nederlands op taalniveau {language_level}. Hierbij is het essentieel dat je de informatie zo letterlijk en nauwkeurig mogelijk weergeeft en de structuur en betekenis van de originele tekst behoudt, zonder belangrijke informatie weg te laten.
+
+Je ontvangt de originele paragraaf, samen met enkele varianten van deze tekst in eenvoudigere taal ({language_level}). Het is jouw taak om tot een definitieve {language_level}-versie te komen.'''
                 },
                 {
                     "role": "user",
-                    "content": f"Hier is de originele paragraaf:\n\"{paragraph}\"\n\nHier zijn drie versies vertaald naar B1-niveau:\n\nVersie 1 (temperature {versions[0]['temperature']}):\n{versions[0]['text']}\n\nVersie 2 (temperature {versions[1]['temperature']}):\n{versions[1]['text']}\n\nVersie 3 (temperature {versions[2]['temperature']}):\n{versions[2]['text']}\n\nSelecteer de beste versie en geef alleen het nummer (1, 2 of 3) van de beste versie terug, zonder uitleg."
+                    "content": f"Hier is de originele paragraaf:\n\"{paragraph}\"\n\nHier zijn drie versies vertaald naar {language_level}-niveau:\n\nVersie 1 (temperature {versions[0]['temperature']}):\n{versions[0]['text']}\n\nVersie 2 (temperature {versions[1]['temperature']}):\n{versions[1]['text']}\n\nVersie 3 (temperature {versions[2]['temperature']}):\n{versions[2]['text']}\n\nSelecteer de beste versie en geef alleen het nummer (1, 2 of 3) van de beste versie terug, zonder uitleg."
                 }
             ],
             "temperature": 0.1  # Lage temperatuur voor consistente beoordeling
