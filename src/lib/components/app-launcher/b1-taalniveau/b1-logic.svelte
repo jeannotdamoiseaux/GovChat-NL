@@ -23,7 +23,7 @@
   
   // Standaard uitgesloten woorden - deze moeten overeenkomen met de lijst in de backend
   const defaultPreservedWords = [
-    "COVID-19", 
+    "pancreaskopcarcinoom", 
     "DigiD", 
     "MijnOverheid", 
     "BSN", 
