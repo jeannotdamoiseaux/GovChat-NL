@@ -3,30 +3,15 @@ import re
 from typing import List, Dict, Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel
 
 from open_webui.utils.auth import get_verified_user
 from open_webui.utils.chat import generate_chat_completion as chat_completion
 
 router = APIRouter()
 
-
-
-@router.post("")
-async def translate_to_b1(
-    request: Request,
-    form_data: dict,
-    user=Depends(get_verified_user),
-):
-    """
-    Endpoint voor het vertalen van tekst naar B1- of B2-taalniveau.
-    Splitst grote teksten in paragrafen, genereert drie versies per paragraaf gelijktijdig
-    met verschillende temperatuurwaarden en selecteert de beste versie voor elke paragraaf.
-    Alle generaties en vergelijkingen worden parallel uitgevoerd.
-    """
-    # Standaard uitgesloten woorden - deze worden altijd behouden
-    DEFAULT_PRESERVED_WORDS = [
-        "COVID-19", 
+# Verschillende woordenlijsten
+WORD_LISTS = {
+    "algemeen": [
         "DigiD", 
         "MijnOverheid", 
         "BSN", 
@@ -42,16 +27,65 @@ async def translate_to_b1(
         "DUO", 
         "CAK", 
         "CJIB"
+    ],
+    "medisch": [
+        "pancreaskopcarcinoom",
+        "kanker-19",
+        "diabetes",
+        "hypertensie",
+        "cholesterol",
+        "antibiotica",
+        "vaccin",
+        "immuniteit",
+        "diagnose",
+        "symptomen",
+        "medicatie"
     ]
-    
+}
+
+# Standaard uitgesloten woorden - deze worden standaard behouden
+DEFAULT_PRESERVED_WORDS = WORD_LISTS["algemeen"]
+
+@router.get("/word-lists")
+async def get_word_lists():
+    """
+    Endpoint om alle beschikbare woordenlijsten op te halen.
+    Deze worden gebruikt in de frontend.
+    """
+    return {"word_lists": WORD_LISTS}
+
+@router.get("/default-words")
+async def get_default_preserved_words():
+    """
+    Endpoint om de standaard uitgesloten woorden op te halen.
+    Deze worden gebruikt in de frontend.
+    """
+    return {"default_preserved_words": DEFAULT_PRESERVED_WORDS}
+
+
+@router.post("")
+async def translate_to_b1(
+    request: Request,
+    form_data: dict,
+    user=Depends(get_verified_user),
+):
+    """
+    Endpoint voor het vertalen van tekst naar B1- of B2-taalniveau.
+    Splitst grote teksten in paragrafen, genereert drie versies per paragraaf gelijktijdig
+    met verschillende temperatuurwaarden en selecteert de beste versie voor elke paragraaf.
+    Alle generaties en vergelijkingen worden parallel uitgevoerd.
+    """
     # Haal de benodigde gegevens uit de request
     input_text = form_data.get("text", "")
-    user_preserved_words = form_data.get("preserved_words", [])
+    preserved_words = form_data.get("preserved_words", [])  # Dit bevat nu zowel toegevoegde als niet-verwijderde standaardwoorden
+    excluded_default_words = form_data.get("excluded_default_words", [])  # Woorden uit de standaardlijst die de gebruiker wil uitsluiten
     model_id = form_data.get("model", None)
     language_level = form_data.get("language_level", "B1")  # Standaard B1 als niet gespecificeerd
     
-    # Combineer de standaard uitgesloten woorden met de door de gebruiker opgegeven woorden
-    preserved_words = list(set(DEFAULT_PRESERVED_WORDS + user_preserved_words))
+    # Voeg standaard woorden toe die niet zijn uitgesloten door de gebruiker
+    for word in DEFAULT_PRESERVED_WORDS:
+        if word not in excluded_default_words and word not in preserved_words:
+            preserved_words.append(word)
     
     if not input_text:
         raise HTTPException(

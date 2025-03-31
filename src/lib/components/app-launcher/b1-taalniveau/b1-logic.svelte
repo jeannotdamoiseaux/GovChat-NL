@@ -4,6 +4,7 @@
   import { WEBUI_BASE_URL } from '$lib/constants';
   import { fade } from 'svelte/transition';
   import { toast } from 'svelte-sonner';
+  import { getModels } from '$lib/apis';
   import { updateUserSettings } from '$lib/apis/users';
   
   const i18n = getContext('i18n');
@@ -15,40 +16,20 @@
   let outputText = '';
   let isLoading = false;
   let error = null;
-  let preservedWords = []; 
+  let preservedWords = []; // Door gebruiker toegevoegde woorden
+  let wordLists = {}; // Woordenlijsten van de backend
+  let excludedDefaultWords = []; // Standaard woorden die de gebruiker heeft uitgesloten
   let newPreservedWord = '';
   let models = [];
   let showOutput = false;
   let languageLevel = 'B1';
+  let selectedWordList = 'algemeen'; // Standaard geselecteerde woordenlijst
   
-  // Standaard uitgesloten woorden - deze moeten overeenkomen met de lijst in de backend
-  const defaultPreservedWords = [
-    "pancreaskopcarcinoom", 
-    "DigiD", 
-    "MijnOverheid", 
-    "BSN", 
-    "Burgerservicenummer",
-    "WOZ", 
-    "IBAN", 
-    "BIC", 
-    "KvK", 
-    "BTW", 
-    "BRP", 
-    "UWV", 
-    "SVB", 
-    "DUO", 
-    "CAK", 
-    "CJIB"
-  ];
-  
-  // Nieuwe state variabele om bij te houden of de standaard lijst gebruikt moet worden
-  let useDefaultPreservedWords = true;
-  
-  // Functie om modellen op te halen
-  async function fetchModels() {
+  // Functie om de beschikbare woordenlijsten op te halen
+  async function fetchWordLists() {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`${WEBUI_BASE_URL}/api/models`, {
+      const response = await fetch(`${WEBUI_BASE_URL}/api/b1/translate/word-lists`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -59,57 +40,144 @@
       }
       
       const data = await response.json();
-      modelsStore.set(data.data);
-      return data.data;
+      wordLists = data.word_lists;
     } catch (error) {
-      console.error("Error fetching models:", error);
-      toast.error(`Fout bij het ophalen van modellen: ${error.message || "Onbekende fout"}`);
-      throw error;
+      console.error("Error fetching word lists:", error);
+      // Fallback woordenlijsten als de API niet beschikbaar is
+      wordLists = {
+        "algemeen": [
+          "DigiD", 
+          "MijnOverheid", 
+          "BSN", 
+          "Burgerservicenummer",
+          "WOZ", 
+          "IBAN", 
+          "BIC", 
+          "KvK", 
+          "BTW", 
+          "BRP", 
+          "UWV", 
+          "SVB", 
+          "DUO", 
+          "CAK", 
+          "CJIB"
+        ],
+        "medisch": [
+          "pancreaskopcarcinoom",
+          "COVID-19",
+          "diabetes",
+          "hypertensie",
+          "cholesterol",
+          "antibiotica",
+          "vaccin",
+          "immuniteit",
+          "diagnose",
+          "symptomen",
+          "medicatie"
+        ]
+      };
     }
   }
   
-  // Functie om het geselecteerde model op te slaan in gebruikersinstellingen
-  const saveDefaultModel = async () => {
-    const hasEmptyModel = selectedModels.filter((it) => it === '');
-    if (hasEmptyModel.length) {
-      toast.error($i18n ? $i18n.t('Choose a model before saving...') : 'Kies eerst een model...');
-      return;
-    }
-    
-    // Sla het model op in de b1TranslatorModel property van de settings
-    settings.set({ ...$settings, b1TranslatorModel: selectedModels[0] });
-    await updateUserSettings(localStorage.token, { ui: $settings });
-
-    toast.success($i18n ? $i18n.t('Default model updated') : 'Standaard model bijgewerkt');
-  };
-  
-  // Functie om het geselecteerde model te herstellen uit gebruikersinstellingen
-  function restoreSelectedModel() {
-    // Als er een opgeslagen model is in de settings en het bestaat in de beschikbare modellen
-    if ($settings?.b1TranslatorModel && models.some(m => m.id === $settings.b1TranslatorModel)) {
-      selectedModels = [$settings.b1TranslatorModel];
-      return true;
-    } 
-    // Als er geen opgeslagen model is of het bestaat niet meer, gebruik het eerste beschikbare model
-    else if (models.length > 0) {
-      selectedModels = [models[0].id];
-      return true;
-    }
-    return false;
+  // Functie om de geselecteerde woordenlijst te wijzigen
+  function changeWordList(listName) {
+    selectedWordList = listName;
+    // Reset de uitgesloten woorden bij het wisselen van lijst
+    excludedDefaultWords = [];
   }
   
   // Gebruik de modelsStore om modellen op te halen
   const unsubscribe = modelsStore.subscribe(value => {
     models = value;
-    
-    // Als er modellen zijn, probeer het geselecteerde model te herstellen
-    if (models.length > 0) {
-      restoreSelectedModel();
-    }
   });
 
+  // Functie om modellen op te halen en bij te werken
+  async function refreshModels() {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      
+      // Haal modellen op via de API
+      const updatedModels = await getModels(token, $settings?.directConnections ?? null);
+      
+      // Update de modelsStore
+      modelsStore.set(updatedModels);
+      
+      // Controleer of de geselecteerde modellen nog bestaan
+      if (selectedModels.length > 0) {
+        selectedModels = selectedModels.map(modelId => 
+          updatedModels.map(m => m.id).includes(modelId) ? modelId : ''
+        );
+        
+        // Als er geen geldig model is, selecteer het eerste beschikbare model
+        if (selectedModels.every(m => m === '') && updatedModels.length > 0) {
+          selectedModels = [updatedModels[0].id];
+        }
+      }
+    } catch (error) {
+      console.error("Error refreshing models:", error);
+    }
+  }
+
+  // Functie om geselecteerde modellen op te slaan in localStorage
+  function saveSelectedModels() {
+    if (selectedModels.length === 0 || (selectedModels.length === 1 && selectedModels[0] === '')) {
+      return;
+    }
+    localStorage.setItem('b1_taalniveau_selected_models', JSON.stringify(selectedModels));
+  }
+
+  // Functie om geselecteerde modellen te laden uit localStorage
+  function loadSelectedModels() {
+    try {
+      const savedModels = localStorage.getItem('b1_taalniveau_selected_models');
+      if (savedModels) {
+        const parsedModels = JSON.parse(savedModels);
+        if (Array.isArray(parsedModels) && parsedModels.length > 0) {
+          selectedModels = parsedModels;
+        }
+      }
+    } catch (error) {
+      console.error("Error loading saved models:", error);
+    }
+  }
+
+  // Functie om geselecteerde modellen op te slaan in gebruikersinstellingen
+  async function saveDefaultModel() {
+    const hasEmptyModel = selectedModels.filter(it => it === '');
+    if (hasEmptyModel.length) {
+      toast.error($i18n.t('Kies een model voordat je het opslaat...'));
+      return;
+    }
+    
+    try {
+      // Update lokale instellingen
+      settings.set({ ...$settings, models: selectedModels });
+      
+      // Update gebruikersinstellingen op de server
+      await updateUserSettings(localStorage.token, { ui: $settings });
+      
+      toast.success($i18n.t('Standaard model bijgewerkt'));
+    } catch (error) {
+      console.error("Error saving default model:", error);
+      toast.error($i18n.t('Fout bij opslaan van standaard model'));
+    }
+  }
+
   onMount(async () => {
-    await fetchModels();
+    // Haal de beschikbare woordenlijsten op
+    await fetchWordLists();
+    
+    // Laad opgeslagen modellen
+    loadSelectedModels();
+    
+    // Ververs de modellen
+    await refreshModels();
+    
+    // Sla geselecteerde modellen op bij wijzigingen
+    $: if (selectedModels) {
+      saveSelectedModels();
+    }
     
     // Cleanup subscription when component is destroyed
     return () => {
@@ -120,14 +188,32 @@
   // Functie om een woord toe te voegen aan de lijst van te behouden woorden
   function addPreservedWord() {
     if (newPreservedWord.trim()) {
-      preservedWords = [...preservedWords, newPreservedWord.trim()];
+      // Controleer of het woord al in de standaardlijst staat
+      if (wordLists[selectedWordList] && wordLists[selectedWordList].includes(newPreservedWord.trim())) {
+        // Als het woord in de uitgesloten standaardwoorden staat, verwijder het daaruit
+        excludedDefaultWords = excludedDefaultWords.filter(word => word !== newPreservedWord.trim());
+        toast.success(`"${newPreservedWord.trim()}" wordt weer behouden`);
+      } else {
+        // Anders voeg het toe aan de gebruikerslijst
+        preservedWords = [...preservedWords, newPreservedWord.trim()];
+      }
       newPreservedWord = '';
     }
   }
 
-  // Functie om een woord te verwijderen uit de lijst
-  function removePreservedWord(index) {
-    preservedWords = preservedWords.filter((_, i) => i !== index);
+  // Functie om een woord te verwijderen uit de lijst van door gebruiker toegevoegde woorden
+  function removePreservedWord(word) {
+    preservedWords = preservedWords.filter(w => w !== word);
+  }
+  
+  // Functie om een standaard woord uit te sluiten
+  function excludeDefaultWord(word) {
+    excludedDefaultWords = [...excludedDefaultWords, word];
+  }
+  
+  // Functie om een uitgesloten standaard woord weer toe te voegen
+  function includeDefaultWord(word) {
+    excludedDefaultWords = excludedDefaultWords.filter(w => w !== word);
   }
 
   // Functie om te schakelen tussen B1 en B2 taalniveau
@@ -161,8 +247,9 @@
         model: selectedModels[0],
         text: inputText,
         preserved_words: preservedWords,
-        language_level: languageLevel,
-        use_default_preserved_words: useDefaultPreservedWords // Geef door of de standaard lijst gebruikt moet worden
+        excluded_default_words: excludedDefaultWords,
+        selected_word_list: selectedWordList,
+        language_level: languageLevel
       };
 
       // Gebruik WEBUI_BASE_URL voor de API-aanroep
@@ -201,7 +288,7 @@
 </script>
 
 <!-- Voeg een container toe met margin-top om het component naar beneden te verplaatsen -->
-<div class="max-w-7xl mx-auto mt-20">
+<div class="max-w-7xl mx-auto mt-10">
   <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
     <div class="flex justify-between items-center mb-6">
       <h1 class="text-2xl font-bold text-gray-800 dark:text-white">
@@ -233,54 +320,58 @@
     <!-- Instructie voor model selectie -->
     <div class="mb-4 text-sm text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 p-3 rounded">
       {#if selectedModels[0]}
-        <div class="font-medium">Geselecteerd model: <span class="text-blue-600 dark:text-blue-400">{models.find(m => m.id === selectedModels[0])?.name || selectedModels[0]}</span></div>
-        <!-- Voeg een knop toe om het model op te slaan als standaard -->
-        <button 
-          on:click={saveDefaultModel}
-          class="text-xs text-blue-600 dark:text-blue-400 hover:underline mt-1"
-        >
-          {$i18n ? $i18n.t('Set as default') : 'Instellen als standaard'}
-        </button>
+        <div class="font-medium">
+          Geselecteerd model: <span class="text-blue-600 dark:text-blue-400">{models.find(m => m.id === selectedModels[0])?.name || selectedModels[0]}</span>
+          <button 
+            on:click={saveDefaultModel}
+            class="ml-2 text-xs text-blue-600 dark:text-blue-400 hover:underline"
+          >
+            Stel in als standaard
+          </button>
+          <button 
+            on:click={refreshModels}
+            class="ml-2 text-xs text-blue-600 dark:text-blue-400 hover:underline"
+            title="Ververs modellen"
+          >
+            ↻ Ververs
+          </button>
+        </div>
       {:else}
-        <div class="font-medium text-yellow-600">Geen model geselecteerd. Selecteer eerst een model in de navigatiebalk rechtsboven.</div>
+        <div class="font-medium text-yellow-600">
+          Geen model geselecteerd. Selecteer eerst een model in de navigatiebalk rechtsboven.
+          <button 
+            on:click={refreshModels}
+            class="ml-2 text-xs text-blue-600 dark:text-blue-400 hover:underline"
+            title="Ververs modellen"
+          >
+            ↻ Ververs modellen
+          </button>
+        </div>
       {/if}
     </div>
     
     <!-- Sectie voor woorden die behouden moeten blijven -->
     <div class="mb-4">
-      <div class="flex justify-between items-center mb-2">
-        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
-          Woorden die niet vereenvoudigd moeten worden
-        </label>
-      </div>
+      <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+        Woorden die niet vereenvoudigd moeten worden
+      </label>
       
-      <!-- Optie om standaard uitgesloten woorden te gebruiken -->
-      <div class="mb-3 flex items-center">
-        <input 
-          type="checkbox" 
-          id="useDefaultWords" 
-          bind:checked={useDefaultPreservedWords}
-          class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-        >
-        <label for="useDefaultWords" class="ml-2 block text-sm text-gray-700 dark:text-gray-300">
-          Gebruik standaard uitgesloten woorden
-        </label>
-      </div>
-      
-      <!-- Toon standaard uitgesloten woorden als de optie is ingeschakeld -->
-      {#if useDefaultPreservedWords}
-        <div class="mb-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-md border border-gray-200 dark:border-gray-600">
-          <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Standaard uitgesloten woorden:</h3>
-          <div class="flex flex-wrap gap-2">
-            {#each defaultPreservedWords as word}
-              <div class="bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 px-2 py-1 rounded-md text-xs">
-                {word}
-              </div>
+      <!-- Selector voor woordenlijst -->
+      {#if Object.keys(wordLists).length > 0}
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Kies een woordenlijst:
+          </label>
+          <div class="flex space-x-4">
+            {#each Object.keys(wordLists) as listName}
+              <button
+                on:click={() => changeWordList(listName)}
+                class="px-4 py-2 rounded-md {selectedWordList === listName ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200'}"
+              >
+                {listName === 'algemeen' ? 'Algemene termen' : 'Medische termen'}
+              </button>
             {/each}
           </div>
-          <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
-            Deze woorden worden automatisch behouden in de vertaling.
-          </p>
         </div>
       {/if}
       
@@ -288,7 +379,7 @@
         <input
           type="text"
           bind:value={newPreservedWord}
-          placeholder="Voer een extra woord of term in"
+          placeholder="Voer een woord of term in"
           class="flex-grow px-3 py-2 border border-gray-300 rounded-l-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
           on:keydown={(e) => e.key === 'Enter' && addPreservedWord()}
         />
@@ -300,23 +391,73 @@
         </button>
       </div>
       
-      {#if preservedWords.length > 0}
-        <div class="flex flex-wrap gap-2 mt-2">
-          {#each preservedWords as word, index}
-            <div class="bg-blue-100 text-blue-800 px-2 py-1 rounded-md flex items-center">
-              <span>{word}</span>
-              <button 
-                on:click={() => removePreservedWord(index)}
-                class="ml-2 text-blue-600 hover:text-blue-800 focus:outline-none"
-              >
-                ×
-              </button>
-            </div>
-          {/each}
+      <!-- Standaard uitgesloten woorden -->
+      {#if wordLists[selectedWordList] && wordLists[selectedWordList].length > 0}
+        <div class="mt-4">
+          <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            {selectedWordList === 'algemeen' ? 'Algemene termen' : 'Medische termen'}:
+          </h3>
+          <div class="flex flex-wrap gap-2 mt-2">
+            {#each wordLists[selectedWordList] as word}
+              {#if !excludedDefaultWords.includes(word)}
+                <div class="bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200 px-2 py-1 rounded-md flex items-center">
+                  <span>{word}</span>
+                  <button 
+                    on:click={() => excludeDefaultWord(word)}
+                    class="ml-2 text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 focus:outline-none"
+                    title="Verwijder uit uitgesloten woorden"
+                  >
+                    ×
+                  </button>
+                </div>
+              {/if}
+            {/each}
+          </div>
         </div>
-      {:else}
-        <p class="text-sm text-gray-500 dark:text-gray-400">
-          Geen extra woorden toegevoegd. Je kunt hier aanvullende woorden toevoegen die niet vereenvoudigd moeten worden.
+      {/if}
+      
+      <!-- Uitgesloten standaard woorden -->
+      {#if excludedDefaultWords.length > 0}
+        <div class="mt-4">
+          <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Uitgesloten woorden:</h3>
+          <div class="flex flex-wrap gap-2 mt-2">
+            {#each excludedDefaultWords as word}
+              <div class="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200 px-2 py-1 rounded-md flex items-center">
+                <span>{word}</span>
+                <button 
+                  on:click={() => includeDefaultWord(word)}
+                  class="ml-2 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200 focus:outline-none"
+                  title="Voeg weer toe aan uitgesloten woorden"
+                >
+                  ↺
+                </button>
+              </div>
+            {/each}
+          </div>
+        </div>
+      {/if}
+      
+      <!-- Door gebruiker toegevoegde woorden -->
+      {#if preservedWords.length > 0}
+        <div class="mt-4">
+          <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Door jou toegevoegde woorden:</h3>
+          <div class="flex flex-wrap gap-2 mt-2">
+            {#each preservedWords as word}
+              <div class="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 px-2 py-1 rounded-md flex items-center">
+                <span>{word}</span>
+                <button 
+                  on:click={() => removePreservedWord(word)}
+                  class="ml-2 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 focus:outline-none"
+                >
+                  ×
+                </button>
+              </div>
+            {/each}
+          </div>
+        </div>
+      {:else if excludedDefaultWords.length === 0 && (!wordLists[selectedWordList] || wordLists[selectedWordList].length === 0)}
+        <p class="text-sm text-gray-500 dark:text-gray-400 mt-2">
+          Je kunt hier woorden toevoegen die niet vereenvoudigd moeten worden in de vertaling.
         </p>
       {/if}
     </div>
