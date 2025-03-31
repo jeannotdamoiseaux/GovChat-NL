@@ -1048,11 +1048,34 @@ async def translate_to_b1(
     met verschillende temperatuurwaarden en selecteert de beste versie voor elke paragraaf.
     Alle generaties en vergelijkingen worden parallel uitgevoerd.
     """
+    # Standaard uitgesloten woorden - deze worden altijd behouden
+    DEFAULT_PRESERVED_WORDS = [
+        "COVID-19", 
+        "DigiD", 
+        "MijnOverheid", 
+        "BSN", 
+        "Burgerservicenummer",
+        "WOZ", 
+        "IBAN", 
+        "BIC", 
+        "KvK", 
+        "BTW", 
+        "BRP", 
+        "UWV", 
+        "SVB", 
+        "DUO", 
+        "CAK", 
+        "CJIB"
+    ]
+    
     # Haal de benodigde gegevens uit de request
     input_text = form_data.get("text", "")
-    preserved_words = form_data.get("preserved_words", [])
+    user_preserved_words = form_data.get("preserved_words", [])
     model_id = form_data.get("model", None)
     language_level = form_data.get("language_level", "B1")  # Standaard B1 als niet gespecificeerd
+    
+    # Combineer de standaard uitgesloten woorden met de door de gebruiker opgegeven woorden
+    preserved_words = list(set(DEFAULT_PRESERVED_WORDS + user_preserved_words))
     
     if not input_text:
         raise HTTPException(
@@ -1101,6 +1124,7 @@ Plaats jouw definitieve herschreven tekst altijd tussen <<< en >>> tekens. Als b
     if preserved_words:
         system_prompt += f" De volgende woorden/termen mag je NIET vereenvoudigen of veranderen, gebruik ze exact zoals ze zijn: {', '.join(preserved_words)}."
     
+    # Rest van de functie blijft hetzelfde...
     # Definieer verschillende temperatuurwaarden voor variatie
     temperatures = [0.5, 0.75, 1]
     

@@ -1,8 +1,12 @@
 <script>
-  import { onMount } from 'svelte';
-  import { user, models as modelsStore } from '$lib/stores';
+  import { onMount, getContext } from 'svelte';
+  import { user, models as modelsStore, settings } from '$lib/stores';
   import { WEBUI_BASE_URL } from '$lib/constants';
   import { fade } from 'svelte/transition';
+  import { toast } from 'svelte-sonner';
+  import { updateUserSettings } from '$lib/apis/users';
+  
+  const i18n = getContext('i18n');
   
   // Props - ontvang selectedModels van de parent component
   export let selectedModels = [''];
@@ -15,15 +19,98 @@
   let newPreservedWord = '';
   let models = [];
   let showOutput = false;
-  // Nieuwe state variabele voor taalniveau
-  let languageLevel = 'B1'; // Standaard op B1
+  let languageLevel = 'B1';
+  
+  // Standaard uitgesloten woorden - deze moeten overeenkomen met de lijst in de backend
+  const defaultPreservedWords = [
+    "COVID-19", 
+    "DigiD", 
+    "MijnOverheid", 
+    "BSN", 
+    "Burgerservicenummer",
+    "WOZ", 
+    "IBAN", 
+    "BIC", 
+    "KvK", 
+    "BTW", 
+    "BRP", 
+    "UWV", 
+    "SVB", 
+    "DUO", 
+    "CAK", 
+    "CJIB"
+  ];
+  
+  // Nieuwe state variabele om bij te houden of de standaard lijst gebruikt moet worden
+  let useDefaultPreservedWords = true;
+  
+  // Functie om modellen op te halen
+  async function fetchModels() {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${WEBUI_BASE_URL}/api/models`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      modelsStore.set(data.data);
+      return data.data;
+    } catch (error) {
+      console.error("Error fetching models:", error);
+      toast.error(`Fout bij het ophalen van modellen: ${error.message || "Onbekende fout"}`);
+      throw error;
+    }
+  }
+  
+  // Functie om het geselecteerde model op te slaan in gebruikersinstellingen
+  const saveDefaultModel = async () => {
+    const hasEmptyModel = selectedModels.filter((it) => it === '');
+    if (hasEmptyModel.length) {
+      toast.error($i18n ? $i18n.t('Choose a model before saving...') : 'Kies eerst een model...');
+      return;
+    }
+    
+    // Sla het model op in de b1TranslatorModel property van de settings
+    settings.set({ ...$settings, b1TranslatorModel: selectedModels[0] });
+    await updateUserSettings(localStorage.token, { ui: $settings });
+
+    toast.success($i18n ? $i18n.t('Default model updated') : 'Standaard model bijgewerkt');
+  };
+  
+  // Functie om het geselecteerde model te herstellen uit gebruikersinstellingen
+  function restoreSelectedModel() {
+    // Als er een opgeslagen model is in de settings en het bestaat in de beschikbare modellen
+    if ($settings?.b1TranslatorModel && models.some(m => m.id === $settings.b1TranslatorModel)) {
+      selectedModels = [$settings.b1TranslatorModel];
+      return true;
+    } 
+    // Als er geen opgeslagen model is of het bestaat niet meer, gebruik het eerste beschikbare model
+    else if (models.length > 0) {
+      selectedModels = [models[0].id];
+      return true;
+    }
+    return false;
+  }
   
   // Gebruik de modelsStore om modellen op te halen
   const unsubscribe = modelsStore.subscribe(value => {
     models = value;
+    
+    // Als er modellen zijn, probeer het geselecteerde model te herstellen
+    if (models.length > 0) {
+      restoreSelectedModel();
+    }
   });
 
-  onMount(() => {
+  onMount(async () => {
+    await fetchModels();
+    
     // Cleanup subscription when component is destroyed
     return () => {
       unsubscribe();
@@ -74,7 +161,8 @@
         model: selectedModels[0],
         text: inputText,
         preserved_words: preservedWords,
-        language_level: languageLevel // Voeg het geselecteerde taalniveau toe aan de payload
+        language_level: languageLevel,
+        use_default_preserved_words: useDefaultPreservedWords // Geef door of de standaard lijst gebruikt moet worden
       };
 
       // Gebruik WEBUI_BASE_URL voor de API-aanroep
@@ -112,7 +200,8 @@
   }
 </script>
 
-<div class="max-w-7xl mx-auto">
+<!-- Voeg een container toe met margin-top om het component naar beneden te verplaatsen -->
+<div class="max-w-7xl mx-auto mt-20">
   <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
     <div class="flex justify-between items-center mb-6">
       <h1 class="text-2xl font-bold text-gray-800 dark:text-white">
@@ -145,6 +234,13 @@
     <div class="mb-4 text-sm text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 p-3 rounded">
       {#if selectedModels[0]}
         <div class="font-medium">Geselecteerd model: <span class="text-blue-600 dark:text-blue-400">{models.find(m => m.id === selectedModels[0])?.name || selectedModels[0]}</span></div>
+        <!-- Voeg een knop toe om het model op te slaan als standaard -->
+        <button 
+          on:click={saveDefaultModel}
+          class="text-xs text-blue-600 dark:text-blue-400 hover:underline mt-1"
+        >
+          {$i18n ? $i18n.t('Set as default') : 'Instellen als standaard'}
+        </button>
       {:else}
         <div class="font-medium text-yellow-600">Geen model geselecteerd. Selecteer eerst een model in de navigatiebalk rechtsboven.</div>
       {/if}
@@ -152,14 +248,47 @@
     
     <!-- Sectie voor woorden die behouden moeten blijven -->
     <div class="mb-4">
-      <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-        Woorden die niet vereenvoudigd moeten worden
-      </label>
+      <div class="flex justify-between items-center mb-2">
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+          Woorden die niet vereenvoudigd moeten worden
+        </label>
+      </div>
+      
+      <!-- Optie om standaard uitgesloten woorden te gebruiken -->
+      <div class="mb-3 flex items-center">
+        <input 
+          type="checkbox" 
+          id="useDefaultWords" 
+          bind:checked={useDefaultPreservedWords}
+          class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+        >
+        <label for="useDefaultWords" class="ml-2 block text-sm text-gray-700 dark:text-gray-300">
+          Gebruik standaard uitgesloten woorden
+        </label>
+      </div>
+      
+      <!-- Toon standaard uitgesloten woorden als de optie is ingeschakeld -->
+      {#if useDefaultPreservedWords}
+        <div class="mb-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-md border border-gray-200 dark:border-gray-600">
+          <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Standaard uitgesloten woorden:</h3>
+          <div class="flex flex-wrap gap-2">
+            {#each defaultPreservedWords as word}
+              <div class="bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 px-2 py-1 rounded-md text-xs">
+                {word}
+              </div>
+            {/each}
+          </div>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
+            Deze woorden worden automatisch behouden in de vertaling.
+          </p>
+        </div>
+      {/if}
+      
       <div class="flex mb-2">
         <input
           type="text"
           bind:value={newPreservedWord}
-          placeholder="Voer een woord of term in"
+          placeholder="Voer een extra woord of term in"
           class="flex-grow px-3 py-2 border border-gray-300 rounded-l-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
           on:keydown={(e) => e.key === 'Enter' && addPreservedWord()}
         />
@@ -187,7 +316,7 @@
         </div>
       {:else}
         <p class="text-sm text-gray-500 dark:text-gray-400">
-          Geen woorden toegevoegd. Woorden die je hier toevoegt worden niet vereenvoudigd in de vertaling.
+          Geen extra woorden toegevoegd. Je kunt hier aanvullende woorden toevoegen die niet vereenvoudigd moeten worden.
         </p>
       {/if}
     </div>
@@ -275,6 +404,17 @@
               <div class="line"></div>
             </div>
             <div class="loading-border absolute inset-0 pointer-events-none rounded-md"></div>
+            <div class="cube-container absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div class="cube">
+                <div class="side front"></div>
+                <div class="side back"></div>
+                <div class="side top"></div>
+                <div class="side bottom"></div>
+                <div class="side left"></div>
+                <div class="side right"></div>
+              </div>
+            </div>
+            
           {:else if outputText && showOutput}
             <div 
               id="output"
@@ -289,10 +429,11 @@
                 on:click={() => {
                   navigator.clipboard.writeText(outputText)
                     .then(() => {
-                      alert('Tekst gekopieerd naar klembord!');
+                      toast.success('Tekst gekopieerd naar klembord!');
                     })
                     .catch(err => {
                       console.error('Kon niet kopiëren:', err);
+                      toast.error('Kon niet kopiëren: ' + err);
                     });
                 }}
                 class="bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-white font-medium py-1 px-3 rounded focus:outline-none focus:shadow-outline"
@@ -367,4 +508,33 @@
   50% { transform: translateX(0); }
   100% { transform: translateX(100%); }
 }
+
+.cube {
+  width: 40px;
+  height: 40px;
+  position: relative;
+  transform-style: preserve-3d;
+  animation: cube-rotate 3s infinite linear;
+}
+
+.cube .side {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background: rgba(59, 130, 246, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.cube .front { transform: translateZ(20px); }
+.cube .back { transform: rotateY(180deg) translateZ(20px); }
+.cube .top { transform: rotateX(90deg) translateZ(20px); }
+.cube .bottom { transform: rotateX(-90deg) translateZ(20px); }
+.cube .left { transform: rotateY(-90deg) translateZ(20px); }
+.cube .right { transform: rotateY(90deg) translateZ(20px); }
+
+@keyframes cube-rotate {
+  0% { transform: rotateX(0) rotateY(0); }
+  100% { transform: rotateX(360deg) rotateY(360deg); }
+}
 </style>
+          
