@@ -35,7 +35,8 @@
 		showOverview,
 		chatTitle,
 		showArtifacts,
-		tools
+		tools,
+		toolServers
 	} from '$lib/stores';
 	import {
 		convertMessagesToHistory,
@@ -119,6 +120,7 @@
 	let imageGenerationEnabled = false;
 	let webSearchEnabled = false;
 	let codeInterpreterEnabled = false;
+
 	let chat = null;
 	let tags = [];
 
@@ -187,15 +189,20 @@
 		setToolIds();
 	}
 
+	$: if (atSelectedModel || selectedModels) {
+		setToolIds();
+	}
+
 	const setToolIds = async () => {
 		if (!$tools) {
 			tools.set(await getTools(localStorage.token));
 		}
 
-		if (selectedModels.length !== 1) {
+		if (selectedModels.length !== 1 && !atSelectedModel) {
 			return;
 		}
-		const model = $models.find((m) => m.id === selectedModels[0]);
+
+		const model = atSelectedModel ?? $models.find((m) => m.id === selectedModels[0]);
 		if (model) {
 			selectedToolIds = (model?.info?.meta?.toolIds ?? []).filter((id) =>
 				$tools.find((t) => t.id === id)
@@ -207,7 +214,14 @@
 		const _chatId = JSON.parse(JSON.stringify($chatId));
 		let _messageId = JSON.parse(JSON.stringify(message.id));
 
-		let messageChildrenIds = history.messages[_messageId].childrenIds;
+		let messageChildrenIds = [];
+		if (_messageId === null) {
+			messageChildrenIds = Object.keys(history.messages).filter(
+				(id) => history.messages[id].parentId === null
+			);
+		} else {
+			messageChildrenIds = history.messages[_messageId].childrenIds;
+		}
 
 		while (messageChildrenIds.length !== 0) {
 			_messageId = messageChildrenIds.at(-1);
@@ -281,18 +295,10 @@
 				} else if (type === 'chat:tags') {
 					chat = await getChatById(localStorage.token, $chatId);
 					allTags.set(await getAllTags(localStorage.token));
-				} else if (type === 'message') {
+				} else if (type === 'chat:message:delta' || type === 'message') {
 					message.content += data.content;
-				} else if (type === 'replace') {
+				} else if (type === 'chat:message' || type === 'replace') {
 					message.content = data.content;
-				} else if (type === 'action') {
-					if (data.action === 'continue') {
-						const continueButton = document.getElementById('continue-response-button');
-
-						if (continueButton) {
-							continueButton.click();
-						}
-					}
 				} else if (type === 'confirmation') {
 					eventCallback = cb;
 
@@ -379,7 +385,7 @@
 		if (event.data.type === 'input:prompt:submit') {
 			console.debug(event.data.text);
 
-			if (prompt !== '') {
+			if (event.data.text !== '') {
 				await tick();
 				submitPrompt(event.data.text);
 			}
@@ -836,6 +842,7 @@
 				content: m.content,
 				info: m.info ? m.info : undefined,
 				timestamp: m.timestamp,
+				...(m.usage ? { usage: m.usage } : {}),
 				...(m.sources ? { sources: m.sources } : {})
 			})),
 			model_item: $models.find((m) => m.id === modelId),
@@ -881,6 +888,8 @@
 				await chats.set(await getChatList(localStorage.token, $currentChatPage));
 			}
 		}
+
+		taskId = null;
 	};
 
 	const chatActionHandler = async (chatId, actionId, modelId, responseMessageId, event = null) => {
@@ -1270,10 +1279,13 @@
 		prompt = '';
 
 		// Reset chat input textarea
-		const chatInputElement = document.getElementById('chat-input');
+		if (!($settings?.richTextInput ?? true)) {
+			const chatInputElement = document.getElementById('chat-input');
 
-		if (chatInputElement) {
-			chatInputElement.style.height = '';
+			if (chatInputElement) {
+				await tick();
+				chatInputElement.style.height = '';
+			}
 		}
 
 		const _files = JSON.parse(JSON.stringify(files));
@@ -1488,7 +1500,10 @@
 							params?.system ?? $settings?.system ?? '',
 							$user.name,
 							$settings?.userLocation
-								? await getAndUpdateUserLocation(localStorage.token)
+								? await getAndUpdateUserLocation(localStorage.token).catch((err) => {
+										console.error(err);
+										return undefined;
+									})
 								: undefined
 						)}${
 							(responseMessage?.userContext ?? null)
@@ -1552,6 +1567,7 @@
 
 				files: (files?.length ?? 0) > 0 ? files : undefined,
 				tool_ids: selectedToolIds.length > 0 ? selectedToolIds : undefined,
+				tool_servers: $toolServers,
 
 				features: {
 					image_generation:
@@ -1573,7 +1589,12 @@
 				variables: {
 					...getPromptVariables(
 						$user.name,
-						$settings?.userLocation ? await getAndUpdateUserLocation(localStorage.token) : undefined
+						$settings?.userLocation
+							? await getAndUpdateUserLocation(localStorage.token).catch((err) => {
+									console.error(err);
+									return undefined;
+								})
+							: undefined
 					)
 				},
 				model_item: $models.find((m) => m.id === model.id),
@@ -1605,7 +1626,7 @@
 					: {})
 			},
 			`${WEBUI_BASE_URL}/api`
-		).catch((error) => {
+		).catch(async (error) => {
 			toast.error(`${error}`);
 
 			responseMessage.error = {
@@ -1618,10 +1639,12 @@
 			return null;
 		});
 
-		console.log(res);
-
 		if (res) {
-			taskId = res.task_id;
+			if (res.error) {
+				await handleOpenAIError(res.error, responseMessage);
+			} else {
+				taskId = res.task_id;
+			}
 		}
 
 		await tick();
@@ -1638,9 +1661,11 @@
 
 		console.error(innerError);
 		if ('detail' in innerError) {
+			// FastAPI error
 			toast.error(innerError.detail);
 			errorMessage = innerError.detail;
 		} else if ('error' in innerError) {
+			// OpenAI error
 			if ('message' in innerError.error) {
 				toast.error(innerError.error.message);
 				errorMessage = innerError.error.message;
@@ -1649,6 +1674,7 @@
 				errorMessage = innerError.error;
 			}
 		} else if ('message' in innerError) {
+			// OpenAI error
 			toast.error(innerError.message);
 			errorMessage = innerError.message;
 		}
@@ -1667,9 +1693,10 @@
 		history.messages[responseMessage.id] = responseMessage;
 	};
 
-	const stopResponse = () => {
+	const stopResponse = async () => {
 		if (taskId) {
-			const res = stopTask(localStorage.token, taskId).catch((error) => {
+			const res = await stopTask(localStorage.token, taskId).catch((error) => {
+				toast.error(`${error}`);
 				return null;
 			});
 
@@ -1921,9 +1948,33 @@
 
 		<PaneGroup direction="horizontal" class="w-full h-full">
 			<Pane defaultSize={50} class="h-full flex w-full relative">
-				{#if $banners.length > 0 && !history.currentId && !$chatId && selectedModels.length <= 1}
+				{#if !history.currentId && !$chatId && selectedModels.length <= 1 && ($banners.length > 0 || ($config?.license_metadata?.type ?? null) === 'trial' || (($config?.license_metadata?.seats ?? null) !== null && $config?.user_count > $config?.license_metadata?.seats))}
 					<div class="absolute top-12 left-0 right-0 w-full z-30">
 						<div class=" flex flex-col gap-1 w-full">
+							{#if ($config?.license_metadata?.type ?? null) === 'trial'}
+								<Banner
+									banner={{
+										type: 'info',
+										title: 'Trial License',
+										content: $i18n.t(
+											'You are currently using a trial license. Please contact support to upgrade your license.'
+										)
+									}}
+								/>
+							{/if}
+
+							{#if ($config?.license_metadata?.seats ?? null) !== null && $config?.user_count > $config?.license_metadata?.seats}
+								<Banner
+									banner={{
+										type: 'error',
+										title: 'License Error',
+										content: $i18n.t(
+											'Exceeded the number of seats in your license. Please contact support to increase the number of seats.'
+										)
+									}}
+								/>
+							{/if}
+
 							{#each $banners.filter( (b) => (b.dismissible ? !JSON.parse(localStorage.getItem('dismissedBannerIds') ?? '[]').includes(b.id) : true) ) as banner}
 								<Banner
 									{banner}
@@ -1965,6 +2016,7 @@
 									bind:autoScroll
 									bind:prompt
 									{selectedModels}
+									{atSelectedModel}
 									{sendPrompt}
 									{showMessage}
 									{submitMessage}
@@ -1990,6 +2042,7 @@
 								bind:codeInterpreterEnabled
 								bind:webSearchEnabled
 								bind:atSelectedModel
+								toolServers={$toolServers}
 								transparentBackground={$settings?.backgroundImageUrl ?? false}
 								{stopResponse}
 								{createMessagePair}
@@ -2043,6 +2096,7 @@
 								bind:webSearchEnabled
 								bind:atSelectedModel
 								transparentBackground={$settings?.backgroundImageUrl ?? false}
+								toolServers={$toolServers}
 								{stopResponse}
 								{createMessagePair}
 								on:upload={async (e) => {

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { prompts, user } from '$lib/stores';
+	import { prompts, settings, user } from '$lib/stores';
 	import {
 		findWordIndices,
 		getUserPosition,
@@ -74,7 +74,13 @@
 		}
 
 		if (command.content.includes('{{USER_LOCATION}}')) {
-			const location = await getUserPosition();
+			let location;
+			try {
+				location = await getUserPosition();
+			} catch (error) {
+				toast.error($i18n.t('Location access not allowed'));
+				location = 'LOCATION_UNKNOWN';
+			}
 			text = text.replaceAll('{{USER_LOCATION}}', String(location));
 		}
 
@@ -114,7 +120,21 @@
 			text = text.replaceAll('{{CURRENT_WEEKDAY}}', weekday);
 		}
 
-		prompt = text;
+		const lines = prompt.split('\n');
+		const lastLine = lines.pop();
+
+		const lastLineWords = lastLine.split(' ');
+		const lastWord = lastLineWords.pop();
+
+		if ($settings?.richTextInput ?? true) {
+			lastLineWords.push(`${text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}`);
+			lines.push(lastLineWords.join(' '));
+		} else {
+			lastLineWords.push(text);
+			lines.push(lastLineWords.join(' '));
+		}
+
+		prompt = lines.join('\n');
 
 		const chatInputContainerElement = document.getElementById('chat-input-container');
 		const chatInputElement = document.getElementById('chat-input');
