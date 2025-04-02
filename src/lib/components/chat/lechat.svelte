@@ -155,31 +155,33 @@
 		/>
 
 		<div class="flex-1 flex flex-col z-10 w-full @container">
-			<div class="flex-grow flex items-center justify-center">
-				<div class="text-center p-8">
-					<h1 class="text-2xl font-bold text-gray-700 dark:text-gray-200 mb-4">
-						{$WEBUI_NAME}
-					</h1>
-					<p class="text-gray-500 dark:text-gray-400 mb-4">
-						Deze pagina is momenteel leeg. Gebruik de model selector hierboven om een model te kiezen.
-					</p>
-					
-					{#if selectedModels[0]}
-						<div class="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg inline-block">
-							<p class="text-blue-700 dark:text-blue-300 mb-2">
-								Geselecteerd model: <span class="font-semibold">{$models.find(m => m.id === selectedModels[0])?.name || selectedModels[0]}</span>
-							</p>
-							
-							<button 
-								on:click={saveDefaultModel}
-								class="mt-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition-colors"
-							>
-								Stel in als standaard model
-							</button>
-						</div>
-					{/if}
+			<slot name="content">
+				<div class="flex-grow flex items-center justify-center">
+					<div class="text-center p-8">
+						<h1 class="text-2xl font-bold text-gray-700 dark:text-gray-200 mb-4">
+							{$WEBUI_NAME}
+						</h1>
+						<p class="text-gray-500 dark:text-gray-400 mb-4">
+							Deze pagina is momenteel leeg. Gebruik de model selector hierboven om een model te kiezen.
+						</p>
+						
+						{#if selectedModels[0]}
+							<div class="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg inline-block">
+								<p class="text-blue-700 dark:text-blue-300 mb-2">
+									Geselecteerd model: <span class="font-semibold">{$models.find(m => m.id === selectedModels[0])?.name || selectedModels[0]}</span>
+								</p>
+								
+								<button 
+									on:click={saveDefaultModel}
+									class="mt-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition-colors"
+								>
+									Stel in als standaard model
+								</button>
+							</div>
+						{/if}
+					</div>
 				</div>
-			</div>
+			</slot>
 		</div>
 	{:else if loading}
 		<div class="flex items-center justify-center h-full w-full">
@@ -189,6 +191,3 @@
 		</div>
 	{/if}
 </div>
-</script>
-<<B1Logic/>
-</script>
