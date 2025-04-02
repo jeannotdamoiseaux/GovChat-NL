@@ -5,13 +5,11 @@
   import { fade } from 'svelte/transition';
   import { toast } from 'svelte-sonner';
 
-  
-  
   const i18n = getContext('i18n');
-  
+
   // Props - ontvang selectedModels van de parent component
   export let selectedModels = [''];
-  
+
   let inputText = '';
   let outputText = '';
   let isLoading = false;
@@ -24,7 +22,7 @@
   let showOutput = false;
   let languageLevel = 'B1';
   let selectedWordList = 'algemeen'; // Standaard geselecteerde woordenlijst
-  
+
   // Functie om de beschikbare woordenlijsten op te halen
   async function fetchWordLists() {
     try {
@@ -34,11 +32,11 @@
           'Authorization': `Bearer ${token}`
         }
       });
-      
+
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      
+
       const data = await response.json();
       wordLists = data.word_lists;
     } catch (error) {
@@ -60,7 +58,8 @@
           "SVB", 
           "DUO", 
           "CAK", 
-          "CJIB"
+          "CJIB",
+          "Fout bij verbinden met de database."
         ],
         "medisch": [
           "pancreaskopcarcinoom",
@@ -73,19 +72,20 @@
           "immuniteit",
           "diagnose",
           "symptomen",
-          "medicatie"
+          "medicatie",
+          "Fout bij verbinden met de database."
         ]
       };
     }
   }
-  
+
   // Functie om de geselecteerde woordenlijst te wijzigen
   function changeWordList(listName) {
     selectedWordList = listName;
     // Reset de uitgesloten woorden bij het wisselen van lijst
     excludedDefaultWords = [];
   }
-  
+
   // Gebruik de modelsStore om modellen op te halen
   const unsubscribe = modelsStore.subscribe(value => {
     models = value;
@@ -139,12 +139,12 @@
   function removePreservedWord(word) {
     preservedWords = preservedWords.filter(w => w !== word);
   }
-  
+
   // Functie om een standaard woord uit te sluiten
   function excludeDefaultWord(word) {
     excludedDefaultWords = [...excludedDefaultWords, word];
   }
-  
+
   // Functie om een uitgesloten standaard woord weer toe te voegen
   function includeDefaultWord(word) {
     excludedDefaultWords = excludedDefaultWords.filter(w => w !== word);
@@ -161,7 +161,6 @@
       return;
     }
 
-    // Controleer of er een model is geselecteerd
     if (!selectedModels[0]) {
       error = "Selecteer eerst een model in de navigatiebalk linksboven";
       return;
@@ -169,24 +168,20 @@
 
     error = null;
     isLoading = true;
-    showOutput = false; // Hide output while loading
-    outputText = ''; // Clear previous output while loading
+    showOutput = false;
+    outputText = '';
 
     try {
-      // Get the authentication token
       const token = localStorage.getItem('token');
-      
-      // Maak een payload voor de backend API
       const payload = {
         model: selectedModels[0],
         text: inputText,
-        preserved_words: preservedWords,
+        preserved_words: preservedWords, // Voeg te behouden woorden toe
         excluded_default_words: excludedDefaultWords,
         selected_word_list: selectedWordList,
         language_level: languageLevel
       };
 
-      // Gebruik WEBUI_BASE_URL voor de API-aanroep
       const response = await fetch(`${WEBUI_BASE_URL}/api/b1/translate`, {
         method: 'POST',
         headers: {
@@ -196,22 +191,13 @@
         body: JSON.stringify(payload)
       });
 
-      if (response.status === 403) {
-        throw new Error("Je hebt geen toegang tot dit model. Probeer een ander model te selecteren.");
-      }
-
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
       const data = await response.json();
       outputText = data.choices?.[0]?.message?.content || "Geen resultaat ontvangen";
-      
-      // Add a small delay before showing the output for a smoother transition
-      setTimeout(() => {
-        showOutput = true;
-      }, 300);
-      
+      showOutput = true;
     } catch (err) {
       console.error("Error translating:", err);
       error = "Fout bij vertalen: " + (err.message || "Onbekende fout");
@@ -571,4 +557,4 @@
   100% { transform: rotateX(360deg) rotateY(360deg); }
 }
 </style>
-          
+
