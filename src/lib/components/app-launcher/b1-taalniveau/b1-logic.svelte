@@ -1,11 +1,11 @@
 <script>
   import { onMount, getContext } from 'svelte';
-  import { user, models as modelsStore, settings } from '$lib/stores';
+  import { models as modelsStore } from '$lib/stores';
   import { WEBUI_BASE_URL } from '$lib/constants';
   import { fade } from 'svelte/transition';
   import { toast } from 'svelte-sonner';
-  import { getModels } from '$lib/apis';
-  import { updateUserSettings } from '$lib/apis/users';
+
+  
   
   const i18n = getContext('i18n');
   
@@ -91,42 +91,6 @@
     models = value;
   });
 
-  // Functie om modellen op te halen en bij te werken
-  async function refreshModels() {
-    try {
-      const token = localStorage.getItem('token');
-      if (!token) return;
-      
-      // Haal modellen op via de API
-      const updatedModels = await getModels(token, $settings?.directConnections ?? null);
-      
-      // Update de modelsStore
-      modelsStore.set(updatedModels);
-      
-      // Controleer of de geselecteerde modellen nog bestaan
-      if (selectedModels.length > 0) {
-        selectedModels = selectedModels.map(modelId => 
-          updatedModels.map(m => m.id).includes(modelId) ? modelId : ''
-        );
-        
-        // Als er geen geldig model is, selecteer het eerste beschikbare model
-        if (selectedModels.every(m => m === '') && updatedModels.length > 0) {
-          selectedModels = [updatedModels[0].id];
-        }
-      }
-    } catch (error) {
-      console.error("Error refreshing models:", error);
-    }
-  }
-
-  // Functie om geselecteerde modellen op te slaan in localStorage
-  function saveSelectedModels() {
-    if (selectedModels.length === 0 || (selectedModels.length === 1 && selectedModels[0] === '')) {
-      return;
-    }
-    localStorage.setItem('b1_taalniveau_selected_models', JSON.stringify(selectedModels));
-  }
-
   // Functie om geselecteerde modellen te laden uit localStorage
   function loadSelectedModels() {
     try {
@@ -142,42 +106,12 @@
     }
   }
 
-  // Functie om geselecteerde modellen op te slaan in gebruikersinstellingen
-  async function saveDefaultModel() {
-    const hasEmptyModel = selectedModels.filter(it => it === '');
-    if (hasEmptyModel.length) {
-      toast.error($i18n.t('Kies een model voordat je het opslaat...'));
-      return;
-    }
-    
-    try {
-      // Update lokale instellingen
-      settings.set({ ...$settings, models: selectedModels });
-      
-      // Update gebruikersinstellingen op de server
-      await updateUserSettings(localStorage.token, { ui: $settings });
-      
-      toast.success($i18n.t('Standaard model bijgewerkt'));
-    } catch (error) {
-      console.error("Error saving default model:", error);
-      toast.error($i18n.t('Fout bij opslaan van standaard model'));
-    }
-  }
-
   onMount(async () => {
     // Haal de beschikbare woordenlijsten op
     await fetchWordLists();
     
     // Laad opgeslagen modellen
     loadSelectedModels();
-    
-    // Ververs de modellen
-    await refreshModels();
-    
-    // Sla geselecteerde modellen op bij wijzigingen
-    $: if (selectedModels) {
-      saveSelectedModels();
-    }
     
     // Cleanup subscription when component is destroyed
     return () => {
@@ -317,45 +251,9 @@
       </div>
     {/if}
     
-    <!-- Instructie voor model selectie -->
-    <div class="mb-4 text-sm text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 p-3 rounded">
-      {#if selectedModels[0]}
-        <div class="font-medium">
-          Geselecteerd model: <span class="text-blue-600 dark:text-blue-400">{models.find(m => m.id === selectedModels[0])?.name || selectedModels[0]}</span>
-          <button 
-            on:click={saveDefaultModel}
-            class="ml-2 text-xs text-blue-600 dark:text-blue-400 hover:underline"
-          >
-            Stel in als standaard
-          </button>
-          <button 
-            on:click={refreshModels}
-            class="ml-2 text-xs text-blue-600 dark:text-blue-400 hover:underline"
-            title="Ververs modellen"
-          >
-            ↻ Ververs
-          </button>
-        </div>
-      {:else}
-        <div class="font-medium text-yellow-600">
-          Geen model geselecteerd. Selecteer eerst een model in de navigatiebalk rechtsboven.
-          <button 
-            on:click={refreshModels}
-            class="ml-2 text-xs text-blue-600 dark:text-blue-400 hover:underline"
-            title="Ververs modellen"
-          >
-            ↻ Ververs modellen
-          </button>
-        </div>
-      {/if}
-    </div>
     
     <!-- Sectie voor woorden die behouden moeten blijven -->
     <div class="mb-4">
-      <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-        Woorden die niet vereenvoudigd moeten worden
-      </label>
-      
       <!-- Selector voor woordenlijst -->
       {#if Object.keys(wordLists).length > 0}
         <div class="mb-4">
@@ -456,9 +354,6 @@
           </div>
         </div>
       {:else if excludedDefaultWords.length === 0 && (!wordLists[selectedWordList] || wordLists[selectedWordList].length === 0)}
-        <p class="text-sm text-gray-500 dark:text-gray-400 mt-2">
-          Je kunt hier woorden toevoegen die niet vereenvoudigd moeten worden in de vertaling.
-        </p>
       {/if}
     </div>
     
@@ -480,9 +375,7 @@
             disabled={isLoading}
           ></textarea>
           
-          {#if isLoading}
-            <!-- Radar scan animatie voor het invoerveld -->
-          {/if}
+          
         </div>
       </div>
       
