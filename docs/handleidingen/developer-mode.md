@@ -2,6 +2,8 @@
 Welkom bij de **GovChat-NL Ontwikkel Handleiding**!  
 In deze handleiding leggen we stap voor stap uit hoe je een ontwikkelomgeving opzet voor GovChat-NL.
 
+Let op: Hoewel deze handleiding specifiek Azure API gebruikt als voorbeeld, kun je eenvoudig overschakelen naar andere providers zoals Ollama, afhankelijk van je voorkeur of vereisten.
+
 ---
 
 ## 📥 Initiele Installatie
@@ -180,6 +182,8 @@ In deze handleiding leggen we stap voor stap uit hoe je een ontwikkelomgeving op
 
 ## 🤖 Lite LLM API Connectie
 
+Let op: Hoewel deze handleiding specifiek Azure API gebruikt als voorbeeld, kun je eenvoudig overschakelen naar andere providers zoals Ollama, afhankelijk van je voorkeur of vereisten.
+
 ### **1. Docker installeren**
 Download en installeer **Docker** via:  
 [Officiële Docker Download](https://www.docker.com/)
@@ -190,5 +194,5 @@ Update de volgende bestanden:
 - **litellm/litellm_config.yaml**
 
 ### **3. Run Docker-services**
-- Klik op **"Run all services"** in het bestand `docker-compose-light.yaml` binnen VS Code.  
+- Klik op **"Run all services"** in het bestand `docker-compose-lite-llm-local.yaml` binnen VS Code.  
 - Als Docker al eerder is gebruikt, start de image opnieuw binnen de Docker-app.
