@@ -44,7 +44,7 @@ WORD_LISTS = {
 }
 
 # Standaard uitgesloten woorden - deze worden standaard behouden
-DEFAULT_PRESERVED_WORDS = WORD_LISTS["algemeen"]
+DEFAULT_PRESERVED_WORDS = WORD_LISTS["algemeen"] + WORD_LISTS["medisch"]
 
 @router.get("/word-lists")
 async def get_word_lists():
@@ -305,6 +305,10 @@ Je ontvangt de originele paragraaf, samen met enkele varianten van deze tekst in
         for result in all_selections:
             result["translated"] = extract_content(result["translated"])
 
+
+        # Zorg ervoor dat preserved words intact blijven
+        all_selections = enforce_preserved_words(all_selections, preserved_words)
+
         # Now combine without delimiters
         combined_text = "\n\n".join([result["translated"] for result in all_selections])
 
@@ -345,3 +349,13 @@ Je ontvangt de originele paragraaf, samen met enkele varianten van deze tekst in
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
+
+def enforce_preserved_words(translations: List[Dict[str, Any]], preserved_words: List[str]) -> List[Dict[str, Any]]:
+    """Zorg ervoor dat preserved words niet worden vertaald."""
+    for translation in translations:
+        for word in preserved_words:
+            # Gebruik regex om woorden exact te matchen en te vervangen
+            translation["translated"] = re.sub(
+                rf"\b{re.escape(word)}\b", word, translation["translated"], flags=re.IGNORECASE
+            )
+    return translations
