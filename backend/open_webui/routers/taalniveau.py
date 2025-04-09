@@ -68,33 +68,40 @@ async def translate_to_b1(
     request: Request,
     form_data: dict,
     user=Depends(get_verified_user),
-    max_words_per_chunk: Optional[int] = 15000,
-    max_tokens_per_paragraph: Optional[int] = 3000,
-    batch_size: Optional[int] = 50,
+    max_words_per_chunk: Optional[int] = 500,
+    max_tokens_per_paragraph: Optional[int] = 25,
+    batch_size: Optional[int] = 5,
+    test_mode: bool = True  # Nieuwe parameter voor testmodus
 ):
     """
     Endpoint voor het vertalen van tekst naar B1- of B2-taalniveau.
-    Verwerkt tekst in blokken van maximaal 15.000 woorden, verdeelt grote teksten in paragrafen,
-    genereert drie versies per paragraaf gelijktijdig met verschillende temperatuurwaarden
-    en selecteert de beste versie voor elke paragraaf.
-    Alle generaties en vergelijkingen worden parallel uitgevoerd.
-    
     Parameters:
     - max_words_per_chunk: Maximum aantal woorden per chunk (None voor geen chunking)
     - max_tokens_per_paragraph: Maximum aantal tokens per paragraaf (None voor geen paragraaf-splitsing)
     - batch_size: Aantal paragrafen dat parallel verwerkt wordt (None voor onbeperkt)
+    - max_calls_per_minute: Maximum aantal API-calls per minuut (None voor geen limiet)
+    - max_paragraphs: Maximum aantal paragrafen dat verwerkt wordt (None voor geen limiet)
+    - test_mode: Als True, wordt slechts één chunk verwerkt (voor testen)
     """
     # Haal de benodigde gegevens uit de request
     input_text = form_data.get("text", "")
-    preserved_words = form_data.get("preserved_words", [])  # Dit bevat nu zowel toegevoegde als niet-verwijderde standaardwoorden
-    excluded_default_words = form_data.get("excluded_default_words", [])  # Woorden uit de standaardlijst die de gebruiker wil uitsluiten
+    preserved_words = form_data.get("preserved_words", [])
+    excluded_default_words = form_data.get("excluded_default_words", [])
     model_id = form_data.get("model", None)
-    language_level = form_data.get("language_level", "B1")  # Standaard B1 als niet gespecificeerd
+    language_level = form_data.get("language_level", "B1")
     
-    # Nieuwe parameters voor chunking en parallelle verwerking
-    max_words_per_chunk = form_data.get("max_words_per_chunk", 15000)  # Standaard 15000 woorden per chunk
-    max_tokens_per_paragraph = form_data.get("max_tokens_per_paragraph", 1500)  # Standaard 1500 tokens per paragraaf
-    batch_size = form_data.get("batch_size", 20)  # Standaard 5 paragrafen parallel
+    # Controleer of testmodus is ingeschakeld via form_data
+    test_mode = test_mode or form_data.get("test_mode", False)
+    
+    # Haal parameters uit form_data als ze niet direct als functie-parameters zijn meegegeven
+    max_words_per_chunk = max_words_per_chunk or form_data.get("max_words_per_chunk", 15000)
+    max_tokens_per_paragraph = max_tokens_per_paragraph or form_data.get("max_tokens_per_paragraph", 1500)
+    batch_size = batch_size or form_data.get("batch_size", 20)
+    
+    # Validate and limit parameters to prevent excessive API calls
+    max_words_per_chunk = min(max(1, max_words_per_chunk), 15000)  # Between 1000-30000
+    max_tokens_per_paragraph = min(max(1, max_tokens_per_paragraph), 1500)  # Between 500-3000
+    batch_size = min(max(1, batch_size), 20)  # Between 1-10
     
     # Voeg standaard woorden toe die niet zijn uitgesloten door de gebruiker
     for word in DEFAULT_PRESERVED_WORDS:
@@ -322,6 +329,19 @@ Je ontvangt de originele paragraaf, samen met enkele varianten van deze tekst in
     
     # Functie om tekst in chunks van variabele grootte te verwerken
     async def process_text_in_chunks(text, max_words=max_words_per_chunk):
+        # Als testmodus is ingeschakeld, verwerk alleen de eerste chunk
+        if test_mode:
+            print("TESTMODUS: Slechts één chunk wordt verwerkt")
+            # Beperk de tekst tot max_words woorden voor de eerste chunk
+            words = text.split()
+            if len(words) > max_words:
+                chunk = ' '.join(words[:max_words])
+                print(f"Tekst ingekort van {len(words)} naar {max_words} woorden voor testmodus")
+            else:
+                chunk = text
+            return await process_single_chunk(chunk, batch_size)
+            
+        # Normale verwerking voor productieomgeving
         # Als max_words None is, verwerk de hele tekst in één keer
         if max_words is None:
             return await process_single_chunk(text, batch_size)
@@ -345,65 +365,37 @@ Je ontvangt de originele paragraaf, samen met enkele varianten van deze tekst in
         return "\n\n".join(translated_chunks)
     
     # Functie om een enkele chunk tekst te verwerken
-    async def process_single_chunk(chunk_text, batch_size=batch_size):
+    async def process_single_chunk(chunk_text, batch_size=5):
         # Split de chunk in paragrafen
         paragraphs = split_into_paragraphs(chunk_text, max_tokens_per_paragraph)
         all_selections = []
         
-        # Als batch_size None is, verwerk alle paragrafen tegelijk
-        if batch_size is None:
-            # Genereer versies voor alle paragrafen tegelijk
-            all_generation_tasks = []
-            for p_idx, paragraph in enumerate(paragraphs):
+        # Limit the number of paragraphs to process if extremely large
+        if len(paragraphs) > 100:  # Arbitrary limit to prevent excessive processing
+            print(f"Warning: Large text with {len(paragraphs)} paragraphs. Limiting to 100.")
+            paragraphs = paragraphs[:100]
+        
+        # Process in batches with a semaphore to limit concurrent requests
+        semaphore = asyncio.Semaphore(batch_size)
+        
+        async def process_paragraph_with_semaphore(p_idx, paragraph):
+            async with semaphore:
+                # Generate versions for this paragraph
+                versions = []
                 for t_idx, temp in enumerate(temperatures):
-                    all_generation_tasks.append(safe_generate_paragraph_version(p_idx, paragraph, t_idx, temp))
-            
-            all_generated_versions = await asyncio.gather(*all_generation_tasks)
-            
-            # Organiseer de gegenereerde versies per paragraaf
-            paragraph_versions = {}
-            for version in all_generated_versions:
-                p_idx = version["paragraph_index"]
-                if p_idx not in paragraph_versions:
-                    paragraph_versions[p_idx] = [None, None, None]
-                paragraph_versions[p_idx][version["temp_index"]] = version
-            
-            # Selecteer beste versies voor alle paragrafen
-            all_selection_tasks = []
-            for p_idx, paragraph in enumerate(paragraphs):
-                versions = paragraph_versions[p_idx]
-                all_selection_tasks.append(select_best_version(p_idx, paragraph, versions))
-            
-            all_selections = await asyncio.gather(*all_selection_tasks)
-        else:
-            # Verwerk paragrafen in batches om geheugengebruik te beperken
-            for i in range(0, len(paragraphs), batch_size):
-                batch_paragraphs = paragraphs[i:i+batch_size]
+                    version = await safe_generate_paragraph_version(p_idx, paragraph, t_idx, temp)
+                    versions.append(version)
                 
-                # Genereer versies voor deze batch
-                batch_generation_tasks = []
-                for p_idx, paragraph in enumerate(batch_paragraphs):
-                    for t_idx, temp in enumerate(temperatures):
-                        batch_generation_tasks.append(safe_generate_paragraph_version(i+p_idx, paragraph, t_idx, temp))
-                
-                batch_generated_versions = await asyncio.gather(*batch_generation_tasks)
-                
-                # Organiseer de gegenereerde versies per paragraaf
-                paragraph_versions = {}
-                for version in batch_generated_versions:
-                    p_idx = version["paragraph_index"]
-                    if p_idx not in paragraph_versions:
-                        paragraph_versions[p_idx] = [None, None, None]
-                    paragraph_versions[p_idx][version["temp_index"]] = version
-                
-                # Selecteer beste versies voor deze batch
-                batch_selection_tasks = []
-                for p_idx, paragraph in enumerate(batch_paragraphs):
-                    versions = paragraph_versions[i+p_idx]
-                    batch_selection_tasks.append(select_best_version(i+p_idx, paragraph, versions))
-                
-                batch_selections = await asyncio.gather(*batch_selection_tasks)
-                all_selections.extend(batch_selections)
+                # Select best version
+                selection = await select_best_version(p_idx, paragraph, versions)
+                return selection
+        
+        # Create tasks for all paragraphs but control concurrency with semaphore
+        tasks = [process_paragraph_with_semaphore(p_idx, paragraph) 
+                 for p_idx, paragraph in enumerate(paragraphs)]
+        
+        # Execute all tasks with controlled concurrency
+        all_selections = await asyncio.gather(*tasks)
         
         # Sorteer de resultaten op paragraaf index
         all_selections.sort(key=lambda x: x["paragraph_index"])
@@ -422,7 +414,7 @@ Je ontvangt de originele paragraaf, samen met enkele varianten van deze tekst in
     try:
         # Voeg een log toe voor het begin van de verwerking
         print(f"Start verwerking van tekst met {len(input_text.split())} woorden")
-        print(f"Configuratie: max_words_per_chunk={max_words_per_chunk}, max_tokens_per_paragraph={max_tokens_per_paragraph}, batch_size={batch_size}")
+        print(f"Configuratie: max_words_per_chunk={max_words_per_chunk}, max_tokens_per_paragraph={max_tokens_per_paragraph}, batch_size={batch_size}, test_mode={test_mode}")
         
         # Verwerk de volledige tekst met de opgegeven configuratie
         combined_translated_text = await process_text_in_chunks(input_text, max_words_per_chunk)
@@ -449,12 +441,13 @@ Je ontvangt de originele paragraaf, samen met enkele varianten van deze tekst in
                 "total_tokens": 0
             },
             "meta": {
-                "processed_in_chunks": max_words_per_chunk is not None and len(input_text.split()) > max_words_per_chunk,
+                "processed_in_chunks": not test_mode and max_words_per_chunk is not None and len(input_text.split()) > max_words_per_chunk,
                 "total_words": len(input_text.split()),
                 "configuration": {
                     "max_words_per_chunk": max_words_per_chunk,
                     "max_tokens_per_paragraph": max_tokens_per_paragraph,
-                    "batch_size": batch_size
+                    "batch_size": batch_size,
+                    "test_mode": test_mode
                 }
             }
         }
