@@ -15,13 +15,13 @@ model_list:
     litellm_params:
       model: azure_ai/DeepSeek-R1-wlvjj
       api_base: https://DeepSeek-R1-wlvjj.westus.models.ai.azure.com
-      api_key: OwfKnG2BCzC845WRwfQSRlbhgHl7jA7s
+      api_key: 
       api_version: os.environ/AZURE_API_VERSION
   - model_name: azure-mistral-large
     litellm_params:
       model: azure_ai/Mistral-Large-2411-ngerb
       api_base: https://Mistral-Large-2411-ngerb.swedencentral.models.ai.azure.com
-      api_key: cDkSD8Z8FhDdhqS2txPFSy4Vy8O90ifx
+      api_key: 
       api_version: os.environ/AZURE_API_VERSION 
   - model_name: vertex-claude-3.5-sonnet
     litellm_params:
@@ -37,3 +37,7 @@ model_list:
       vertex_project: calcium-alchemy-416511
       vertex_location: europe-west1
       vertex_credentials: calcium-alchemy-416511-58b3843781ae.json
+
+general_settings: 
+  master_key: $[master_key] # runs os.getenv("MASTER_KEY"), change in your environment (.env file) after "cp -RPp .env.example .env"
+  database_url: ${DATABASE_URL} # runs os.getenv("DATABASE_URL")
