@@ -19,6 +19,8 @@
     let models = [];
     let showOutput = false;
     let languageLevel = 'B1';
+    let textFragments = new Map();
+    let partialFragments = new Map();
   
     // Gebruik de modelsStore om modellen op te halen
     const unsubscribe = modelsStore.subscribe(value => {
@@ -127,9 +129,32 @@
                 if (jsonStr === '[DONE]') continue;
                 
                 const jsonData = JSON.parse(jsonStr);
-                if (jsonData.choices && jsonData.choices[0]?.delta?.content) {
-                  // Append the new content to the output text
-                  outputText += jsonData.choices[0].delta.content;
+                // Handle positioned text updates
+                if (jsonData.text && typeof jsonData.position === 'number') {
+                  if (jsonData.isPartial) {
+                    // Voeg woord toe aan partial fragment
+                    const currentPartial = partialFragments.get(jsonData.position) || '';
+                    partialFragments.set(jsonData.position, currentPartial + jsonData.text);
+                  } else {
+                    // Paragraaf is compleet
+                    textFragments.set(jsonData.position, partialFragments.get(jsonData.position) || '');
+                    partialFragments.delete(jsonData.position);
+                  }
+
+                  // Reconstrueer volledige tekst
+                  let orderedText = '';
+                  const sortedPositions = Array.from(textFragments.keys()).sort((a, b) => a - b);
+                  
+                  for (const pos of sortedPositions) {
+                    orderedText += textFragments.get(pos);
+                    // Voeg partial fragment toe als het bestaat
+                    if (partialFragments.has(pos)) {
+                      orderedText += partialFragments.get(pos);
+                    }
+                  }
+                  
+                  // Update output
+                  outputText = orderedText.trim();
                 }
               } catch (e) {
                 console.warn('Error parsing SSE data:', e);
@@ -370,4 +395,3 @@
       100% { transform: translateX(100%); }
     }
   </style>
-  

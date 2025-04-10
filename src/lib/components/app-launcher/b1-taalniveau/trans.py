@@ -1,11 +1,84 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 import asyncio
+import json
+from typing import List
+import tiktoken
 
 from open_webui.utils.auth import get_verified_user
 from open_webui.utils.chat import generate_chat_completion as chat_completion
 
 router = APIRouter()
+
+# Helper function to split text into paragraphs based on token count
+def split_into_paragraphs(text: str, max_tokens: int = 500) -> List[tuple]:
+    enc = tiktoken.get_encoding("cl100k_base")
+    paragraphs = text.split('\n\n')
+    result = []
+    current_position = 0
+    
+    for para in paragraphs:
+        tokens = len(enc.encode(para))
+        if tokens > max_tokens:
+            # Further split long paragraphs by sentences
+            sentences = para.split('. ')
+            current_para = []
+            current_tokens = 0
+            
+            for sentence in sentences:
+                sentence_tokens = len(enc.encode(sentence))
+                if current_tokens + sentence_tokens > max_tokens:
+                    if current_para:
+                        combined = '. '.join(current_para) + '.'
+                        result.append((combined, current_position))
+                        current_position += len(combined) + 2  # +2 for '\n\n'
+                        current_para = [sentence]
+                        current_tokens = sentence_tokens
+                else:
+                    current_para.append(sentence)
+                    current_tokens += sentence_tokens
+            
+            if current_para:
+                combined = '. '.join(current_para) + '.'
+                result.append((combined, current_position))
+                current_position += len(combined) + 2
+        else:
+            result.append((para, current_position))
+            current_position += len(para) + 2
+    
+    return result
+
+async def generate_paragraph_version(request: Request, model_id: str, system_prompt: str, paragraph: str, user: dict) -> str:
+    chat_request = {
+        "model": model_id,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Vertaal deze paragraaf naar B1-taalniveau:\n\n{paragraph}"}
+        ],
+        "temperature": 0.7,
+        "stream": False  # We don't stream individual versions
+    }
+    
+    response = await chat_completion(request, form_data=chat_request, user=user)
+    return response["choices"][0]["message"]["content"]
+
+async def evaluate_versions(request: Request, model_id: str, versions: List[str], user: dict) -> int:
+    evaluation_prompt = """Evalueer welke van de volgende tekstversies het beste voldoet aan B1-taalniveau criteria. 
+    Geef alleen het nummer (0, 1, of 2) van de beste versie terug."""
+    
+    chat_request = {
+        "model": model_id,
+        "messages": [
+            {"role": "system", "content": evaluation_prompt},
+            {"role": "user", "content": f"Versie 0:\n{versions[0]}\n\nVersie 1:\n{versions[1]}\n\nVersie 2:\n{versions[2]}"}
+        ],
+        "temperature": 0.3,
+        "stream": False
+    }
+    
+    response = await chat_completion(request, form_data=chat_request, user=user)
+    result = response["choices"][0]["message"]["content"].strip()
+    return int(result)
 
 @router.post("")
 async def simplify_text(
@@ -56,40 +129,43 @@ Houd je hierbij aan onderstaande richtlijnen voor B2-niveau:
     if preserved_words:
         system_prompt += f" De volgende woorden/termen mag je NIET vereenvoudigen of veranderen, gebruik ze exact zoals ze zijn: {', '.join(preserved_words)}."
     
-    # Maak het chat request
-    chat_request = {
-        "model": model_id,
-        "messages": [
-            {
-                "role": "system",
-                "content": system_prompt
-            },
-            {
-                "role": "user",
-                "content": f"Vertaal de volgende tekst naar {language_level}-taalniveau. Behoud de structuur en opmaak zoals alinea's en opsommingen:\n\n{input_text}"
-            }
-        ],
-        "temperature": 0.7,
-        "stream": True
-    }
+    # Split text into paragraphs with positions
+    paragraphs = split_into_paragraphs(input_text)
     
-    try:
-        # Gebruik de bestaande chat_completion functie
-        response = await chat_completion(request, form_data=chat_request, user=user)
+    async def process_paragraph(para_tuple):
+        paragraph, position = para_tuple
+        # Generate 3 versions concurrently
+        versions = await asyncio.gather(*[
+            generate_paragraph_version(request, model_id, system_prompt, paragraph, user)
+            for _ in range(3)
+        ])
         
-        # Als het een streaming response is, geef deze door
-        if hasattr(response, 'body_iterator'):
-            # Simply pass through the streaming response with the correct media type
-            return StreamingResponse(
-                response.body_iterator,
-                media_type="text/event-stream",
-                background=response.background if hasattr(response, 'background') else None
+        # Evaluate versions
+        best_version_idx = await evaluate_versions(request, model_id, versions, user)
+        best_version = versions[best_version_idx]
+        
+        return {"text": best_version, "position": position}
+
+    async def stream_results():
+        # Process all paragraphs concurrently
+        tasks = [process_paragraph(para) for para in paragraphs]
+        pending = tasks
+        
+        while pending:
+            # Wait for any task to complete
+            done, pending = await asyncio.wait(
+                pending, 
+                return_when=asyncio.FIRST_COMPLETED
             )
+            
+            for task in done:
+                result = await task
+                # Stream result as SSE
+                yield f"data: {json.dumps(result)}\n\n"
         
-        # Anders, geef de normale response terug
-        return response
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        stream_results(),
+        media_type="text/event-stream"
+    )
