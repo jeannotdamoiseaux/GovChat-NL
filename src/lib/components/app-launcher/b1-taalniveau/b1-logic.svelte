@@ -1,54 +1,111 @@
 <script>
   import { onMount, getContext } from 'svelte';
-  import { models as modelsStore } from '$lib/stores';
+  import { models, settings } from '$lib/stores';
   import { WEBUI_BASE_URL } from '$lib/constants';
   import { fade } from 'svelte/transition';
   import { toast } from 'svelte-sonner';
+  import { createOpenAITextStream } from '$lib/apis/streaming';
 
   const i18n = getContext('i18n');
-
-  // Props - ontvang selectedModels van de parent component
-  export let selectedModels = [''];
 
   let inputText = '';
   let outputText = '';
   let isLoading = false;
   let error = null;
-  let preservedWords = []; // Door gebruiker toegevoegde woorden
+  let preservedWords = [];
   let newPreservedWord = '';
-  let models = [];
   let showOutput = false;
   let languageLevel = 'B1';
+  
+  // Change single model to array of models like in chat
+  let selectedModels = [''];
+  let selectedModel = ''; // Keep this for compatibility
+  
+  $: availableModels = $models || [];
+  $: selectedModel = selectedModels[0] || ''; // Sync selectedModel with first model in array
 
-  // Gebruik de modelsStore om modellen op te halen
-  const unsubscribe = modelsStore.subscribe(value => {
-    models = value;
+  onMount(async () => {
+    // Get model selection from settings or localStorage
+    if ($settings?.models?.length > 0) {
+      selectedModels = $settings.models;
+      selectedModel = selectedModels[0];
+    } else {
+      const storedModel = localStorage.getItem('selectedModel');
+      selectedModels = storedModel ? [storedModel] : availableModels.length ? [availableModels[0].id] : [''];
+      selectedModel = selectedModels[0];
+    }
   });
 
-  // Functie om geselecteerde modellen te laden uit localStorage
-  function loadSelectedModels() {
-    try {
-      const savedModels = localStorage.getItem('b1_taalniveau_selected_models');
-      if (savedModels) {
-        const parsedModels = JSON.parse(savedModels);
-        if (Array.isArray(parsedModels) && parsedModels.length > 0) {
-          selectedModels = parsedModels;
-        }
-      }
-    } catch (error) {
-      console.error("Error loading saved models:", error);
+  // Update model selection function
+  function saveModelSelection(modelId) {
+    selectedModels = [modelId]; // Keep as array for consistency with chat
+    selectedModel = modelId;
+    localStorage.setItem('selectedModel', modelId);
+    
+    // Update settings if needed
+    if ($settings) {
+      settings.update(s => ({
+        ...s,
+        models: selectedModels
+      }));
     }
   }
 
-  onMount(() => {
-    // Laad opgeslagen modellen
-    loadSelectedModels();
-    
-    // Cleanup subscription when component is destroyed
-    return () => {
-      unsubscribe();
-    };
-  });
+  async function simplifyText() {
+    try {
+      if (!inputText.trim()) {
+        error = "Voer tekst in om te vereenvoudigen";
+        return;
+      }
+
+      if (!selectedModels[0]) {
+        error = "Selecteer eerst een model";
+        return;
+      }
+
+      isLoading = true;
+      error = null;
+      outputText = '';
+      showOutput = true;
+
+      const response = await fetch(`${WEBUI_BASE_URL}/api/b1/translate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          text: inputText,
+          model: selectedModels[0],
+          preserved_words: preservedWords,
+          language_level: languageLevel
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      // Use the same streaming approach as chat
+      const stream = await createOpenAITextStream(response.body);
+      
+      for await (const chunk of stream) {
+        if (chunk.error) {
+          throw new Error(chunk.error);
+        }
+        if (!chunk.done) {
+          outputText += chunk.value;
+        }
+      }
+
+    } catch (err) {
+      console.error('Error simplifying text:', err);
+      error = `Error: ${err.message}`;
+      toast.error('Error simplifying text');
+    } finally {
+      isLoading = false;
+    }
+  }
 
   // Functie om een woord toe te voegen aan de lijst van te behouden woorden
   function addPreservedWord() {
@@ -66,116 +123,6 @@
   // Functie om te schakelen tussen B1 en B2 taalniveau
   function toggleLanguageLevel() {
     languageLevel = languageLevel === 'B1' ? 'B2' : 'B1';
-  }
-
-  async function simplifyText() {
-    if (!inputText.trim()) {
-      error = "Voer tekst in om te vereenvoudigen";
-      return;
-    }
-
-    if (!selectedModels[0]) {
-      error = "Selecteer eerst een model in de navigatiebalk linksboven";
-      return;
-    }
-
-    error = null;
-    isLoading = true;
-    showOutput = true; // Show output container immediately
-    outputText = ''; // Clear previous output
-    
-    // Create a map to store text fragments by position
-    let textFragments = new Map();
-    let partialFragments = new Map();
-
-    try {
-      const token = localStorage.getItem('token');
-      const payload = {
-        model: selectedModels[0],
-        text: inputText,
-        preserved_words: preservedWords,
-        language_level: languageLevel
-      };
-
-      // Use fetch with streaming response handling
-      const response = await fetch(`${WEBUI_BASE_URL}/api/b1/translate`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      // Handle streaming response
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        
-        // Decode the chunk and process it
-        const chunk = decoder.decode(value, { stream: true });
-        
-        // Process SSE format (data: {...}\n\n)
-        const lines = chunk.split('\n');
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const jsonStr = line.substring(6).trim(); // Remove 'data: ' prefix and trim whitespace
-              if (jsonStr === '[DONE]') continue;
-              
-              const jsonData = JSON.parse(jsonStr);
-              if (jsonData.type === 'progress') {
-                // Update progress indicator
-                const progress = `Batch ${jsonData.batch} van ${jsonData.total_batches}`;
-                // Update your UI to show progress
-              } else if (jsonData.text) {
-                // Process text as before
-                if (jsonData.isPartial) {
-                  const currentText = partialFragments.get(jsonData.position) || '';
-                  partialFragments.set(jsonData.position, currentText + jsonData.text);
-                } else {
-                  textFragments.set(jsonData.position, partialFragments.get(jsonData.position) || '');
-                  partialFragments.delete(jsonData.position);
-                }
-
-                // Reconstruct full text
-                let orderedText = '';
-                const sortedPositions = Array.from(textFragments.keys()).sort((a, b) => a - b);
-                
-                for (const pos of sortedPositions) {
-                  orderedText += textFragments.get(pos);
-                  // Add partial fragment if it exists
-                  if (partialFragments.has(pos)) {
-                    orderedText += partialFragments.get(pos);
-                  }
-                }
-                
-                // Update the output text
-                outputText = orderedText.trim();
-              }
-            } catch (e) {
-              console.warn('Error parsing SSE data:', e);
-            }
-          }
-        }
-      }
-      
-      // Sla de geselecteerde modellen op voor later gebruik
-      localStorage.setItem('b1_taalniveau_selected_models', JSON.stringify(selectedModels));
-    } catch (err) {
-      console.error("Error simplifying text:", err);
-      error = "Fout bij vereenvoudigen: " + (err.message || "Onbekende fout");
-      showOutput = false;
-    } finally {
-      isLoading = false;
-    }
   }
 </script>
 
@@ -249,6 +196,7 @@
         </div>
       {/if}
     </div>
+
     
     <!-- Flex container voor input en output naast elkaar -->
     <div class="flex flex-col md:flex-row gap-6">
@@ -263,7 +211,7 @@
             bind:value={inputText}
             rows="12"
             draggable="false"
-            class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white min-h-[288px] max-h-[288px] overflow-y-auto"
+            class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white min-h-[288px] md:min-h-[513px] max-h-[288px] md:max-h-[513px] overflow-y-auto"
             placeholder="Voer hier de tekst in die je wilt vereenvoudigen naar {languageLevel}-taalniveau..."
             disabled={isLoading}
           ></textarea>
@@ -331,7 +279,7 @@
           {#if showOutput}
             <div 
               id="output"
-              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white min-h-[288px] max-h-[288px] overflow-y-auto"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white min-h-[288px] md:min-h-[513px] max-h-[288px] md:max-h-[513px] overflow-y-auto"
               transition:fade={{ duration: 200 }}
             >
               {outputText}
@@ -355,7 +303,7 @@
               </button>
             </div>
           {:else if !isLoading}
-            <div class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 min-h-[288px] flex items-center justify-center">
+            <div class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 min-h-[288px] md:min-h-[513px] flex items-center justify-center">
               <p>Hier verschijnt de vereenvoudigde tekst na verwerking</p>
             </div>
           {/if}

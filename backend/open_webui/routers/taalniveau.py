@@ -1,338 +1,171 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Request, Depends
+from typing import Optional, List, Any
+from pydantic import BaseModel
 import asyncio
-import json
-from typing import List
+from open_webui.utils.chat import generate_chat_completion
+from open_webui.utils.auth import get_current_user
 import tiktoken
-
-from open_webui.utils.auth import get_verified_user
-from open_webui.utils.chat import generate_chat_completion as chat_completion
+import re
 
 router = APIRouter()
 
-# Add these constants at the top of the file
-MAX_WORDS_PER_BATCH = 15000
-MAX_TOKENS_PER_PARAGRAPH = 1500
-MAX_CONCURRENT_BATCHES = 20
-
-# Helper function to split text into paragraphs based on token count
-def split_into_paragraphs(text: str, max_tokens: int = 500) -> List[tuple]:
-    enc = tiktoken.get_encoding("cl100k_base")
-    paragraphs = text.split('\n\n')
-    result = []
-    current_position = 0
-    
-    for para in paragraphs:
-        tokens = len(enc.encode(para))
-        if tokens > max_tokens:
-            # Further split long paragraphs by sentences
-            sentences = para.split('. ')
-            current_para = []
-            current_tokens = 0
-            
-            for sentence in sentences:
-                sentence_tokens = len(enc.encode(sentence))
-                if current_tokens + sentence_tokens > max_tokens:
-                    if current_para:
-                        combined = '. '.join(current_para) + '.'
-                        result.append((combined, current_position))
-                        current_position += len(combined) + 2  # +2 for '\n\n'
-                        current_para = [sentence]
-                        current_tokens = sentence_tokens
-                else:
-                    current_para.append(sentence)
-                    current_tokens += sentence_tokens
-            
-            if current_para:
-                combined = '. '.join(current_para) + '.'
-                result.append((combined, current_position))
-                current_position += len(combined) + 2
-        else:
-            result.append((para, current_position))
-            current_position += len(para) + 2
-    
-    return result
-
-def split_text_into_batches(text: str) -> List[str]:
-    """Split text into batches of approximately MAX_WORDS_PER_BATCH words."""
+def split_into_chunks(text: str, max_tokens: int = 1500) -> List[str]:
+    """Split text into chunks of approximately max_tokens"""
+    encoding = tiktoken.get_encoding("cl100k_base")
     words = text.split()
-    total_words = len(words)
-    
-    if total_words > MAX_WORDS_PER_BATCH * MAX_CONCURRENT_BATCHES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Tekst is te lang. Maximum is {MAX_WORDS_PER_BATCH * MAX_CONCURRENT_BATCHES} woorden, aangeleverde tekst bevat {total_words} woorden."
-        )
-    
-    batches = []
-    current_batch = []
-    current_word_count = 0
+    chunks = []
+    current_chunk = []
+    current_length = 0
     
     for word in words:
-        if current_word_count + 1 > MAX_WORDS_PER_BATCH:
-            # Find the last period to make a clean break
-            batch_text = ' '.join(current_batch)
-            last_period = batch_text.rfind('.')
-            if last_period != -1:
-                # Split at the last period
-                batches.append(batch_text[:last_period + 1])
-                remainder = batch_text[last_period + 1:] + ' ' + word
-                current_batch = remainder.split()
-                current_word_count = len(current_batch)
-            else:
-                # If no period found, just split at the word limit
-                batches.append(batch_text)
-                current_batch = [word]
-                current_word_count = 1
+        word_tokens = len(encoding.encode(word))
+        if current_length + word_tokens > max_tokens:
+            chunks.append(" ".join(current_chunk))
+            current_chunk = [word]
+            current_length = word_tokens
         else:
-            current_batch.append(word)
-            current_word_count += 1
+            current_chunk.append(word)
+            current_length += word_tokens
     
-    # Add the last batch if there's anything left
-    if current_batch:
-        batches.append(' '.join(current_batch))
+    if current_chunk:
+        chunks.append(" ".join(current_chunk))
     
-    return batches
+    return chunks
 
-async def generate_paragraph_version(request: Request, model_id: str, system_prompt: str, paragraph: str, user: dict) -> str:
-    chat_request = {
-        "model": model_id,
+async def generate_version(request: Request, chunk: str, model: str, preserved_words: List[str], language_level: str, user: Any) -> str:
+    """Generate a single version of simplified text"""
+    form_data = {
+        "model": model,
+        "stream": False,  # Set to False for parallel processing
         "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Vereenvoudig deze paragraaf naar B1-taalniveau en plaats het resultaat tussen <<< en >>> tekens:\n\n{paragraph}"}
-        ],
-        "temperature": 0.7,
-        "stream": False
+            {
+                "role": "system",
+                "content": f"""Je taak is om de volgende tekst te analyseren en te herschrijven naar een versie die voldoet aan het {language_level}-taalniveau.
+                           Hierbij is het belangrijk om de informatie zo letterlijk mogelijk over te brengen en de structuur zoveel mogelijk te behouden, zonder onnodige weglatingen.
+                           Het {language_level}-niveau kenmerkt zich door duidelijk en eenvoudig taalgebruik, geschikt voor een breed publiek met basisvaardigheden in de taal.
+
+                           Hier zijn enkele richtlijnen om je te helpen bij deze taak:
+                           - Gebruik korte zinnen en vermijd lange, complexe zinsconstructies.
+                           - Vervang moeilijke woorden door meer gangbare alternatieven.
+                           - Leg technische termen en (ambtelijk) jargon uit in eenvoudige bewoordingen.
+                           - Gebruik actieve zinsconstructies waar mogelijk.
+                           - Vermijd passieve zinnen en ingewikkelde grammaticale constructies.
+                           - Gebruik concrete voorbeelden om abstracte concepten te verduidelijken.
+                           
+                           Hier zijn enkele voorbeelden van woorden op C1-niveau en hun eenvoudigere {language_level}-equivalenten:
+                           - Betreffende -> Over
+                           - Creëren -> Ontwerpen, vormen, vormgeven, maken
+                           - Prioriteit -> Voorrang, voorkeur
+                           - Relevant -> Belangrijk
+                           - Verstrekken -> Geven
+                           
+                           Behoud de volgende woorden ongewijzigd: {', '.join(preserved_words) if preserved_words else 'geen'}.
+                           Zorg ervoor dat de hoofdboodschap van de tekst behouden blijft en dat de vereenvoudigde versie nog steeds een accurate weergave is van de oorspronkelijke inhoud.
+
+                           Plaats de verbeterde paragraaf tussen "<<<" en ">>>" tekens. Als de tekst te kort is om te verbeteren neem je de tekst een-op-een over en plaats deze tussen de genoemende tekens, bijv. "<<< Artikel 3.2 >>>".""" 
+            },
+            {
+                "role": "user",
+                "content": chunk
+            }
+        ]
     }
     
-    response = await chat_completion(request, form_data=chat_request, user=user)
-    content = response["choices"][0]["message"]["content"]
-    
-    # Extract text between markers
-    start = content.find('<<<')
-    end = content.find('>>>')
-    if start >= 0 and end >= 0:
-        return content[start+3:end].strip()
-    return content.strip()
+    response = await generate_chat_completion(request=request, form_data=form_data, user=user)
+    return response['choices'][0]['message']['content']
 
-async def evaluate_versions(request: Request, model_id: str, versions: List[str], user: dict) -> str:
-    evaluation_prompt = """Je taak is om de volgende tekst te analyseren en de beste B1-niveau versie te selecteren.
-    
-    Beoordeel de versies op basis van deze B1-criteria:
-    - Gebruik van korte zinnen en vermijding van complexe constructies
-    - Gebruik van gangbare woorden in plaats van moeilijke alternatieven
-    - Uitleg van technische termen in eenvoudige bewoordingen
-    - Gebruik van actieve zinsconstructies
-    - Behoud van de originele betekenis en nuances
-    
-    Selecteer de beste versie die voldoet aan deze criteria en plaats deze tussen <<< en >>> tekens."""
+class SimplifyTextRequest(BaseModel):
+    text: str
+    model: str
+    preserved_words: list[str] = []
+    language_level: str = "B1"
 
-    chat_request = {
-        "model": model_id,
-        "messages": [
-            {"role": "system", "content": evaluation_prompt},
-            {"role": "user", "content": f"Versie 1:\n{versions[0]}\n\nVersie 2:\n{versions[1]}\n\nVersie 3:\n{versions[2]}"}
-        ],
-        "temperature": 0.3,
-        "stream": False
-    }
-    
-    response = await chat_completion(request, form_data=chat_request, user=user)
-    content = response["choices"][0]["message"]["content"]
-    
-    # Extract text between <<< and >>> markers
-    start = content.find('<<<')
-    end = content.find('>>>')
-    if start >= 0 and end >= 0:
-        return content[start+3:end].strip()
-    return content.strip()
-
-async def process_paragraph_result(para_tuple, request: Request, model_id: str, system_prompt: str, user: dict):
-    paragraph, position = para_tuple
-    # Generate 3 versions concurrently
-    versions = await asyncio.gather(*[
-        generate_paragraph_version(request, model_id, system_prompt, paragraph, user)
-        for _ in range(3)
-    ])
-    
-    # Evaluate versions and get best version
-    best_version = await evaluate_versions(request, model_id, versions, user)
-    return best_version, position
-
-async def process_batch(batch_text: str, batch_num: int, total_batches: int, request: Request, model_id: str, system_prompt: str, user: dict):
-    # Split batch into paragraphs
-    paragraphs = split_into_paragraphs(batch_text, MAX_TOKENS_PER_PARAGRAPH)
-    
-    # Process the paragraphs in this batch
-    tasks = [
-        asyncio.create_task(
-            process_paragraph_result(para, request, model_id, system_prompt, user)
-        ) 
-        for para in paragraphs
-    ]
-    pending = tasks
-    
-    try:
-        # Send batch progress update
-        progress_data = json.dumps({
-            'type': 'progress',
-            'batch': batch_num + 1,
-            'total_batches': total_batches
-        })
-        yield f"data: {progress_data}\n\n"
-        
-        while pending:
-            done, pending = await asyncio.wait(
-                pending, 
-                return_when=asyncio.FIRST_COMPLETED
-            )
-            
-            for task in done:
-                try:
-                    text, position = await task
-                    words = text.split()
-                    for word in words:
-                        data = json.dumps({
-                            'text': word + ' ',
-                            'position': position,
-                            'isPartial': True
-                        })
-                        yield f"data: {data}\n\n"
-                        await asyncio.sleep(0.05)
-                    
-                    completion_data = json.dumps({
-                        'text': '\n\n',
-                        'position': position,
-                        'isPartial': False
-                    })
-                    yield f"data: {completion_data}\n\n"
-                except Exception as e:
-                    print(f"Error processing task: {e}")
-                    continue
-    finally:
-        for task in pending:
-            task.cancel()
-
-async def stream_results(paragraphs: List[tuple], request: Request, model_id: str, system_prompt: str, user: dict):
-    # Create tasks for processing each paragraph
-    tasks = [
-        asyncio.create_task(
-            process_paragraph_result(para, request, model_id, system_prompt, user)
-        ) 
-        for para in paragraphs
-    ]
-    pending = tasks
-    
-    try:
-        while pending:
-            # Wait for any task to complete
-            done, pending = await asyncio.wait(
-                pending, 
-                return_when=asyncio.FIRST_COMPLETED
-            )
-            
-            # Process completed tasks
-            for task in done:
-                try:
-                    text, position = await task
-                    # Stream the text word by word
-                    words = text.split()
-                    for word in words:
-                        data = json.dumps({
-                            'text': word + ' ',
-                            'position': position,
-                            'isPartial': True
-                        })
-                        yield f"data: {data}\n\n"
-                        await asyncio.sleep(0.05)  # Add small delay between words
-                    
-                    # Send paragraph completion marker
-                    completion_data = json.dumps({
-                        'text': '\n\n',
-                        'position': position,
-                        'isPartial': False
-                    })
-                    yield f"data: {completion_data}\n\n"
-                except Exception as e:
-                    print(f"Error processing task: {e}")
-                    continue
-        
-        # Signal overall completion
-        yield "data: [DONE]\n\n"
-        
-    finally:
-        # Clean up any remaining tasks
-        for task in pending:
-            task.cancel()
-
-@router.post("")
+@router.post("/translate")
 async def simplify_text(
     request: Request,
-    form_data: dict,
-    user=Depends(get_verified_user)
+    data: SimplifyTextRequest,
+    user = Depends(get_current_user)
 ):
-    """
-    Eenvoudige endpoint voor het vertalen van tekst naar B1-taalniveau.
-    Verwacht een JSON body met:
-    - text: De tekst die vereenvoudigd moet worden
-    - model: Het model ID om te gebruiken
-    - preserved_words: (optioneel) Lijst van woorden die niet vereenvoudigd moeten worden
-    """
-    # Haal de benodigde gegevens uit de request
-    input_text = form_data.get("text", "")
-    model_id = form_data.get("model", None)
-    preserved_words = form_data.get("preserved_words", [])
-    language_level = form_data.get("language_level", "B1")
+    """Endpoint to simplify text to B1/B2 language level with parallel processing"""
     
-    if not input_text:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Geen tekst opgegeven om te vertalen",
-        )
-    
-    # Maak de system prompt voor het gekozen taalniveau
-    if language_level == "B1":
-        system_prompt = """Je taak is om onderstaande tekst zorgvuldig te analyseren en vervolgens te herschrijven naar helder, begrijpelijk Nederlands op taalniveau B1. Hierbij is het essentieel dat je de informatie zo letterlijk en nauwkeurig mogelijk weergeeft en de structuur en betekenis van de originele tekst behoudt, zonder belangrijke informatie weg te laten.
+    # Split text into chunks
+    chunks = split_into_chunks(data.text)
+    all_versions = []
+    batch_size = 20  # Process 20 chunks at a time
 
-Houd je hierbij aan onderstaande richtlijnen:
--Gebruik korte en actieve zinnen.
--Vervang moeilijke woorden door eenvoudige, dagelijkse alternatieven.
--Vermijd technische termen en ambtelijke taal; als dit niet kan, leg deze dan uit met eenvoudige woorden of verduidelijk ze met een kort voorbeeld.
--Vermijd passieve en ingewikkelde grammaticale structuren.
--Maak abstracte begrippen concreet met duidelijke voorbeelden."""
-    else:  # B2 taalniveau
-        system_prompt = """Je taak is om onderstaande tekst zorgvuldig te analyseren en vervolgens te herschrijven naar helder, begrijpelijk Nederlands op taalniveau B2. Hierbij is het essentieel dat je de informatie zo letterlijk en nauwkeurig mogelijk weergeeft en de structuur en betekenis van de originele tekst behoudt, zonder belangrijke informatie weg te laten.
+    # Process all chunks in batches
+    for batch_start in range(0, len(chunks), batch_size):
+        batch_end = min(batch_start + batch_size, len(chunks))
+        batch_chunks = chunks[batch_start:batch_end]
 
-Houd je hierbij aan onderstaande richtlijnen voor B2-niveau:
--Gebruik duidelijke zinnen van gemiddelde lengte.
--Complexe zinnen mogen, maar zorg dat ze logisch opgebouwd zijn.
--Vaktermen mogen gebruikt worden als ze uitgelegd worden.
--Gebruik een mix van actieve en passieve zinnen waar passend.
--Abstracte begrippen zijn toegestaan maar moeten duidelijk zijn uit de context."""
+        # Process each chunk in parallel
+        version_tasks = []
+        for i, chunk in enumerate(batch_chunks):
+            chunk_tasks = [
+                generate_version(request, chunk, data.model, data.preserved_words, data.language_level, user)
+                for _ in range(3)
+            ]
+            version_tasks.extend(chunk_tasks)
 
-    # Voeg instructies toe over woorden die niet vereenvoudigd moeten worden
-    if preserved_words:
-        system_prompt += f" De volgende woorden/termen mag je NIET vereenvoudigen of veranderen, gebruik ze exact zoals ze zijn: {', '.join(preserved_words)}."
-    
-    # Split text into batches
-    batches = split_text_into_batches(input_text)
-    total_batches = len(batches)
-    
-    async def process_all_batches():
-        for batch_num, batch_text in enumerate(batches):
-            async for chunk in process_batch(
-                batch_text, 
-                batch_num, 
-                total_batches,
-                request, 
-                model_id, 
-                system_prompt, 
-                user
-            ):
-                yield chunk
-        yield "data: [DONE]\n\n"
-    
-    return StreamingResponse(
-        process_all_batches(),
-        media_type="text/event-stream"
+        # Process batch results
+        batch_results = await asyncio.gather(*version_tasks)
+        
+        # Store results in memory
+        for i in range(0, len(batch_results), 3):
+            chunk_versions = batch_results[i:i+3]
+            all_versions.append({
+                "chunk": batch_start + (i // 3),
+                "versions": chunk_versions
+            })
+
+    # Process all chunks at once
+    form_data = {
+        "model": data.model,
+        "stream": True,
+        "temperature": 0.2,  # Lower temperature for faster responses
+        "presence_penalty": 0.0,
+        "frequency_penalty": 0.0,
+        "messages": [
+            {
+                "role": "system",
+                "content": f"""Je taak is om de volgende tekst te analyseren en te herschrijven naar een versie die voldoet aan het {data.language_level}-taalniveau.
+                           Hierbij is het belangrijk om de informatie zo letterlijk mogelijk over te brengen en de structuur zoveel mogelijk te behouden, zonder onnodige weglatingen.
+                           Het {data.language_level}-niveau kenmerkt zich door duidelijk en eenvoudig taalgebruik, geschikt voor een breed publiek met basisvaardigheden in de taal.
+
+                           Hier zijn enkele richtlijnen om je te helpen bij deze taak:
+                           - Gebruik korte zinnen en vermijd lange, complexe zinsconstructies.
+                           - Vervang moeilijke woorden door meer gangbare alternatieven.
+                           - Leg technische termen en (ambtelijk) jargon uit in eenvoudige bewoordingen.
+                           - Gebruik actieve zinsconstructies waar mogelijk.
+                           - Vermijd passieve zinnen en ingewikkelde grammaticale constructies.
+                           - Gebruik concrete voorbeelden om abstracte concepten te verduidelijken.
+                           
+                           Hier zijn enkele voorbeelden van woorden op C1-niveau en hun eenvoudigere {data.language_level}-equivalenten:
+                           - Betreffende -> Over
+                           - Creëren -> Ontwerpen, vormen, vormgeven, maken
+                           - Prioriteit -> Voorrang, voorkeur
+                           - Relevant -> Belangrijk
+                           - Verstrekken -> Geven
+                           
+                           Zorg ervoor dat de inhoud en nuances van de oorspronkelijke tekst behouden blijven en dat de vereenvoudigde versie nog steeds een accurate weergave is van de oorspronkelijke inhoud.
+
+                           Je ontvangt de originele paragraaf, samen met enkele varianten van deze tekst in eenvoudigere taal ({data.language_level}). Het is jouw taak om tot een definitieve {data.language_level}-versie te komen.
+                           
+                           Verwijder alle "<<<" en ">>>" tekens uit de tekst en combineer de beste versies tot één samenhangend geheel."""
+            },
+            {
+                "role": "user",
+                "content": "\n\n".join([
+                    f"Paragraaf {chunk['chunk'] + 1}:\n" + 
+                    "\n".join([f"Versie {i+1}: {version}" for i, version in enumerate(chunk['versions'])])
+                    for chunk in all_versions
+                ])
+            }
+        ]
+    }
+
+    return await generate_chat_completion(
+        request=request,
+        form_data=form_data,
+        user=user
     )
