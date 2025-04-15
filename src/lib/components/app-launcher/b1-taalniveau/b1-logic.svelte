@@ -219,6 +219,61 @@
     // Als de switch wordt aangezet, reset de activeDefaultWords naar origineel
     activeDefaultWords = [...originalDefaultWords];
   }
+
+  // Voeg deze variabelen toe
+  let fileInput;
+  let isProcessingFile = false;
+  let isFlashing = false;
+
+  // Vervang de handleFileUpload functie met deze versie
+  async function handleFileUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+  
+    // Check bestandstype
+    if (!file.name.match(/\.(doc|docx)$/i)) {
+      toast.error('Alleen Word documenten (.doc of .docx) zijn toegestaan');
+      return;
+    }
+  
+    isProcessingFile = true;
+    isFlashing = true; // Start de flash animatie
+    
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      const response = await fetch(`${WEBUI_BASE_URL}/api/b1/upload`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: formData
+      });
+  
+      if (!response.ok) throw new Error('Fout bij uploaden bestand');
+      
+      const data = await response.json();
+      // Zet dikgedrukte tekst om naar markdown formaat
+      inputText = data.text.replace(/<strong>(.*?)<\/strong>/g, '**$1**');
+      toast.success('Bestand succesvol geüpload');
+    } catch (err) {
+      console.error('Error uploading file:', err);
+      toast.error('Fout bij verwerken bestand');
+    } finally {
+      isProcessingFile = false;
+      if (fileInput) fileInput.value = ''; // Reset input
+      // Reset de flash animatie na een korte vertraging
+      setTimeout(() => {
+        isFlashing = false;
+      }, 1000);
+    }
+  }
+  
+  // Voeg deze helper functie toe voor tekst verwerking
+  function processText(text) {
+    return text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  }
 </script>
 <div class="max-w-7xl mx-auto mt-9">
   <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
@@ -305,7 +360,7 @@
         </button>
       </div>
       <span class="text-sm text-gray-700 dark:text-gray-300">
-        Gebruik standaard niet te vertalen woorden (DigiD, BSN, etc.)
+        Standaard niet te veranderen woorden (Bodembeleid, Subsidie, etc.)
       </span>
     </div>
     
@@ -316,16 +371,60 @@
         <label for="input" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
           Originele tekst
         </label>
-        <div class="relative">
+        <div class="relative"
+          on:dragover|preventDefault
+          on:drop|preventDefault={(event) => {
+            const file = event.dataTransfer.files[0];
+            if (file) {
+              if (file.name.match(/\.(doc|docx)$/i)) {
+                handleFileUpload({ target: { files: [file] } });
+              } else {
+                toast.error('Alleen Word documenten (.doc of .docx) zijn toegestaan');
+              }
+            }
+          }}
+        >
           <textarea
             id="input"
             bind:value={inputText}
             rows="12"
             draggable="false"
-            class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white min-h-[250px] md:min-h-[400px] max-h-[250px] md:max-h-[400px] overflow-y-auto"
-            placeholder="Voer hier de tekst in die je wilt vereenvoudigen naar {languageLevel}-taalniveau..."
+            class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white min-h-[250px] md:min-h-[400px] max-h-[250px] md:max-h-[400px] overflow-y-auto font-[system-ui] {isFlashing ? 'flash-animation' : ''}"
+            placeholder="Voer hier de tekst in die je wilt vereenvoudigen naar {languageLevel}-taalniveau... Gebruik ** voor dikgedrukte tekst"
             disabled={isLoading}
+            spellcheck="false"
           ></textarea>
+
+          <!-- Upload knop en drag & drop hint onder textarea -->
+          <div class="mt-2 flex items-center gap-2">
+            <input
+              type="file"
+              accept=".doc,.docx"
+              class="hidden"
+              bind:this={fileInput}
+              on:change={handleFileUpload}
+            />
+            <button
+              on:click={() => fileInput.click()}
+              disabled={isProcessingFile}
+              class="bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-white font-medium py-1 px-3 rounded focus:outline-none focus:shadow-outline flex items-center gap-2"
+            >
+              {#if isProcessingFile}
+                <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              {:else}
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3 3m0 0l-3-3m3 3V8" />
+                </svg>
+              {/if}
+              Upload Word document
+            </button>
+            <span class="text-sm text-gray-500 dark:text-gray-400">
+              of sleep een Word bestand hierheen
+            </span>
+          </div>
         </div>
       </div>
       
@@ -340,7 +439,7 @@
             Selecteer eerst een model in de navigatiebalk linksboven
           {:else if isLoading}
             <div class="flex items-center justify-center">
-              <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 24 24">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
@@ -391,10 +490,10 @@
           {#if showOutput}
             <div 
               id="output"
-              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white min-h-[250px] md:min-h-[400px] max-h-[250px] md:max-h-[400px] overflow-y-auto whitespace-pre-wrap"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white min-h-[250px] md:min-h-[400px] max-h-[250px] md:max-h-[400px] overflow-y-auto whitespace-pre-wrap font-[system-ui]"
               transition:fade={{ duration: 200 }}
             >
-              {outputText}
+              {@html processText(outputText)}
             </div>
             
             <!-- Progress bar direct onder output -->
@@ -476,5 +575,46 @@
     0% { transform: translateX(-100%); }
     50% { transform: translateX(0); }
     100% { transform: translateX(100%); }
+  }
+
+  :global(#output strong) {
+    font-weight: 700;
+    color: inherit;
+  }
+
+  /*flash animation*/
+  @keyframes flash {
+    0% {
+      background-color: rgba(59, 130, 246, 0);
+      transform: scale(1);
+      box-shadow: 0 0 0 0 rgba(96, 165, 250, 0);
+    }
+    15% {
+      background-color: rgba(59, 130, 246, 0.2);
+      transform: scale(1.02);
+      box-shadow: 
+        0 0 30px 15px rgba(96, 165, 250, 0.3),
+        0 0 0 30px rgba(96, 165, 250, 0.1),
+        inset 0 0 15px rgba(255, 255, 255, 0.4);
+    }
+    30% {
+      background-color: rgba(59, 130, 246, 0.1);
+      transform: scale(1);
+      box-shadow: 
+        0 0 50px 20px rgba(96, 165, 250, 0.1),
+        0 0 0 40px rgba(96, 165, 250, 0),
+        inset 0 0 20px rgba(255, 255, 255, 0.2);
+    }
+    100% {
+      background-color: rgba(59, 130, 246, 0);
+      transform: scale(1);
+      box-shadow: 0 0 0 0 rgba(96, 165, 250, 0);
+    }
+  }
+
+  :global(.flash-animation) {
+    animation: flash 1.0s cubic-bezier(0.4, 0, 0.2, 1);
+    border-color: rgba(96, 165, 250, 0.8);
+    position: relative;
   }
 </style>

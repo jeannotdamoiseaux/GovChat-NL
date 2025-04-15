@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, Request, Depends, File, UploadFile
 from typing import Optional, List, Any
 from pydantic import BaseModel
 import asyncio
@@ -6,6 +6,8 @@ from open_webui.utils.chat import generate_chat_completion
 from open_webui.utils.auth import get_current_user
 import tiktoken
 import re
+import docx
+import io
 
 router = APIRouter()
 
@@ -81,11 +83,7 @@ class SimplifyTextRequest(BaseModel):
     language_level: str = "B1"
 
 @router.post("/translate")
-async def simplify_text(
-    request: Request,
-    data: SimplifyTextRequest,
-    user = Depends(get_current_user)
-):
+async def simplify_text(request: Request, data: SimplifyTextRequest, user = Depends(get_current_user)):
     """Endpoint to simplify text to B1/B2 language level with parallel processing"""
     
     # Split text into chunks
@@ -151,7 +149,10 @@ async def simplify_text(
 
                            Je ontvangt de originele paragraaf, samen met enkele varianten van deze tekst in eenvoudigere taal ({data.language_level}). Het is jouw taak om tot een definitieve {data.language_level}-versie te komen.
                            
-                           Verwijder alle "<<<" en ">>>" tekens uit de tekst en combineer de beste versies tot één samenhangend geheel."""
+                           Verwijder alle "<<<" en ">>>" tekens uit de tekst en combineer de beste versies tot één samenhangend geheel.
+                           
+                           Behoud alle tekst tussen ** sterretjes exact zoals deze is en zet deze ook tussen ** sterretjes in de output.
+                           Bijvoorbeeld: "Dit is een **belangrijk** woord" moet in de output ook "Dit is een **belangrijk** woord" worden."""
             },
             {
                 "role": "user",
@@ -169,3 +170,43 @@ async def simplify_text(
         form_data=form_data,
         user=user
     )
+
+def extract_text_from_docx(file_bytes: bytes) -> str:
+    """Extract text from a .docx file with formatting"""
+    doc = docx.Document(io.BytesIO(file_bytes))
+    formatted_text = []
+    
+    for paragraph in doc.paragraphs:
+        text = ""
+        for run in paragraph.runs:
+            # Check if the text is bold
+            if run.bold:
+                text += f"**{run.text}**"
+            else:
+                text += run.text
+        formatted_text.append(text)
+    
+    return '\n'.join(formatted_text)
+
+@router.post("/upload")
+async def upload_file(
+    request: Request,
+    file: UploadFile = File(...),
+    user = Depends(get_current_user)
+):
+    """Handle file uploads for document processing"""
+    if not file.filename.endswith(('.doc', '.docx')):
+        raise HTTPException(
+            status_code=400,
+            detail="Only .doc and .docx files are supported"
+        )
+    
+    try:
+        contents = await file.read()
+        text = extract_text_from_docx(contents)
+        return {"text": text}
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Error processing file: {str(e)}"
+        )
