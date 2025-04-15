@@ -113,6 +113,16 @@
     }
   }
 
+  let wordCountPercentage = 0;
+  let inputWordCount = 0;
+  let outputWordCount = 0;
+
+  function countWords(text) {
+    return text.trim().split(/\s+/).filter(word => word.length > 0).length;
+  }
+
+  $: inputWordCount = countWords(inputText);
+
   async function simplifyText() {
     try {
       if (!inputText.trim()) {
@@ -128,6 +138,8 @@
       isLoading = true;
       error = null;
       outputText = '';
+      outputWordCount = 0;
+      wordCountPercentage = 0;
       showOutput = true;
 
       const response = await fetch(`${WEBUI_BASE_URL}/api/b1/translate`, {
@@ -157,6 +169,11 @@
         }
         if (!chunk.done) {
           outputText += chunk.value;
+          outputWordCount = countWords(outputText);
+          wordCountPercentage = Math.round((outputWordCount / inputWordCount) * 100);
+        } else {
+          // Als de stream klaar is, zet percentage op 100%
+          wordCountPercentage = 100;
         }
       }
 
@@ -166,6 +183,10 @@
       toast.error('Error simplifying text');
     } finally {
       isLoading = false;
+      // Extra check om zeker te zijn dat het 100% is na voltooiing
+      if (showOutput && outputText) {
+        wordCountPercentage = 100;
+      }
     }
   }
 
@@ -199,8 +220,7 @@
     activeDefaultWords = [...originalDefaultWords];
   }
 </script>
-
-<div class="max-w-7xl mx-auto mt-10">
+<div class="max-w-7xl mx-auto mt-9">
   <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
     <div class="flex justify-between items-center mb-6">
       <h1 class="text-2xl font-bold text-gray-800 dark:text-white">
@@ -252,7 +272,7 @@
       </div>
       
       <!-- Vervang de tags container div met deze aangepaste versie -->
-      <div class="max-h-40 overflow-y-auto border border-gray-300 rounded-md p-2 bg-gray-50 dark:bg-gray-700 dark:border-gray-600">
+      <div class="max-h-29 overflow-y-auto border border-gray-300 rounded-md p-2 bg-gray-50 dark:bg-gray-700 dark:border-gray-600">
         <div class="flex flex-wrap gap-2">
           {#each preservedWords as word}
             <div class="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 px-2 py-1 rounded-md flex items-center">
@@ -367,18 +387,38 @@
             </div>
           {/if}
           
+          <!-- Vervang de Output sectie met deze nieuwe structuur -->
           {#if showOutput}
             <div 
               id="output"
-              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white min-h-[250px] md:min-h-[400px] max-h-[250px] md:max-h-[400px] overflow-y-auto"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white min-h-[250px] md:min-h-[400px] max-h-[250px] md:max-h-[400px] overflow-y-auto whitespace-pre-wrap"
               transition:fade={{ duration: 200 }}
             >
               {outputText}
             </div>
             
-            <div class="mt-4 flex justify-end">
+            <!-- Progress bar direct onder output -->
+            {#if isLoading || showOutput}
+              <div class="mt-2 flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                <div class="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                  <div
+                    class="bg-blue-600 h-2 rounded-full transition-all duration-200"
+                    style="width: {wordCountPercentage}%"
+                  ></div>
+                </div>
+                <span class="min-w-[4rem] text-right">
+                  {wordCountPercentage}%
+                </span>
+              </div>
+              <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Woorden: {outputWordCount} / {inputWordCount}
+              </div>
+            {/if}
+            
+            <!-- Kopieer knop onder progress bar -->
+            <div class="mt--1 flex justify-end">
               <button
-              on:click={() => {
+                on:click={() => {
                   navigator.clipboard.writeText(outputText)
                     .then(() => {
                       toast.success('Tekst gekopieerd naar klembord!');
