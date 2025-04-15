@@ -17,6 +17,68 @@
   let showOutput = false;
   let languageLevel = 'B1';
   
+  let useDefaultWords = true;
+
+  // Vervang de defaultWords met deze twee constanten
+  const originalDefaultWords = [
+    'Provinciale Staten',
+    'Gedeputeerde Staten',
+    'Directieteam',
+    'Regulier overleg (RO)',
+    'Fracties',
+    'Statenleden',
+    'Statenlid',
+    'Gedeputeerde',
+    'Commissaris van de Koning (CdK)',
+    'Subsidie',
+    'Begroting',
+    'Interprovinciaal overleg (IPO)',
+    'Ruimtelijke ordening',
+    'Regionaal beleid',
+    'Provinciefonds',
+    'Omgevingsvisie',
+    'Provinciale verordening',
+    'Regionaal samenwerkingsverband',
+    'Gebiedscommissie',
+    'Waterplan',
+    'Milieubeleidsplan',
+    'Inpassingsplan',
+    'Ruimtelijk Economisch Programma',
+    'Uitvoeringsprogramma Bereikbaarheid',
+    'Adaptatieplan Klimaat',
+    'Erfgoedprogramma',
+    'Interprovinciaal Coördinatie Overleg (IPCO)',
+    'Regionaal Beleidsplan Verkeersveiligheid (RBV)',
+    'Regionaal economisch beleid',
+    'Ontwikkelingsfonds',
+    'Veiligheids- en Crisismanagementplan (RVCP)',
+    'Natuurbeheer',
+    'Waterbeheer',
+    'Milieubeleid',
+    'Mobiliteitsbeleid',
+    'Plattelandsontwikkeling',
+    'Provinciale infrastructuur',
+    'Omgevingsverordening',
+    'Energietransitie',
+    'Waterkwaliteit',
+    'Duurzaamheidsagenda',
+    'Natuurbeheerplan',
+    'Mobiliteitsvisie',
+    'Sociale agenda',
+    'Bodembeleid',
+    'Burgerparticipatie',
+    'Ecologie',
+    'Ecologisch',
+    'Groenbeleid',
+    'Natuur- en landschapsbeheerorganisaties'
+  ];
+
+  let activeDefaultWords = [...originalDefaultWords];
+  let userWords = [];
+
+  // Wijzig het reactive statement
+  $: preservedWords = useDefaultWords ? [...userWords, ...activeDefaultWords] : userWords;
+
   // Change single model to array of models like in chat
   let selectedModels = [''];
   let selectedModel = ''; // Keep this for compatibility
@@ -110,19 +172,31 @@
   // Functie om een woord toe te voegen aan de lijst van te behouden woorden
   function addPreservedWord() {
     if (newPreservedWord.trim()) {
-      preservedWords = [...preservedWords, newPreservedWord.trim()];
+      userWords = [...userWords, newPreservedWord.trim()];
       newPreservedWord = '';
     }
   }
 
-  // Functie om een woord te verwijderen uit de lijst van door gebruiker toegevoegde woorden
+  // Wijzig de removePreservedWord functie
   function removePreservedWord(word) {
-    preservedWords = preservedWords.filter(w => w !== word);
+    if (originalDefaultWords.includes(word)) {
+      // Als het een standaardwoord is, verwijder het uit activeDefaultWords
+      activeDefaultWords = activeDefaultWords.filter(w => w !== word);
+    } else {
+      // Als het een gebruikerswoord is
+      userWords = userWords.filter(w => w !== word);
+    }
   }
 
   // Functie om te schakelen tussen B1 en B2 taalniveau
   function toggleLanguageLevel() {
     languageLevel = languageLevel === 'B1' ? 'B2' : 'B1';
+  }
+
+  // Voeg deze watch toe voor useDefaultWords
+  $: if (useDefaultWords) {
+    // Als de switch wordt aangezet, reset de activeDefaultWords naar origineel
+    activeDefaultWords = [...originalDefaultWords];
   }
 </script>
 
@@ -177,26 +251,43 @@
         </button>
       </div>
       
-      <!-- Door gebruiker toegevoegde woorden -->
-      {#if preservedWords.length > 0}
-        <div class="mt-2">
-          <div class="flex flex-wrap gap-2 mt-2">
-            {#each preservedWords as word}
-              <div class="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 px-2 py-1 rounded-md flex items-center">
-                <span>{word}</span>
-                <button 
-                  on:click={() => removePreservedWord(word)}
-                  class="ml-2 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 focus:outline-none"
-                >
-                  ×
-                </button>
-              </div>
-            {/each}
-          </div>
+      <!-- Vervang de tags container div met deze aangepaste versie -->
+      <div class="max-h-40 overflow-y-auto border border-gray-300 rounded-md p-2 bg-gray-50 dark:bg-gray-700 dark:border-gray-600">
+        <div class="flex flex-wrap gap-2">
+          {#each preservedWords as word}
+            <div class="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 px-2 py-1 rounded-md flex items-center">
+              <span>{word}</span>
+              <button 
+                on:click={() => removePreservedWord(word)}
+                class="ml-2 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 focus:outline-none"
+              >
+                ×
+              </button>
+            </div>
+          {/each}
         </div>
-      {/if}
+      </div>
     </div>
 
+    <!-- Knop om standaard woorden toe te voegen -->
+    <div class="mb-4 flex items-center gap-2">
+      <div class="flex items-center">
+        <button 
+          type="button"
+          class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 {useDefaultWords ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-600'}"
+          role="switch"
+          aria-checked={useDefaultWords}
+          on:click={() => useDefaultWords = !useDefaultWords}
+        >
+          <span 
+            class="translate-x-0 pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out {useDefaultWords ? 'translate-x-5' : 'translate-x-0'}"
+          />
+        </button>
+      </div>
+      <span class="text-sm text-gray-700 dark:text-gray-300">
+        Gebruik standaard niet te vertalen woorden (DigiD, BSN, etc.)
+      </span>
+    </div>
     
     <!-- Flex container voor input en output naast elkaar -->
     <div class="flex flex-col md:flex-row gap-6">
@@ -211,7 +302,7 @@
             bind:value={inputText}
             rows="12"
             draggable="false"
-            class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white min-h-[288px] md:min-h-[513px] max-h-[288px] md:max-h-[513px] overflow-y-auto"
+            class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white min-h-[250px] md:min-h-[400px] max-h-[250px] md:max-h-[400px] overflow-y-auto"
             placeholder="Voer hier de tekst in die je wilt vereenvoudigen naar {languageLevel}-taalniveau..."
             disabled={isLoading}
           ></textarea>
@@ -279,7 +370,7 @@
           {#if showOutput}
             <div 
               id="output"
-              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white min-h-[288px] md:min-h-[513px] max-h-[288px] md:max-h-[513px] overflow-y-auto"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white min-h-[250px] md:min-h-[400px] max-h-[250px] md:max-h-[400px] overflow-y-auto"
               transition:fade={{ duration: 200 }}
             >
               {outputText}
@@ -303,7 +394,7 @@
               </button>
             </div>
           {:else if !isLoading}
-            <div class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 min-h-[288px] md:min-h-[513px] flex items-center justify-center">
+            <div class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 min-h-[250px] md:min-h-[400px] flex items-center justify-center">
               <p>Hier verschijnt de vereenvoudigde tekst na verwerking</p>
             </div>
           {/if}
