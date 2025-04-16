@@ -1,147 +1,129 @@
 <script>
-  import { onMount, getContext } from 'svelte';
+  import { onMount, getContext } from 'svelte'; 
   import { models, settings } from '$lib/stores';
   import { WEBUI_BASE_URL } from '$lib/constants';
   import { fade } from 'svelte/transition';
   import { toast } from 'svelte-sonner';
-  import { createOpenAITextStream } from '$lib/apis/streaming';
 
-  const i18n = getContext('i18n');
+  // const i18n = getContext('i18n'); 
 
   let inputText = '';
   let outputText = '';
   let isLoading = false;
   let error = null;
-  let preservedWords = [];
   let newPreservedWord = '';
   let showOutput = false;
   let languageLevel = 'B1';
-  
+
   let useDefaultWords = true;
 
-  // Vervang de defaultWords met deze twee constanten
   const originalDefaultWords = [
-    'Provinciale Staten',
-    'Gedeputeerde Staten',
-    'Directieteam',
-    'Regulier overleg (RO)',
-    'Fracties',
-    'Statenleden',
-    'Statenlid',
-    'Gedeputeerde',
-    'Commissaris van de Koning (CdK)',
-    'Subsidie',
-    'Begroting',
-    'Interprovinciaal overleg (IPO)',
-    'Ruimtelijke ordening',
-    'Regionaal beleid',
-    'Provinciefonds',
-    'Omgevingsvisie',
-    'Provinciale verordening',
-    'Regionaal samenwerkingsverband',
-    'Gebiedscommissie',
-    'Waterplan',
-    'Milieubeleidsplan',
-    'Inpassingsplan',
-    'Ruimtelijk Economisch Programma',
-    'Uitvoeringsprogramma Bereikbaarheid',
-    'Adaptatieplan Klimaat',
-    'Erfgoedprogramma',
-    'Interprovinciaal Coördinatie Overleg (IPCO)',
-    'Regionaal Beleidsplan Verkeersveiligheid (RBV)',
-    'Regionaal economisch beleid',
-    'Ontwikkelingsfonds',
-    'Veiligheids- en Crisismanagementplan (RVCP)',
-    'Natuurbeheer',
-    'Waterbeheer',
-    'Milieubeleid',
-    'Mobiliteitsbeleid',
-    'Plattelandsontwikkeling',
-    'Provinciale infrastructuur',
-    'Omgevingsverordening',
-    'Energietransitie',
-    'Waterkwaliteit',
-    'Duurzaamheidsagenda',
-    'Natuurbeheerplan',
-    'Mobiliteitsvisie',
-    'Sociale agenda',
-    'Bodembeleid',
-    'Burgerparticipatie',
-    'Ecologie',
-    'Ecologisch',
-    'Groenbeleid',
+    'Provinciale Staten', 'Gedeputeerde Staten', 'Directieteam', 'Regulier overleg (RO)',
+    'Fracties', 'Statenleden', 'Statenlid', 'Gedeputeerde', 'Commissaris van de Koning (CdK)',
+    'Subsidie', 'Begroting', 'Interprovinciaal overleg (IPO)', 'Ruimtelijke ordening',
+    'Regionaal beleid', 'Provinciefonds', 'Omgevingsvisie', 'Provinciale verordening',
+    'Regionaal samenwerkingsverband', 'Gebiedscommissie', 'Waterplan', 'Milieubeleidsplan',
+    'Inpassingsplan', 'Ruimtelijk Economisch Programma', 'Uitvoeringsprogramma Bereikbaarheid',
+    'Adaptatieplan Klimaat', 'Erfgoedprogramma', 'Interprovinciaal Coördinatie Overleg (IPCO)',
+    'Regionaal Beleidsplan Verkeersveiligheid (RBV)', 'Regionaal economisch beleid',
+    'Ontwikkelingsfonds', 'Veiligheids- en Crisismanagementplan (RVCP)', 'Natuurbeheer',
+    'Waterbeheer', 'Milieubeleid', 'Mobiliteitsbeleid', 'Plattelandsontwikkeling',
+    'Provinciale infrastructuur', 'Omgevingsverordening', 'Energietransitie', 'Waterkwaliteit',
+    'Duurzaamheidsagenda', 'Natuurbeheerplan', 'Mobiliteitsvisie', 'Sociale agenda',
+    'Bodembeleid', 'Burgerparticipatie', 'Ecologie', 'Ecologisch', 'Groenbeleid',
     'Natuur- en landschapsbeheerorganisaties'
   ];
 
   let activeDefaultWords = [...originalDefaultWords];
   let userWords = [];
 
-  // Wijzig het reactive statement
-  $: preservedWords = useDefaultWords ? [...userWords, ...activeDefaultWords] : userWords;
+  // Reactive statement for preservedWords based on user words and default toggle
+  $: preservedWords = useDefaultWords ? [...new Set([...userWords, ...activeDefaultWords])] : [...new Set(userWords)]; // Use Set to ensure uniqueness
 
-  // Change single model to array of models like in chat
-  let selectedModels = [''];
-  let selectedModel = ''; // Keep this for compatibility
-  
+  // Model selection logic
+  let selectedModels = ['']; 
   $: availableModels = $models || [];
-  $: selectedModel = selectedModels[0] || ''; // Sync selectedModel with first model in array
 
   onMount(async () => {
-    // Get model selection from settings or localStorage
-    if ($settings?.models?.length > 0) {
-      selectedModels = $settings.models;
-      selectedModel = selectedModels[0];
+    // Load model selection from settings or local storage
+    const storedModels = $settings?.models?.length > 0 ? $settings.models : null;
+    const storedModelLegacy = localStorage.getItem('selectedModel'); // Check legacy single model storage
+
+    if (storedModels) {
+      selectedModels = storedModels;
+    } else if (storedModelLegacy) {
+       selectedModels = [storedModelLegacy]; // Convert legacy storage to array
+       localStorage.removeItem('selectedModel'); // Clean up legacy item
+       // Optionally save the new array format back to settings/localStorage
+       settings.update(s => ({ ...s, models: selectedModels }));
+       localStorage.setItem('selectedModels', JSON.stringify(selectedModels)); // Example using new key
     } else {
-      const storedModel = localStorage.getItem('selectedModel');
-      selectedModels = storedModel ? [storedModel] : availableModels.length ? [availableModels[0].id] : [''];
-      selectedModel = selectedModels[0];
+      // Fallback to first available model if no selection stored
+      selectedModels = availableModels.length ? [availableModels[0].id] : [''];
     }
   });
 
-  // Update model selection function
-  function saveModelSelection(modelId) {
-    selectedModels = [modelId]; // Keep as array for consistency with chat
-    selectedModel = modelId;
-    localStorage.setItem('selectedModel', modelId);
-    
-    // Update settings if needed
-    if ($settings) {
-      settings.update(s => ({
-        ...s,
-        models: selectedModels
-      }));
-    }
-  }
-
+  // Word counting and progress variables
   let wordCountPercentage = 0;
   let inputWordCount = 0;
   let outputWordCount = 0;
 
   function countWords(text) {
+    if (!text) return 0;
     return text.trim().split(/\s+/).filter(word => word.length > 0).length;
   }
 
   $: inputWordCount = countWords(inputText);
 
+  // Chunk processing variables
+  let chunkResults = [];
+  let totalChunks = 0;
+  let receivedChunks = 0;
+
+  const MAX_WORDS = 24750; // Define the word limit
+
+  // Main function to trigger text simplification
   async function simplifyText() {
+    // Reset errors and state
+    error = null;
+    isLoading = true;
+    outputText = '';
+    chunkResults = [];
+    totalChunks = 0;
+    receivedChunks = 0;
+    outputWordCount = 0;
+    wordCountPercentage = 0;
+    showOutput = true; // Show output area immediately
+
+    // --- Input Validations ---
+    if (!inputText.trim()) {
+      error = "Voer tekst in om te vereenvoudigen";
+      toast.error(error);
+      isLoading = false;
+      showOutput = false;
+      return;
+    }
+
+    if (inputWordCount > MAX_WORDS) {
+      error = `De invoertekst (${inputWordCount} woorden) overschrijdt de limiet van ${MAX_WORDS} woorden.`;
+      toast.error(error);
+      isLoading = false;
+      showOutput = false; // Don't show output area if input is invalid
+      return;
+    }
+
+    const currentModel = selectedModels[0]; // Get the currently selected model
+    if (!currentModel) {
+      error = "Selecteer eerst een model";
+      toast.error(error);
+      isLoading = false;
+      showOutput = false;
+      return;
+    }
+    // --- End Validations ---
+
+
     try {
-      if (!inputText.trim()) {
-        error = "Voer tekst in om te vereenvoudigen";
-        return;
-      }
-
-      if (!selectedModels[0]) {
-        error = "Selecteer eerst een model";
-        return;
-      }
-
-      isLoading = true;
-      error = null;
-      outputText = '';
-      outputWordCount = 0;
-      wordCountPercentage = 0;
-      showOutput = true;
-
       const response = await fetch(`${WEBUI_BASE_URL}/api/b1/translate`, {
         method: 'POST',
         headers: {
@@ -150,153 +132,221 @@
         },
         body: JSON.stringify({
           text: inputText,
-          model: selectedModels[0],
-          preserved_words: preservedWords,
+          model: currentModel, // Use the validated model
+          preserved_words: preservedWords, // Use the reactive preservedWords
           language_level: languageLevel
         })
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorData = await response.json().catch(() => ({ detail: `HTTP error! status: ${response.status}` }));
+        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
       }
 
-      // Use the same streaming approach as chat
-      const stream = await createOpenAITextStream(response.body);
-      
-      for await (const chunk of stream) {
-        if (chunk.error) {
-          throw new Error(chunk.error);
-        }
-        if (!chunk.done) {
-          outputText += chunk.value;
-          outputWordCount = countWords(outputText);
-          wordCountPercentage = Math.round((outputWordCount / inputWordCount) * 100);
-        } else {
-          // Als de stream klaar is, zet percentage op 100%
-          wordCountPercentage = 100;
+      if (!response.body) {
+        throw new Error("Response body is missing");
+      }
+
+      // Process the streaming response
+      const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+      let buffer = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += value;
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // Keep the potentially incomplete last line
+
+        for (const line of lines) {
+          if (line.trim() === '') continue;
+
+          try {
+            const parsed = JSON.parse(line);
+
+            if (parsed.total_chunks !== undefined) {
+              totalChunks = parsed.total_chunks;
+              // Initialize results array only if totalChunks > 0
+              chunkResults = totalChunks > 0 ? Array(totalChunks).fill('') : [];
+            } else if (parsed.index !== undefined && parsed.text !== undefined) {
+              if (parsed.index >= 0 && parsed.index < totalChunks) {
+                chunkResults[parsed.index] = parsed.text;
+                receivedChunks++;
+
+                // Update output text by joining received chunks
+                outputText = chunkResults.map(chunk => chunk ?? '').join('\n'); // Use ?? for nullish coalescing
+
+                // Update progress
+                wordCountPercentage = totalChunks > 0 ? Math.round((receivedChunks / totalChunks) * 100) : 0;
+              } else {
+                 console.warn("Received chunk with out-of-bounds index:", parsed);
+              }
+            }
+          } catch (e) {
+            console.error("Error parsing streamed JSON line:", e, "Line:", line);
+            // Optionally show a user-facing error or handle differently
+          }
         }
       }
+
+      // Final update after stream ends
+      outputText = chunkResults.map(chunk => chunk ?? '').join('\n');
+      outputWordCount = countWords(outputText);
+      wordCountPercentage = 100; // Ensure 100% at the end
 
     } catch (err) {
       console.error('Error simplifying text:', err);
-      error = `Error: ${err.message}`;
-      toast.error('Error simplifying text');
+      error = `Fout: ${err.message}`;
+      toast.error(`Fout bij vereenvoudigen: ${err.message}`);
+      showOutput = false; // Hide output on error
     } finally {
       isLoading = false;
-      // Extra check om zeker te zijn dat het 100% is na voltooiing
-      if (showOutput && outputText) {
-        wordCountPercentage = 100;
+      // Final progress state adjustments
+      if (!error && totalChunks > 0) {
+          wordCountPercentage = 100;
+          receivedChunks = totalChunks; // Ensure counter matches total
+      } else if (error) {
+          wordCountPercentage = 0; // Reset progress on error
+      } else if (totalChunks === 0 && !error) {
+          // Handle case where input resulted in zero chunks (e.g., only whitespace)
+          wordCountPercentage = 100;
+          outputText = inputText; // Or keep outputText empty? Decide desired behavior.
+          outputWordCount = countWords(outputText);
       }
     }
   }
 
-  // Functie om een woord toe te voegen aan de lijst van te behouden woorden
+  // Function to add a word to the user's preserved list
   function addPreservedWord() {
-    if (newPreservedWord.trim()) {
-      userWords = [...userWords, newPreservedWord.trim()];
-      newPreservedWord = '';
+    const wordToAdd = newPreservedWord.trim();
+    if (wordToAdd) {
+      // Avoid adding duplicates directly to userWords
+      if (!userWords.includes(wordToAdd)) {
+          userWords = [...userWords, wordToAdd];
+      }
+      newPreservedWord = ''; // Clear input field
     }
   }
 
-  // Wijzig de removePreservedWord functie
-  function removePreservedWord(word) {
-    if (originalDefaultWords.includes(word)) {
-      // Als het een standaardwoord is, verwijder het uit activeDefaultWords
-      activeDefaultWords = activeDefaultWords.filter(w => w !== word);
-    } else {
-      // Als het een gebruikerswoord is
-      userWords = userWords.filter(w => w !== word);
-    }
+  // Function to remove a word from preserved lists
+  function removePreservedWord(wordToRemove) {
+    // Remove from user list if present
+    userWords = userWords.filter(w => w !== wordToRemove);
+    // Remove from active default list if present (allows temporarily disabling a default word)
+    activeDefaultWords = activeDefaultWords.filter(w => w !== wordToRemove);
   }
 
-  // Functie om te schakelen tussen B1 en B2 taalniveau
+  // Function to toggle between B1 and B2 language levels
   function toggleLanguageLevel() {
     languageLevel = languageLevel === 'B1' ? 'B2' : 'B1';
   }
 
-  // Voeg deze watch toe voor useDefaultWords
+  // Reactive effect to reset activeDefaultWords when the toggle is turned on
   $: if (useDefaultWords) {
-    // Als de switch wordt aangezet, reset de activeDefaultWords naar origineel
-    activeDefaultWords = [...originalDefaultWords];
+    // Ensure activeDefaultWords contains all original defaults not explicitly removed by the user
+    // This logic might need refinement depending on desired behavior when toggling off/on
+     activeDefaultWords = [...originalDefaultWords]; // Simple reset for now
+  } else {
+    // Optionally clear activeDefaultWords when toggled off, or leave as is
+    // activeDefaultWords = [];
   }
 
-  // Voeg deze variabelen toe
-  let fileInput;
+  // File handling variables
+  let fileInput; // Reference to the file input element
   let isProcessingFile = false;
-  let isFlashing = false;
+  let isFlashing = false; // For visual feedback on drop/upload
 
-  // Update de handleFileUpload functie
+  // Updated file upload handler using /api/v1/files
   async function handleFileUpload(event) {
-    const file = event.target.files[0];
+    const file = event.target?.files?.[0]; // Use optional chaining
     if (!file) return;
-  
-    // Check bestandstype
+
+    // Validate file type
     if (!file.name.match(/\.(doc|docx|pdf|txt|rtf)$/i)) {
       toast.error('Alleen Word, PDF, TXT of RTF bestanden zijn toegestaan');
       return;
     }
-  
+
     isProcessingFile = true;
-    isFlashing = true;
-    
+    isFlashing = true; // Start visual feedback
+
     try {
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('type', 'document');
-      
-      // Use correct endpoint
+      // The 'type' might not be needed depending on the backend /api/v1/files implementation
+      // formData.append('type', 'document');
+
+      // Call the standard file upload endpoint
       const uploadResponse = await fetch(`${WEBUI_BASE_URL}/api/v1/files`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
+          // Content-Type is set automatically by browser for FormData
         },
         body: formData
       });
-  
+
       if (!uploadResponse.ok) {
-        const errorData = await uploadResponse.json();
+        const errorData = await uploadResponse.json().catch(() => ({ detail: 'Fout bij uploaden bestand' }));
         throw new Error(errorData.detail || 'Fout bij uploaden bestand');
       }
-      
-      const data = await uploadResponse.json();
-  
-      // Get file content
-      const contentResponse = await fetch(`${WEBUI_BASE_URL}/api/v1/files/${data.id}/data/content`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
-  
-      if (!contentResponse.ok) {
-        throw new Error('Fout bij verwerken bestand');
-      }
-  
-      const textData = await contentResponse.json();
-      inputText = textData.content;
 
-      // Voor Word documenten, behoud dikgedrukte tekst
-      if (file.name.match(/\.(doc|docx)$/i)) {
-        inputText = inputText.replace(/<strong>(.*?)<\/strong>/g, '**$1**');
+      const uploadData = await uploadResponse.json();
+
+      // Assuming the upload endpoint returns the extracted text or an ID to fetch it
+      // The previous code fetched content separately, adjust based on actual /api/v1/files response
+      if (uploadData.content) { // If content is directly in response
+         inputText = uploadData.content;
+      } else if (uploadData.id) { // If an ID is returned, fetch content
+          const contentResponse = await fetch(`${WEBUI_BASE_URL}/api/v1/files/${uploadData.id}/data/content`, {
+              method: 'GET',
+              headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+          });
+          if (!contentResponse.ok) {
+              throw new Error('Fout bij ophalen bestandsinhoud na upload');
+          }
+          const textData = await contentResponse.json();
+          inputText = textData.content;
+      } else {
+          throw new Error('Onbekend antwoordformaat van upload endpoint');
       }
-  
-      toast.success('Bestand succesvol geüpload');
+
+
+      // Convert strong tags from potential backend processing back to markdown **
+      // This depends on whether the /api/v1/files endpoint returns HTML or plain text
+      // Assuming it might return HTML with <strong> for bold from docx
+      if (file.name.match(/\.(doc|docx)$/i)) {
+        // Be cautious with replace, ensure it doesn't break intended markdown
+        inputText = inputText.replace(/<strong>(.*?)<\/strong>/gi, '**$1**');
+      }
+
+      toast.success('Bestand succesvol verwerkt');
+
     } catch (err) {
-      console.error('Error uploading file:', err);
-      toast.error(err.message);
+      console.error('Error processing file:', err);
+      toast.error(`Fout bij verwerken bestand: ${err.message}`);
+      inputText = ''; // Clear input on error
     } finally {
       isProcessingFile = false;
-      if (fileInput) fileInput.value = '';
+      if (fileInput) fileInput.value = ''; // Reset file input
+      // End visual feedback after a short delay
       setTimeout(() => {
         isFlashing = false;
       }, 1000);
     }
   }
-  
-  // Voeg deze helper functie toe voor tekst verwerking
+
+  // Helper function to convert markdown **bold** to HTML <strong> for display
   function processText(text) {
+    if (!text) return '';
+    // Replace **text** with <strong>text</strong>, handle spaces around **
     return text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
   }
+
+  // Reactive calculation for progress display text
+  $: progressDisplay = totalChunks > 0 ? Math.round((receivedChunks / totalChunks) * 100) : (isLoading ? 0 : (outputText ? 100 : 0));
+
 </script>
 <div class="max-w-7xl mx-auto mt-9">
   <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
@@ -322,7 +372,7 @@
     </div>
     
     {#if error}
-      <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+      <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4" transition:fade>
         {error}
       </div>
     {/if}
@@ -529,11 +579,15 @@
                   ></div>
                 </div>
                 <span class="min-w-[4rem] text-right">
-                  {wordCountPercentage}%
+                  {progressDisplay}%
                 </span>
               </div>
               <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                Woorden: {outputWordCount} / {inputWordCount}
+                {#if isLoading}
+                  Paragrafen verwerkt: {receivedChunks} / {totalChunks || '?'}
+                {:else if outputText}
+                  Woorden: {outputWordCount} (Origineel: {inputWordCount})
+                {/if}
               </div>
             {/if}
             
@@ -639,5 +693,10 @@
     animation: flash 1.0s cubic-bezier(0.4, 0, 0.2, 1);
     border-color: rgba(96, 165, 250, 0.8);
     position: relative;
+  }
+
+  /* Optional: Style for the progress text during loading */
+  .progress-text {
+     font-variant-numeric: tabular-nums; /* Keeps numbers aligned */
   }
 </style>
