@@ -225,25 +225,27 @@
   let isProcessingFile = false;
   let isFlashing = false;
 
-  // Vervang de handleFileUpload functie met deze versie
+  // Update de handleFileUpload functie
   async function handleFileUpload(event) {
     const file = event.target.files[0];
     if (!file) return;
   
     // Check bestandstype
-    if (!file.name.match(/\.(doc|docx)$/i)) {
-      toast.error('Alleen Word documenten (.doc of .docx) zijn toegestaan');
+    if (!file.name.match(/\.(doc|docx|pdf|txt|rtf)$/i)) {
+      toast.error('Alleen Word, PDF, TXT of RTF bestanden zijn toegestaan');
       return;
     }
   
     isProcessingFile = true;
-    isFlashing = true; // Start de flash animatie
+    isFlashing = true;
     
     try {
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('type', 'document');
       
-      const response = await fetch(`${WEBUI_BASE_URL}/api/b1/upload`, {
+      // Use correct endpoint
+      const uploadResponse = await fetch(`${WEBUI_BASE_URL}/api/v1/files`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -251,19 +253,40 @@
         body: formData
       });
   
-      if (!response.ok) throw new Error('Fout bij uploaden bestand');
+      if (!uploadResponse.ok) {
+        const errorData = await uploadResponse.json();
+        throw new Error(errorData.detail || 'Fout bij uploaden bestand');
+      }
       
-      const data = await response.json();
-      // Zet dikgedrukte tekst om naar markdown formaat
-      inputText = data.text.replace(/<strong>(.*?)<\/strong>/g, '**$1**');
+      const data = await uploadResponse.json();
+  
+      // Get file content
+      const contentResponse = await fetch(`${WEBUI_BASE_URL}/api/v1/files/${data.id}/data/content`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+  
+      if (!contentResponse.ok) {
+        throw new Error('Fout bij verwerken bestand');
+      }
+  
+      const textData = await contentResponse.json();
+      inputText = textData.content;
+
+      // Voor Word documenten, behoud dikgedrukte tekst
+      if (file.name.match(/\.(doc|docx)$/i)) {
+        inputText = inputText.replace(/<strong>(.*?)<\/strong>/g, '**$1**');
+      }
+  
       toast.success('Bestand succesvol geüpload');
     } catch (err) {
       console.error('Error uploading file:', err);
-      toast.error('Fout bij verwerken bestand');
+      toast.error(err.message);
     } finally {
       isProcessingFile = false;
-      if (fileInput) fileInput.value = ''; // Reset input
-      // Reset de flash animatie na een korte vertraging
+      if (fileInput) fileInput.value = '';
       setTimeout(() => {
         isFlashing = false;
       }, 1000);
@@ -376,10 +399,10 @@
           on:drop|preventDefault={(event) => {
             const file = event.dataTransfer.files[0];
             if (file) {
-              if (file.name.match(/\.(doc|docx)$/i)) {
+              if (file.name.match(/\.(doc|docx|pdf|txt|rtf)$/i)) {
                 handleFileUpload({ target: { files: [file] } });
               } else {
-                toast.error('Alleen Word documenten (.doc of .docx) zijn toegestaan');
+                toast.error('Alleen Word, PDF, TXT of RTF bestanden zijn toegestaan');
               }
             }
           }}
@@ -399,7 +422,7 @@
           <div class="mt-2 flex items-center gap-2">
             <input
               type="file"
-              accept=".doc,.docx"
+              accept=".doc,.docx,.pdf,.txt,.rtf"
               class="hidden"
               bind:this={fileInput}
               on:change={handleFileUpload}
@@ -422,7 +445,7 @@
               Upload Word document
             </button>
             <span class="text-sm text-gray-500 dark:text-gray-400">
-              of sleep een Word bestand hierheen
+              of sleep een document hierheen (Word, PDF, TXT of RTF)
             </span>
           </div>
         </div>

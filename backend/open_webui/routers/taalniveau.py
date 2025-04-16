@@ -195,7 +195,7 @@ async def upload_file(
     user = Depends(get_current_user)
 ):
     """Handle file uploads for document processing"""
-    if not file.filename.endswith(('.doc', '.docx')):
+    if not file.filename.endswith(('.doc', '.docx', '.pdf')):
         raise HTTPException(
             status_code=400,
             detail="Only .doc and .docx files are supported"
