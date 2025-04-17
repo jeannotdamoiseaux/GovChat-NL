@@ -88,44 +88,46 @@ def split_into_chunks(text: str, max_tokens: int = 1500) -> List[str]:
     return [chunk for chunk in chunks if chunk is not None]
 
 
-async def generate_version(request: Request, chunk: str, model: str, preserved_words: List[str], language_level: str, user: Any, index: int) -> dict:
-    """Generate a single version of simplified text and return with index"""
+async def generate_version(request: Request, chunk: str, model: str, preserved_words: List[str], language_level: str, user: Any, index: int, temperature: float) -> dict:
+    """Generate a single version of simplified text for a specific temperature and return with index and temperature"""
     if not chunk or chunk.isspace():
         # Return empty strings as they might be intentional paragraph breaks
-        return {"index": index, "text": chunk}
+        return {"index": index, "temperature": temperature, "text": chunk, "error": None} # Ensure error key exists
+
+    # Updated system prompt with instruction for bold text
+    generation_system_prompt = f"""Je taak is om de volgende tekst te analyseren en te herschrijven naar een versie die voldoet aan het {language_level}-taalniveau.
+Hierbij is het belangrijk om de informatie zo letterlijk mogelijk over te brengen en de structuur zoveel mogelijk te behouden, zonder onnodige weglatingen.
+Het {language_level}-niveau kenmerkt zich door duidelijk en eenvoudig taalgebruik, geschikt voor een breed publiek met basisvaardigheden in de taal.
+
+Hier zijn enkele richtlijnen om je te helpen bij deze taak:
+- Gebruik korte zinnen en vermijd lange, complexe zinsconstructies.
+- Vervang moeilijke woorden door meer gangbare alternatieven.
+- Leg technische termen en (ambtelijk) jargon uit in eenvoudige bewoordingen.
+- Gebruik actieve zinsconstructies waar mogelijk.
+- Vermijd passieve zinnen en ingewikkelde grammaticale constructies.
+- Gebruik concrete voorbeelden om abstracte concepten te verduidelijken.
+
+Hier zijn enkele voorbeelden van woorden op C1-niveau en hun eenvoudigere {language_level}-equivalenten:
+- Betreffende -> Over
+- Creëren -> Ontwerpen, vormen, vormgeven, maken
+- Prioriteit -> Voorrang, voorkeur
+- Relevant -> Belangrijk
+- Verstrekken -> Geven
+
+BELANGRIJK: Behoud alle tekst die tussen dubbele sterretjes staat (zoals **dit**) exact zoals deze is, inclusief de sterretjes, in de output. Dit geldt ook voor kopjes of andere belangrijke termen die zo gemarkeerd zijn.
+
+Zorg ervoor dat de hoofdboodschap van de tekst behouden blijft en dat de vereenvoudigde versie nog steeds een accurate weergave is van de oorspronkelijke inhoud.
+
+Plaats de verbeterde paragraaf tussen "<<<" en ">>>" tekens. Als de tekst te kort is om te verbeteren neem je de tekst een-op-een over en plaats deze tussen de genoemende tekens, bijv. "<<< **Artikel 3.2** >>>"."""
 
     form_data = {
         "model": model,
         "stream": False, # Ensure streaming is off for this internal call
+        "temperature": temperature, # Add temperature parameter
         "messages": [
             {
                 "role": "system",
-                "content": f"""Je taak is om de volgende tekst te analyseren en te herschrijven naar een versie die voldoet aan het {language_level}-taalniveau.
-                           Hierbij is het belangrijk om de informatie zo letterlijk mogelijk over te brengen en de structuur zoveel mogelijk te behouden, zonder onnodige weglatingen.
-                           Het {language_level}-niveau kenmerkt zich door duidelijk en eenvoudig taalgebruik, geschikt voor een breed publiek met basisvaardigheden in de taal.
-
-                           Hier zijn enkele richtlijnen om je te helpen bij deze taak:
-                           - Gebruik korte zinnen en vermijd lange, complexe zinsconstructies.
-                           - Vervang moeilijke woorden door meer gangbare alternatieven.
-                           - Leg technische termen en (ambtelijk) jargon uit in eenvoudige bewoordingen.
-                           - Gebruik actieve zinsconstructies waar mogelijk.
-                           - Vermijd passieve zinnen en ingewikkelde grammaticale constructies.
-                           - Gebruik concrete voorbeelden om abstracte concepten te verduidelijken.
-
-                           Hier zijn enkele voorbeelden van woorden op C1-niveau en hun eenvoudigere {language_level}-equivalenten:
-                           - Betreffende -> Over
-                           - Creëren -> Ontwerpen, vormen, vormgeven, maken
-                           - Prioriteit -> Voorrang, voorkeur
-                           - Relevant -> Belangrijk
-                           - Verstrekken -> Geven
-
-                           Behoud de volgende woorden ongewijzigd: {', '.join(preserved_words) if preserved_words else 'geen'}.
-                           Zorg ervoor dat de hoofdboodschap van de tekst behouden blijft en dat de vereenvoudigde versie nog steeds een accurate weergave is van de oorspronkelijke inhoud.
-
-                           Behoud alle tekst tussen ** sterretjes exact zoals deze is en zet deze ook tussen ** sterretjes in de output.
-                           Bijvoorbeeld: "Dit is een **belangrijk** woord" moet in de output ook "Dit is een **belangrijk** woord" worden.
-
-                           Geef ALLEEN de herschreven tekst terug, zonder extra uitleg, inleiding of afsluiting. Als de tekst niet vereenvoudigd hoeft te worden (bijv. een titel of een al eenvoudige zin), geef dan de originele tekst terug."""
+                "content": generation_system_prompt # Use the updated prompt
             },
             {
                 "role": "user",
@@ -136,19 +138,114 @@ async def generate_version(request: Request, chunk: str, model: str, preserved_w
 
     try:
         # Assuming generate_chat_completion handles potential API errors gracefully
+        # and accepts the 'temperature' key in form_data
         response = await generate_chat_completion(request=request, form_data=form_data, user=user)
-        simplified_text = response['choices'][0]['message']['content']
+        llm_output = response['choices'][0]['message']['content']
 
-        # Clean potential markdown code blocks added by the model
+        # --- REMOVED EXTRACTION LOGIC ---
+        # The llm_output now contains the full response, potentially including <<< >>>
+        simplified_text = llm_output.strip()
+        # Optional: Still clean potential markdown code blocks if the model adds them unexpectedly
         simplified_text = re.sub(r'^```[a-zA-Z]*\n?', '', simplified_text)
         simplified_text = re.sub(r'\n?```$', '', simplified_text)
+        # --- END REMOVED EXTRACTION LOGIC ---
 
-        return {"index": index, "text": simplified_text.strip()}
+
+        return {"index": index, "temperature": temperature, "text": simplified_text, "error": None} # Return the full (cleaned) output
     except Exception as e:
         # Log the error for debugging purposes
-        print(f"Error processing chunk {index} with model {model}: {e}")
-        # Return the original chunk in case of an error to avoid data loss
-        return {"index": index, "text": chunk}
+        print(f"Error processing chunk {index} with model {model} at temperature {e}")
+        # Return the original chunk in case of an error to avoid data loss, include temperature and error info
+        return {"index": index, "temperature": temperature, "text": chunk, "error": str(e)}
+
+async def select_best_version(request: Request, original_chunk: str, generated_versions: List[dict], model: str, language_level: str, user: Any, index: int) -> dict:
+    """Selects the best version from generated texts using an LLM based on a specific prompt."""
+
+    # Filter successful versions (generated_versions now contain the full LLM output from generate_version)
+    successful_versions = [v for v in generated_versions if v.get("error") is None and v.get("text", "").strip()]
+
+    # Handle cases with no successful versions or only empty results
+    if not successful_versions:
+         print(f"Warning: No successful versions generated for chunk {index}. Returning original chunk.")
+         return {"index": index, "text": original_chunk, "selection_error": "No successful versions to select from."}
+
+    # System prompt for selection remains the same
+    selection_system_prompt = f"""Je taak is om de volgende tekst te analyseren en te herschrijven naar een versie die voldoet aan het {language_level}-taalniveau.
+Hierbij is het belangrijk om de informatie zo letterlijk mogelijk over te brengen en de structuur zoveel mogelijk te behouden, zonder onnodige weglatingen.
+Het {language_level}-niveau kenmerkt zich door duidelijk en eenvoudig taalgebruik, geschikt voor een breed publiek met basisvaardigheden in de taal.
+
+Hier zijn enkele richtlijnen om je te helpen bij deze taak:
+- Gebruik korte zinnen en vermijd lange, complexe zinsconstructies.
+- Vervang moeilijke woorden door meer gangbare alternatieven.
+- Leg technische termen en (ambtelijk) jargon uit in eenvoudige bewoordingen.
+- Gebruik actieve zinsconstructies waar mogelijk.
+- Vermijd passieve zinnen en ingewikkelde grammaticale constructies.
+- Gebruik concrete voorbeelden om abstracte concepten te verduidelijken.
+
+Hier zijn enkele voorbeelden van woorden op C1-niveau en hun eenvoudigere {language_level}-equivalenten:
+- Betreffende -> Over
+- Creëren -> Ontwerpen, vormen, vormgeven, maken
+- Prioriteit -> Voorrang, voorkeur
+- Relevant -> Belangrijk
+- Verstrekken -> Geven
+
+BELANGRIJK: Behoud alle tekst die tussen dubbele sterretjes staat (zoals **dit**) exact zoals deze is, inclusief de sterretjes, in de output. Dit geldt ook voor kopjes of andere belangrijke termen die zo gemarkeerd zijn in de originele tekst of de varianten.
+
+Zorg ervoor dat de inhoud en nuances van de oorspronkelijke tekst behouden blijven en dat de vereenvoudigde versie nog steeds een accurate weergave is van de oorspronkelijke inhoud.
+
+Je ontvangt de originele paragraaf, samen met enkele varianten van deze tekst in eenvoudigere taal ({language_level}). Deze varianten kunnen nog de "<<<" en ">>>" tekens bevatten. Het is jouw taak om tot een definitieve {language_level}-versie te komen ZONDER deze tekens, maar wel met behoud van **dikgedrukte** tekst.
+
+Plaats de definitieve, verbeterde paragraaf tussen "<<<" en ">>>" tekens. Als de tekst te kort is om te verbeteren neem je de tekst een-op-een over en plaats deze tussen de genoemende tekens, bijv. "<<< **Artikel 3.2** >>>".""" # Prompt still asks selection model to use <<< >>>
+
+    variants_text = ""
+    for i, version_data in enumerate(successful_versions):
+        # Pass the full text (potentially with <<< >>>) from generate_version
+        variant_text = version_data.get('text', '')
+        variants_text += f"Variant {i+1} (gegenereerd met temperature={version_data['temperature']}):\n{variant_text}\n---\n" # Pass the raw text
+
+    selection_user_content = f"""Originele Paragraaf:
+---
+{original_chunk}
+---
+
+Gegenereerde {language_level} Varianten (kunnen '<<<' en '>>>' bevatten):
+---
+{variants_text}
+Kies de beste variant of combineer/verbeter ze tot de definitieve {language_level}-versie, geplaatst tussen <<< en >>>. Verwijder de <<< en >>> uit de input varianten in de uiteindelijke output. Vergeet niet om **dikgedrukte tekst** te behouden.""" # Updated user content instruction
+
+    form_data = {
+        "model": model,
+        "stream": False,
+        "temperature": 0.5,
+        "messages": [
+            {"role": "system", "content": selection_system_prompt},
+            {"role": "user", "content": selection_user_content}
+        ]
+    }
+
+    try:
+        response = await generate_chat_completion(request=request, form_data=form_data, user=user)
+        llm_output = response['choices'][0]['message']['content']
+
+        # Extract text between <<< and >>> for the FINAL output from the selection step
+        match = re.search(r'<<<([\s\S]*?)>>>', llm_output, re.DOTALL)
+        if match:
+            final_text = match.group(1).strip()
+            return {"index": index, "text": final_text}
+        else:
+            # Fallback if the SELECTION model didn't use <<< >>>
+            print(f"Warning: Could not parse '<<<' and '>>>' from selection output for chunk {index}. Output was: {llm_output}")
+            # Fallback: Try to return the raw output from the selection model, hoping it's usable.
+            # Or revert to the first generated version (which might still have <<< >>>)
+            # Let's return the raw selection output as fallback here.
+            fallback_text = llm_output.strip()
+            return {"index": index, "text": fallback_text, "selection_warning": "Could not parse final version delimiters from selection output."}
+
+    except Exception as e:
+        print(f"Error during selection step for chunk {index} with model {model}: {e}")
+        # Fallback in case of selection error - return original chunk
+        return {"index": index, "text": original_chunk, "selection_error": str(e)}
+
 
 class SimplifyTextRequest(BaseModel):
     text: str
@@ -157,44 +254,76 @@ class SimplifyTextRequest(BaseModel):
     language_level: str = "B1"
 
 @router.post("/translate")
-async def simplify_text_endpoint(request: Request, data: SimplifyTextRequest, user = Depends(get_current_user)): # Renamed function slightly
-    """Endpoint to simplify text to B1/B2 language level with concurrent processing and streaming"""
-
-    # Consider adding basic input validation if needed (e.g., max text length on backend too)
-    # Although frontend has a limit, backend validation is good practice.
+async def simplify_text_endpoint(request: Request, data: SimplifyTextRequest, user = Depends(get_current_user)):
+    """Endpoint to simplify text to B1/B2 level. Generates 3 versions per chunk, then selects the best."""
 
     chunks = split_into_chunks(data.text)
     num_chunks = len(chunks)
+    temperatures = [1.0, 0.8, 0.6]
 
-    # If there are no chunks (e.g., empty input after split), handle gracefully
     if num_chunks == 0:
         async def empty_stream():
              yield json.dumps({"total_chunks": 0}) + "\n"
-             # Need to yield at least one item for StreamingResponse
-             if False: yield None # Trick to make it an async generator
+             if False: yield None
         return StreamingResponse(empty_stream(), media_type="application/x-ndjson")
 
-
     async def stream_results():
-        # Send total chunk count first
+        # Send total chunk count first (client expects one final result per chunk)
         yield json.dumps({"total_chunks": num_chunks}) + "\n"
 
-        # Create concurrent tasks for processing each chunk
-        tasks = [
-            generate_version(request, chunk, data.model, data.preserved_words, data.language_level, user, i)
-            for i, chunk in enumerate(chunks)
-        ]
+        generation_tasks = []
+        for i, chunk in enumerate(chunks):
+            for temp in temperatures:
+                generation_tasks.append(
+                    generate_version(request, chunk, data.model, data.preserved_words, data.language_level, user, i, temp)
+                )
 
-        # Yield results as they become available
-        for future in asyncio.as_completed(tasks):
+        # Use dictionaries to store results and track completion
+        chunk_results = {i: [] for i in range(num_chunks)}
+        tasks_outstanding = {i: len(temperatures) for i in range(num_chunks)}
+        selection_tasks = [] # Store tasks for the selection step
+
+        # Process generation results as they complete
+        for future in asyncio.as_completed(generation_tasks):
             try:
-                result = await future
-                yield json.dumps(result) + "\n"
+                gen_result = await future
+                idx = gen_result['index']
+                chunk_results[idx].append(gen_result)
+                tasks_outstanding[idx] -= 1
+
+                # If all versions for a chunk are generated, create selection task
+                if tasks_outstanding[idx] == 0:
+                    original_chunk = chunks[idx]
+                    versions = chunk_results[idx]
+                    # Schedule the selection task
+                    selection_tasks.append(
+                        select_best_version(request, original_chunk, versions, data.model, data.language_level, user, idx)
+                    )
+                    # Optional: Clean up memory if chunks are very large
+                    # del chunk_results[idx] # Be careful if original_chunk is needed elsewhere
+
             except Exception as e:
-                # This catch might be redundant if generate_version handles its errors,
-                # but can catch errors during await future itself.
-                print(f"Error awaiting chunk result: {e}")
-                # Decide how to handle this - potentially yield an error object or skip
-                # yield json.dumps({"index": -1, "error": str(e)}) + "\n" # Example error yield
+                 # Handle errors during the await future itself (less likely if generate_version catches errors)
+                 print(f"Error awaiting generation task result: {e}")
+                 # Consider how to handle this failure downstream. Maybe skip selection for this chunk?
+                 # For now, it might prevent the selection task from being scheduled if an error occurs here.
+                 pass # Continue processing other tasks
+
+        # Process selection results as they complete and yield them
+        for future in asyncio.as_completed(selection_tasks):
+             try:
+                 final_result = await future
+                 # --- DOUBLE CHECK and REMOVE DELIMITERS ---
+                 if 'text' in final_result and isinstance(final_result['text'], str):
+                     # Remove <<< and >>> just in case they slipped through selection/parsing
+                     final_result['text'] = final_result['text'].replace('<<<', '').replace('>>>', '').strip()
+                 # --- END DOUBLE CHECK ---
+                 yield json.dumps(final_result) + "\n"
+             except Exception as e:
+                 print(f"Error awaiting or processing selection task result: {e}")
+                 # Decide how to inform the client about selection failure
+                 # Example: yield json.dumps({"index": final_result.get('index', -1), "error": f"Processing failed after selection: {e}"}) + "\n"
+                 # Current select_best_version tries to return fallback text with error info.
+
 
     return StreamingResponse(stream_results(), media_type="application/x-ndjson")
