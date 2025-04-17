@@ -251,6 +251,8 @@
   let fileInput; // Reference to the file input element
   let isProcessingFile = false;
   let isFlashing = false; // For visual feedback on drop/upload
+  let fileProcessingProgress = 0; // State for fake progress
+  let fileProcessingInterval = null; // Interval timer reference
 
   // Updated file upload handler using /api/v1/files
   async function handleFileUpload(event) {
@@ -263,8 +265,22 @@
       return;
     }
 
+    // --- Start Fake Progress ---
     isProcessingFile = true;
     isFlashing = true; // Start visual feedback
+    fileProcessingProgress = 0; // Reset progress
+    if (fileProcessingInterval) clearInterval(fileProcessingInterval); // Clear previous interval if any
+
+    fileProcessingInterval = setInterval(() => {
+      if (fileProcessingProgress < 99) {
+        fileProcessingProgress += 0;
+      } else {
+        clearInterval(fileProcessingInterval); // Stop at 99%
+        fileProcessingInterval = null;
+      }
+    }, 50); // Update every 50ms for smoother feel (adjust as needed)
+    // --- End Fake Progress Start ---
+
 
     try {
       const formData = new FormData();
@@ -323,11 +339,19 @@
       toast.error(`Fout bij verwerken bestand: ${err.message}`);
       inputText = ''; // Clear input on error
     } finally {
-      isProcessingFile = false;
+      // --- Stop Fake Progress ---
+      if (fileProcessingInterval) clearInterval(fileProcessingInterval); // Clear interval if still running
+      fileProcessingInterval = null;
+      fileProcessingProgress = 100; // Set to 100% on completion (success or error)
+      isProcessingFile = false; // Set processing to false *after* setting progress to 100
+      // --- End Fake Progress Stop ---
+
       if (fileInput) fileInput.value = ''; // Reset file input
       // End visual feedback after a short delay
       setTimeout(() => {
         isFlashing = false;
+        // Optionally reset progress visual after flash animation
+        // setTimeout(() => { fileProcessingProgress = 0; }, 500); // Reset after another delay if needed
       }, 1000);
     }
   }
@@ -437,19 +461,13 @@
         <label for="input" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
           Originele tekst
         </label>
-        <div class="relative"
-          on:dragover|preventDefault
-          on:drop|preventDefault={(event) => {
-            const file = event.dataTransfer.files[0];
-            if (file) {
-              if (file.name.match(/\.(doc|docx|pdf|txt|rtf)$/i)) {
-                handleFileUpload({ target: { files: [file] } });
-              } else {
-                toast.error('Alleen Word, PDF, TXT of RTF bestanden zijn toegestaan');
-              }
-            }
-          }}
-        >
+        <div class="relative">
+          {#if isProcessingFile}
+            <!-- Show loading line while processing file -->
+            <div class="progress-line absolute inset-x-0 top-0 h-1 pointer-events-none overflow-hidden">
+              <div class="line"></div>
+            </div>
+          {/if}
           <textarea
             id="input"
             bind:value={inputText}
@@ -459,41 +477,81 @@
             placeholder="Voer hier de tekst in die je wilt vereenvoudigen naar {languageLevel}-taalniveau... Gebruik ** voor dikgedrukte tekst"
             disabled={isLoading}
             spellcheck="false"
+            on:dragover|preventDefault
+            on:drop|preventDefault={(event) => {
+              const file = event.dataTransfer.files[0];
+              if (file) {
+                if (file.name.match(/\.(doc|docx|pdf|txt|rtf)$/i)) {
+                  handleFileUpload({ target: { files: [file] } });
+                } else {
+                  toast.error('Alleen Word, PDF, TXT of RTF bestanden zijn toegestaan');
+                }
+              }
+            }}
           ></textarea>
 
-          <!-- Upload knop en drag & drop hint onder textarea -->
-          <div class="mt-2 flex items-center gap-2">
-            <input
-              type="file"
-              accept=".doc,.docx,.pdf,.txt,.rtf"
-              class="hidden"
-              bind:this={fileInput}
-              on:change={handleFileUpload}
-            />
-            <button
-              on:click={() => fileInput.click()}
-              disabled={isProcessingFile}
-              class="bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-white font-medium py-1 px-3 rounded focus:outline-none focus:shadow-outline flex items-center gap-2"
-            >
-              {#if isProcessingFile}
-                <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-              {:else}
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3 3m0 0l-3-3m3 3V8" />
-                </svg>
-              {/if}
-              Upload document
-            </button>
-            <span class="text-sm text-gray-500 dark:text-gray-400">
-              of sleep hierheen (Word, PDF, TXT of RTF)
-            </span>
+          <!-- Container for controls/info below input textarea -->
+          <div class="mt-2">
+            <!-- File Upload Progress -->
+            {#if isProcessingFile || fileProcessingProgress === 100}
+              <div class="flex items-center gap-2" transition:fade={{ duration: 150 }}>
+                 <!-- Progress Bar Container -->
+                 <div class="flex-grow bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                   <div
+                     class="bg-blue-600 h-2 rounded-full transition-all duration-150 ease-linear"
+                     style="width: {fileProcessingProgress}%"
+                   ></div>
+                 </div>
+                 <!-- Percentage Text -->
+                 <span class="text-sm text-gray-600 dark:text-gray-400 min-w-[3rem] text-right">{fileProcessingProgress}%</span>
+              </div>
+            {/if}
+
+            <!-- Upload knop en drag & drop hint -->
+            <div class="mt-2 flex items-center justify-between gap-2"> 
+               <div class="flex items-center gap-2">
+                 <input
+                   type="file"
+                   accept=".doc,.docx,.pdf,.txt,.rtf"
+                   class="hidden"
+                   bind:this={fileInput}
+                   on:change={handleFileUpload}
+                 />
+                 <button
+                   on:click={() => fileInput.click()}
+                   disabled={isProcessingFile}
+                   class="bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-white font-medium py-1 px-3 rounded focus:outline-none focus:shadow-outline flex items-center gap-2 disabled:opacity-50"
+                 >
+                   {#if isProcessingFile}
+                     <!-- Show spinner while processing -->
+                     <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                       <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                       <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                     </svg>
+                     <span>Verwerken...</span>
+                   {:else if !isProcessingFile && fileProcessingProgress === 100}
+                      <!-- Show checkmark when done -->
+                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                     </svg>
+                      <span>Bestand verwerkt</span>
+                   {:else}
+                     <!-- Default upload icon -->
+                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3 3m0 0l-3-3m3 3V8" />
+                     </svg>
+                     <span>Upload document</span>
+                   {/if}
+                 </button>
+               </div>
+               <span class="text-sm text-gray-500 dark:text-gray-400 text-right">
+                 of sleep bestand naar invoerveld<br>(Word, PDF, TXT, RTF)
+               </span>
+            </div>
           </div>
         </div>
       </div>
-      
+
       <!-- Midden: Vertaalknop voor kleine schermen -->
       <div class="md:hidden w-full">
         <button 
