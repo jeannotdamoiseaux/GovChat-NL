@@ -216,7 +216,7 @@ Kies de beste variant of combineer/verbeter ze tot de definitieve {language_leve
     form_data = {
         "model": model,
         "stream": False,
-        "temperature": 0.5,
+        "temperature": 0,
         "messages": [
             {"role": "system", "content": selection_system_prompt},
             {"role": "user", "content": selection_user_content}

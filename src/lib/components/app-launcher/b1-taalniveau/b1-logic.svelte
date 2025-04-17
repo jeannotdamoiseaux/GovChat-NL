@@ -237,11 +237,6 @@
     activeDefaultWords = activeDefaultWords.filter(w => w !== wordToRemove);
   }
 
-  // Function to toggle between B1 and B2 language levels
-  function toggleLanguageLevel() {
-    languageLevel = languageLevel === 'B1' ? 'B2' : 'B1';
-  }
-
   // Reactive effect to reset activeDefaultWords when the toggle is turned on
   $: if (useDefaultWords) {
     // Ensure activeDefaultWords contains all original defaults not explicitly removed by the user
@@ -348,26 +343,24 @@
   $: progressDisplay = totalChunks > 0 ? Math.round((receivedChunks / totalChunks) * 100) : (isLoading ? 0 : (outputText ? 100 : 0));
 
 </script>
-<div class="max-w-7xl mx-auto mt-9">
-  <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+<div class="max-w-7xl mx-auto mt-6">
+  <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
     <div class="flex justify-between items-center mb-6">
       <h1 class="text-2xl font-bold text-gray-800 dark:text-white">
         {languageLevel}-Taalniveau Vereenvoudiger
       </h1>
       
-      <!-- Taalniveau schakelaar -->
+      <!-- Taalniveau dropdown -->
       <div class="flex items-center">
-        <span class="mr-2 text-sm text-gray-600 dark:text-gray-400">Taalniveau:</span>
-        <button 
-          on:click={toggleLanguageLevel}
-          class="relative inline-flex items-center h-6 rounded-full w-11 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 {languageLevel === 'B2' ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'}"
+        <label for="language-level-select" class="mr-2 text-sm text-gray-600 dark:text-gray-400">Taalniveau:</label>
+        <select 
+          id="language-level-select"
+          bind:value={languageLevel}
+          class="px-3 py-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm"
         >
-          <span class="sr-only">Schakel taalniveau</span>
-          <span 
-            class="inline-block w-4 h-4 transform bg-white rounded-full transition-transform {languageLevel === 'B2' ? 'translate-x-6' : 'translate-x-1'}"
-          ></span>
-        </button>
-        <span class="ml-2 text-sm font-medium text-gray-700 dark:text-gray-300">{languageLevel}</span>
+          <option value="B1">B1</option>
+          <option value="B2">B2</option>
+        </select>
       </div>
     </div>
     
