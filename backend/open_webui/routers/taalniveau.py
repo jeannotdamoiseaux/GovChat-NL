@@ -94,7 +94,8 @@ async def generate_version(request: Request, chunk: str, model: str, preserved_w
         # Return empty strings as they might be intentional paragraph breaks
         return {"index": index, "temperature": temperature, "text": chunk, "error": None} # Ensure error key exists
 
-    # Updated system prompt with instruction for bold text
+    preserved_words_text = ", ".join(f"'{word}'" for word in preserved_words) if preserved_words else "geen"
+    # Updated system prompt with instruction for bold text and preserved words
     generation_system_prompt = f"""Je taak is om de volgende tekst te analyseren en te herschrijven naar een versie die voldoet aan het {language_level}-taalniveau.
 Hierbij is het belangrijk om de informatie zo letterlijk mogelijk over te brengen en de structuur zoveel mogelijk te behouden, zonder onnodige weglatingen.
 Het {language_level}-niveau kenmerkt zich door duidelijk en eenvoudig taalgebruik, geschikt voor een breed publiek met basisvaardigheden in de taal.
@@ -114,10 +115,12 @@ Hier zijn enkele voorbeelden van woorden op C1-niveau en hun eenvoudigere {langu
 - Relevant -> Belangrijk
 - Verstrekken -> Geven
 
-BELANGRIJK: Behoud alle tekst die tussen dubbele sterretjes staat (zoals **dit**) exact zoals deze is, inclusief de sterretjes, in de output. Dit geldt ook voor kopjes of andere belangrijke termen die zo gemarkeerd zijn.
+BELANGRIJK: De volgende woorden moeten exact behouden blijven en mogen NIET vereenvoudigd worden: {preserved_words_text}.
 
 Zorg ervoor dat de hoofdboodschap van de tekst behouden blijft en dat de vereenvoudigde versie nog steeds een accurate weergave is van de oorspronkelijke inhoud.
-
+BELANGRIJK: Tekst tussen dubbele sterretjes (zoals **dit**) moet ook vereenvoudigd worden naar {language_level}-niveau. Behoud de dubbele sterretjes rond de vereenvoudigde tekst in de output. Dit geldt ook voor kopjes of andere belangrijke termen die zo gemarkeerd zijn.
+Zorg ervoor dat de hoofdboodschap van de tekst behouden blijft en dat de vereenvoudigde versie nog steeds een accurate weergave is van de oorspronkelijke inhoud.
+Gebruik deze instructies om de tekst te vereenvoudigen en zorg ervoor dat deze voldoet aan het {language_level}-taalniveau.
 Plaats de verbeterde paragraaf tussen "<<<" en ">>>" tekens. Als de tekst te kort is om te verbeteren neem je de tekst een-op-een over en plaats deze tussen de genoemende tekens, bijv. "<<< **Artikel 3.2** >>>"."""
 
     form_data = {
@@ -158,7 +161,7 @@ Plaats de verbeterde paragraaf tussen "<<<" en ">>>" tekens. Als de tekst te kor
         # Return the original chunk in case of an error to avoid data loss, include temperature and error info
         return {"index": index, "temperature": temperature, "text": chunk, "error": str(e)}
 
-async def select_best_version(request: Request, original_chunk: str, generated_versions: List[dict], model: str, language_level: str, user: Any, index: int) -> dict:
+async def select_best_version(request: Request, original_chunk: str, generated_versions: List[dict], model: str, language_level: str, preserved_words: List[str], user: Any, index: int) -> dict: # Added preserved_words
     """Selects the best version from generated texts using an LLM based on a specific prompt."""
 
     # Filter successful versions (generated_versions now contain the full LLM output from generate_version)
@@ -169,6 +172,7 @@ async def select_best_version(request: Request, original_chunk: str, generated_v
          print(f"Warning: No successful versions generated for chunk {index}. Returning original chunk.")
          return {"index": index, "text": original_chunk, "selection_error": "No successful versions to select from."}
 
+    preserved_words_text = ", ".join(f"'{word}'" for word in preserved_words) if preserved_words else "geen"
     # System prompt for selection remains the same
     selection_system_prompt = f"""Je taak is om de volgende tekst te analyseren en te herschrijven naar een versie die voldoet aan het {language_level}-taalniveau.
 Hierbij is het belangrijk om de informatie zo letterlijk mogelijk over te brengen en de structuur zoveel mogelijk te behouden, zonder onnodige weglatingen.
@@ -189,10 +193,12 @@ Hier zijn enkele voorbeelden van woorden op C1-niveau en hun eenvoudigere {langu
 - Relevant -> Belangrijk
 - Verstrekken -> Geven
 
-BELANGRIJK: Behoud alle tekst die tussen dubbele sterretjes staat (zoals **dit**) exact zoals deze is, inclusief de sterretjes, in de output. Dit geldt ook voor kopjes of andere belangrijke termen die zo gemarkeerd zijn in de originele tekst of de varianten.
+BELANGRIJK: De volgende woorden moeten exact behouden blijven en mogen NIET vereenvoudigd worden: {preserved_words_text}.
 
 Zorg ervoor dat de inhoud en nuances van de oorspronkelijke tekst behouden blijven en dat de vereenvoudigde versie nog steeds een accurate weergave is van de oorspronkelijke inhoud.
+BELANGRIJK: Zorg ervoor dat tekst tussen dubbele sterretjes (zoals **dit**) ook vereenvoudigd is naar {language_level}-niveau in de definitieve versie. Behoud de dubbele sterretjes rond de vereenvoudigde tekst in de output. Dit geldt ook voor kopjes of andere belangrijke termen die zo gemarkeerd zijn.
 
+Zorg ervoor dat de inhoud en nuances van de oorspronkelijke tekst behouden blijven en dat de vereenvoudigde versie nog steeds een accurate weergave is van de oorspronkelijke inhoud.
 Je ontvangt de originele paragraaf, samen met enkele varianten van deze tekst in eenvoudigere taal ({language_level}). Deze varianten kunnen nog de "<<<" en ">>>" tekens bevatten. Het is jouw taak om tot een definitieve {language_level}-versie te komen ZONDER deze tekens, maar wel met behoud van **dikgedrukte** tekst.
 
 Plaats de definitieve, verbeterde paragraaf tussen "<<<" en ">>>" tekens. Als de tekst te kort is om te verbeteren neem je de tekst een-op-een over en plaats deze tussen de genoemende tekens, bijv. "<<< **Artikel 3.2** >>>".""" # Prompt still asks selection model to use <<< >>>
@@ -211,7 +217,8 @@ Plaats de definitieve, verbeterde paragraaf tussen "<<<" en ">>>" tekens. Als de
 Gegenereerde {language_level} Varianten (kunnen '<<<' en '>>>' bevatten):
 ---
 {variants_text}
-Kies de beste variant of combineer/verbeter ze tot de definitieve {language_level}-versie, geplaatst tussen <<< en >>>. Verwijder de <<< en >>> uit de input varianten in de uiteindelijke output. Vergeet niet om **dikgedrukte tekst** te behouden.""" # Updated user content instruction
+Kies de beste variant of combineer/verbeter ze tot de definitieve {language_level}-versie, geplaatst tussen <<< en >>>. Verwijder de <<< en >>> uit de input varianten in de uiteindelijke output. Zorg ervoor dat tekst binnen **dubbele sterretjes** ook vereenvoudigd is en behoud de sterretjes in de output.
+BELANGRIJK: Zorg ervoor dat de volgende woorden exact behouden blijven en NIET vereenvoudigd worden: {preserved_words_text}.""" # Updated user content instruction
 
     form_data = {
         "model": model,
@@ -297,7 +304,7 @@ async def simplify_text_endpoint(request: Request, data: SimplifyTextRequest, us
                     versions = chunk_results[idx]
                     # Schedule the selection task
                     selection_tasks.append(
-                        select_best_version(request, original_chunk, versions, data.model, data.language_level, user, idx)
+                        select_best_version(request, original_chunk, versions, data.model, data.language_level, data.preserved_words, user, idx) # Added preserved_words
                     )
                     # Optional: Clean up memory if chunks are very large
                     # del chunk_results[idx] # Be careful if original_chunk is needed elsewhere
