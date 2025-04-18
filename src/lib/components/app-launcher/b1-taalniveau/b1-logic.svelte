@@ -464,7 +464,7 @@
         <div class="relative">
           {#if isProcessingFile}
             <!-- Show loading line while processing file -->
-            <div class="progress-line absolute inset-x-0 top-0 h-1 pointer-events-none overflow-hidden">
+            <div class="progress-line absolute inset-x-0 top-0 h-1 pointer-events-none overflow-hidden z-10">
               <div class="line"></div>
             </div>
           {/if}
@@ -474,7 +474,7 @@
             rows="12"
             draggable="false"
             class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white min-h-[250px] md:min-h-[400px] max-h-[250px] md:max-h-[400px] overflow-y-auto font-[system-ui] {isFlashing ? 'flash-animation' : ''}"
-            placeholder="Voer hier de tekst in die je wilt vereenvoudigen naar {languageLevel}-taalniveau... Gebruik ** voor dikgedrukte tekst"
+            placeholder="Voer hier de tekst in die je wilt vereenvoudigen naar {languageLevel}-taalniveau."
             disabled={isLoading}
             spellcheck="false"
             on:dragover|preventDefault
