@@ -12,7 +12,7 @@ De B1-Taalniveau App levert hiermee kwalitatief hoogwaardige en consistente vere
 
 Het onderstaande schema illustreert de werking van de B1-Taalniveau App:
 
-![Algoritme Workflow](b1-taalniveau.png)
+![Algoritme Workflow](images/b1-taalniveau.png)
 
 1. **Input**: Een document wordt geüpload in de app als invoer.
 2. **Opdeling in paragrafen**: Het document wordt opgesplitst in kleinere tekstonderdelen. Dit voorkomt dat de beperkingen van de taalmodellen invloed hebben op de verwerking en versnelt het proces.

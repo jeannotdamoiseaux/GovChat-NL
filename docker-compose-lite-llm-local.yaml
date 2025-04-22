@@ -1,0 +1,29 @@
+version: "3.3"
+services:
+
+  # postgres:
+  #   image: postgres:latest
+  #   restart: always
+  #   environment:
+  #     POSTGRES_USER: $[POSTGRES_USER]
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+  #     POSTGRES_DB: litellm
+  #   ports:
+  #     - "5432:5432"
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    restart: always
+    # depends_on:
+    #   - postgres
+    ports:
+      - "4000:4000"
+    environment:
+      # - DATABASE_URL=${DATABASE_URL}
+      - AZURE_API_KEY=${AZURE_API_KEY}
+      - AZURE_API_BASE=${AZURE_API_BASE}
+      - AZURE_API_VERSION=${AZURE_API_VERSION}
+    volumes:
+      - ./litellm/litellm_config.yaml:/app/config.yaml
+      - ./litellm/calcium-alchemy-416511-58b3843781ae.json:/app/calcium-alchemy-416511-58b3843781ae.json
+    command: --config /app/config.yaml --detailed_debug
