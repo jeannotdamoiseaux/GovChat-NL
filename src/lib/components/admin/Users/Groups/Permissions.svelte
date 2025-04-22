@@ -31,7 +31,13 @@
 			web_search: true,
 			image_generation: true,
 			code_interpreter: true
-		}
+		},
+		// GovChat-NL
+		appLauncher: {
+			b1_taalniveau: false,
+			subsidies: false,
+			transcriptie: false
+    	}
 	};
 
 	export let permissions = {};
@@ -48,7 +54,8 @@
 			workspace: { ...defaults.workspace, ...obj.workspace },
 			sharing: { ...defaults.sharing, ...obj.sharing },
 			chat: { ...defaults.chat, ...obj.chat },
-			features: { ...defaults.features, ...obj.features }
+			features: { ...defaults.features, ...obj.features },
+			appLauncher: { ...defaults.appLauncher, ...obj.appLauncher } // GovChat-NL
 		};
 	}
 
@@ -318,5 +325,16 @@
 
 			<Switch bind:state={permissions.features.code_interpreter} />
 		</div>
+	</div>
+
+	<!-- GovChat-NL: App Launcher Permissions -->
+	<div>
+		<div class="mb-2 text-sm font-medium">App Launcher Permissions</div>
+		{#each Object.entries(permissions.appLauncher) as [appName, isEnabled]}
+			<div class="flex w-full justify-between my-2 pr-2">
+				<div class="self-center text-xs font-medium capitalize">{appName}</div>
+				<Switch bind:state={permissions.appLauncher[appName]} />
+			</div>
+		{/each}
 	</div>
 </div>
