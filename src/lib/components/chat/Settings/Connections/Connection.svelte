@@ -6,6 +6,7 @@
 	import SensitiveInput from '$lib/components/common/SensitiveInput.svelte';
 	import Cog6 from '$lib/components/icons/Cog6.svelte';
 	import AddConnectionModal from '$lib/components/AddConnectionModal.svelte';
+	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 
 	export let onDelete = () => {};
 	export let onSubmit = () => {};
@@ -17,22 +18,34 @@
 	export let config = {};
 
 	let showConfigModal = false;
+	let showDeleteConfirmDialog = false;
 </script>
 
 <AddConnectionModal
 	edit
+	direct
 	bind:show={showConfigModal}
 	connection={{
 		url,
 		key,
 		config
 	}}
-	{onDelete}
+	onDelete={() => {
+		showDeleteConfirmDialog = true;
+	}}
 	onSubmit={(connection) => {
 		url = connection.url;
 		key = connection.key;
 		config = connection.config;
 		onSubmit(connection);
+	}}
+/>
+
+<ConfirmDialog
+	bind:show={showDeleteConfirmDialog}
+	on:confirm={() => {
+		onDelete();
+		showConfigModal = false;
 	}}
 />
 
@@ -52,7 +65,7 @@
 		<div class="flex w-full">
 			<div class="flex-1 relative">
 				<input
-					class=" outline-none w-full bg-transparent {pipeline ? 'pr-8' : ''}"
+					class=" outline-hidden w-full bg-transparent {pipeline ? 'pr-8' : ''}"
 					placeholder={$i18n.t('API Base URL')}
 					bind:value={url}
 					autocomplete="off"
@@ -60,7 +73,7 @@
 			</div>
 
 			<SensitiveInput
-				inputClassName=" outline-none bg-transparent w-full"
+				inputClassName=" outline-hidden bg-transparent w-full"
 				placeholder={$i18n.t('API Key')}
 				bind:value={key}
 			/>

@@ -187,12 +187,12 @@
 
 		window.addEventListener('keydown', onKeyDown);
 		window.addEventListener('keyup', onKeyUp);
-		window.addEventListener('blur', onBlur);
+		window.addEventListener('blur-sm', onBlur);
 
 		return () => {
 			window.removeEventListener('keydown', onKeyDown);
 			window.removeEventListener('keyup', onKeyUp);
-			window.removeEventListener('blur', onBlur);
+			window.removeEventListener('blur-sm', onBlur);
 		};
 	});
 </script>
@@ -228,7 +228,7 @@
 					<Search className="size-3.5" />
 				</div>
 				<input
-					class=" w-full text-sm py-1 rounded-r-xl outline-none bg-transparent"
+					class=" w-full text-sm py-1 rounded-r-xl outline-hidden bg-transparent"
 					bind:value={searchValue}
 					placeholder={$i18n.t('Search Models')}
 				/>
@@ -430,6 +430,12 @@
 											return null;
 										});
 									}
+								} else {
+									if (model?.id && model?.name) {
+										await createNewModel(localStorage.token, model).catch((error) => {
+											return null;
+										});
+									}
 								}
 							}
 
@@ -474,7 +480,7 @@
 				<button
 					class="flex text-xs items-center space-x-1 px-3 py-1.5 rounded-xl bg-gray-50 hover:bg-gray-100 dark:bg-gray-800 dark:hover:bg-gray-700 dark:text-gray-200 transition"
 					on:click={async () => {
-						downloadModels($_models);
+						downloadModels(models);
 					}}
 				>
 					<div class=" self-center mr-2 font-medium line-clamp-1">{$i18n.t('Export Models')}</div>

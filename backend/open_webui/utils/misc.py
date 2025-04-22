@@ -2,12 +2,18 @@ import hashlib
 import re
 import time
 import uuid
+import logging
 from datetime import timedelta
 from pathlib import Path
 from typing import Callable, Optional
+import json
 
 
 import collections.abc
+from open_webui.env import SRC_LOG_LEVELS
+
+log = logging.getLogger(__name__)
+log.setLevel(SRC_LOG_LEVELS["MAIN"])
 
 
 def deep_update(d, u):
@@ -225,10 +231,11 @@ def openai_chat_completion_message_template(
     template = openai_chat_message_template(model)
     template["object"] = "chat.completion"
     if message is not None:
-        template["choices"][0]["message"] = {"content": message, "role": "assistant"}
-
-    if tool_calls:
-        template["choices"][0]["tool_calls"] = tool_calls
+        template["choices"][0]["message"] = {
+            "content": message,
+            "role": "assistant",
+            **({"tool_calls": tool_calls} if tool_calls else {}),
+        }
 
     template["choices"][0]["finish_reason"] = "stop"
 
@@ -411,7 +418,7 @@ def parse_ollama_modelfile(model_text):
                 elif param_type is bool:
                     value = value.lower() == "true"
             except Exception as e:
-                print(e)
+                log.exception(f"Failed to parse parameter {param}: {e}")
                 continue
 
             data["params"][param] = value
@@ -444,3 +451,15 @@ def parse_ollama_modelfile(model_text):
         data["params"]["messages"] = messages
 
     return data
+
+
+def convert_logit_bias_input_to_json(user_input):
+    logit_bias_pairs = user_input.split(",")
+    logit_bias_json = {}
+    for pair in logit_bias_pairs:
+        token, bias = pair.split(":")
+        token = str(token.strip())
+        bias = int(bias.strip())
+        bias = 100 if bias > 100 else -100 if bias < -100 else bias
+        logit_bias_json[token] = bias
+    return json.dumps(logit_bias_json)

@@ -5,7 +5,7 @@
 	import { createEventDispatcher } from 'svelte';
 	import { onMount, tick, getContext } from 'svelte';
 	import type { Writable } from 'svelte/store';
-	import type { i18n as i18nType } from 'i18next';
+	import type { i18n as i18nType, t } from 'i18next';
 
 	const i18n = getContext<Writable<i18nType>>('i18n');
 
@@ -15,7 +15,7 @@
 	import { getChatById } from '$lib/apis/chats';
 	import { generateTags } from '$lib/apis';
 
-	import { config, models, settings, TTSWorker, user } from '$lib/stores';
+	import { config, models, settings, temporaryChatEnabled, TTSWorker, user } from '$lib/stores';
 	import { synthesizeOpenAISpeech } from '$lib/apis/audio';
 	import { imageGenerations } from '$lib/apis/images';
 	import {
@@ -37,6 +37,9 @@
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import WebSearchResults from './ResponseMessage/WebSearchResults.svelte';
 	import Sparkles from '$lib/components/icons/Sparkles.svelte';
+
+	import DeleteConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
+
 	import Error from './Error.svelte';
 	import Citations from './Citations.svelte';
 	import CodeExecutions from './CodeExecutions.svelte';
@@ -107,6 +110,7 @@
 
 	export let siblings;
 
+	export let gotoMessage: Function = () => {};
 	export let showPreviousMessage: Function;
 	export let showNextMessage: Function;
 
@@ -126,12 +130,17 @@
 	export let isLastMessage = true;
 	export let readOnly = false;
 
+	let buttonsContainerElement: HTMLDivElement;
+	let showDeleteConfirm = false;
+
 	let model = null;
 	$: model = $models.find((m) => m.id === message.model);
 
 	let edit = false;
 	let editedContent = '';
 	let editTextAreaElement: HTMLTextAreaElement;
+
+	let messageIndexEdit = false;
 
 	let audioParts: Record<number, HTMLAudioElement | null> = {};
 	let speaking = false;
@@ -513,8 +522,28 @@
 		// console.log('ResponseMessage mounted');
 
 		await tick();
+		if (buttonsContainerElement) {
+			console.log(buttonsContainerElement);
+			buttonsContainerElement.addEventListener('wheel', function (event) {
+				// console.log(event.deltaY);
+
+				event.preventDefault();
+				if (event.deltaY !== 0) {
+					// Adjust horizontal scroll position based on vertical scroll
+					buttonsContainerElement.scrollLeft += event.deltaY;
+				}
+			});
+		}
 	});
 </script>
+
+<DeleteConfirmDialog
+	bind:show={showDeleteConfirm}
+	title={$i18n.t('Delete message?')}
+	on:confirm={() => {
+		deleteMessageHandler();
+	}}
+/>
 
 {#key message.id}
 	<div
@@ -522,7 +551,7 @@
 		id="message-{message.id}"
 		dir={$settings.chatDirection}
 	>
-		<div class={`flex-shrink-0 ${($settings?.chatDirection ?? 'LTR') === 'LTR' ? 'mr-3' : 'ml-3'}`}>
+		<div class={`shrink-0 ${($settings?.chatDirection ?? 'LTR') === 'LTR' ? 'mr-3' : 'ml-3'}`}>
 			<ProfileImage
 				src={model?.info?.meta?.profile_image_url ??
 					($i18n.language === 'dg-DG' ? `/doge.png` : `${WEBUI_BASE_URL}/static/favicon.png`)}
@@ -533,7 +562,7 @@
 		<div class="flex-auto w-0 pl-1">
 			<Name>
 				<Tooltip content={model?.name ?? message.model} placement="top-start">
-					<span class="line-clamp-1">
+					<span class="line-clamp-1 text-black dark:text-white">
 						{model?.name ?? message.model}
 					</span>
 				</Tooltip>
@@ -645,7 +674,7 @@
 								<textarea
 									id="message-edit-{message.id}"
 									bind:this={editTextAreaElement}
-									class=" bg-transparent outline-none w-full resize-none"
+									class=" bg-transparent outline-hidden w-full resize-none"
 									bind:value={editedContent}
 									on:input={(e) => {
 										e.target.style.height = '';
@@ -713,13 +742,18 @@
 										{history}
 										content={message.content}
 										sources={message.sources}
-										floatingButtons={message?.done}
+										floatingButtons={message?.done && !readOnly}
 										save={!readOnly}
 										{model}
-										onSourceClick={async (e) => {
+										onTaskClick={async (e) => {
 											console.log(e);
-											let sourceButton = document.getElementById(`source-${e}`);
-											const sourcesCollapsible = document.getElementById(`collapsible-sources`);
+										}}
+										onSourceClick={async (id, idx) => {
+											console.log(id, idx);
+											let sourceButton = document.getElementById(`source-${message.id}-${idx}`);
+											const sourcesCollapsible = document.getElementById(
+												`collapsible-${message.id}`
+											);
 
 											if (sourceButton) {
 												sourceButton.click();
@@ -737,7 +771,7 @@
 												});
 
 												// Try clicking the source button again
-												sourceButton = document.getElementById(`source-${e}`);
+												sourceButton = document.getElementById(`source-${message.id}-${idx}`);
 												sourceButton && sourceButton.click();
 											}
 										}}
@@ -774,7 +808,7 @@
 								{/if}
 
 								{#if (message?.sources || message?.citations) && (model?.info?.meta?.capabilities?.citations ?? true)}
-									<Citations sources={message?.sources ?? message?.citations} />
+									<Citations id={message?.id} sources={message?.sources ?? message?.citations} />
 								{/if}
 
 								{#if message.code_executions}
@@ -786,10 +820,11 @@
 				</div>
 
 				{#if !edit}
-					{#if message.done || siblings.length > 1}
-						<div
-							class=" flex justify-start overflow-x-auto buttons text-gray-600 dark:text-gray-500 mt-0.5"
-						>
+					<div
+						bind:this={buttonsContainerElement}
+						class="flex justify-start overflow-x-auto buttons text-gray-600 dark:text-gray-500 mt-0.5"
+					>
+						{#if message.done || siblings.length > 1}
 							{#if siblings.length > 1}
 								<div class="flex self-center min-w-fit" dir="ltr">
 									<button
@@ -814,11 +849,50 @@
 										</svg>
 									</button>
 
-									<div
-										class="text-sm tracking-widest font-semibold self-center dark:text-gray-100 min-w-fit"
-									>
-										{siblings.indexOf(message.id) + 1}/{siblings.length}
-									</div>
+									{#if messageIndexEdit}
+										<div
+											class="text-sm flex justify-center font-semibold self-center dark:text-gray-100 min-w-fit"
+										>
+											<input
+												id="message-index-input-{message.id}"
+												type="number"
+												value={siblings.indexOf(message.id) + 1}
+												min="1"
+												max={siblings.length}
+												on:focus={(e) => {
+													e.target.select();
+												}}
+												on:blur={(e) => {
+													gotoMessage(message, e.target.value - 1);
+													messageIndexEdit = false;
+												}}
+												on:keydown={(e) => {
+													if (e.key === 'Enter') {
+														gotoMessage(message, e.target.value - 1);
+														messageIndexEdit = false;
+													}
+												}}
+												class="bg-transparent font-semibold self-center dark:text-gray-100 min-w-fit outline-hidden"
+											/>/{siblings.length}
+										</div>
+									{:else}
+										<!-- svelte-ignore a11y-no-static-element-interactions -->
+										<div
+											class="text-sm tracking-widest font-semibold self-center dark:text-gray-100 min-w-fit"
+											on:dblclick={async () => {
+												messageIndexEdit = true;
+
+												await tick();
+												const input = document.getElementById(`message-index-input-${message.id}`);
+												if (input) {
+													input.focus();
+													input.select();
+												}
+											}}
+										>
+											{siblings.indexOf(message.id) + 1}/{siblings.length}
+										</div>
+									{/if}
 
 									<button
 										class="self-center p-1 hover:bg-black/5 dark:hover:bg-white/5 dark:hover:text-white hover:text-black rounded-md transition"
@@ -1086,7 +1160,7 @@
 								{/if}
 
 								{#if !readOnly}
-									{#if $config?.features.enable_message_rating ?? true}
+									{#if !$temporaryChatEnabled && ($config?.features.enable_message_rating ?? true)}
 										<Tooltip content={$i18n.t('Good Response')} placement="bottom">
 											<button
 												class="{isLastMessage
@@ -1239,12 +1313,12 @@
 										<Tooltip content={$i18n.t('Delete')} placement="bottom">
 											<button
 												type="button"
-												id="continue-response-button"
+												id="delete-response-button"
 												class="{isLastMessage
 													? 'visible'
 													: 'invisible group-hover:visible'} p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg dark:hover:text-white hover:text-black transition regenerate-response-button"
 												on:click={() => {
-													deleteMessageHandler();
+													showDeleteConfirm = true;
 												}}
 											>
 												<svg
@@ -1297,8 +1371,8 @@
 									{/if}
 								{/if}
 							{/if}
-						</div>
-					{/if}
+						{/if}
+					</div>
 
 					{#if message.done && showRateComment}
 						<RateComment

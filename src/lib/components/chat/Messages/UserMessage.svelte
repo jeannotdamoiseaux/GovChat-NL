@@ -13,6 +13,8 @@
 	import FileItem from '$lib/components/common/FileItem.svelte';
 	import Markdown from './Markdown.svelte';
 	import Image from '$lib/components/common/Image.svelte';
+	import DeleteConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
+
 	import localizedFormat from 'dayjs/plugin/localizedFormat';
 
 	const i18n = getContext('i18n');
@@ -25,6 +27,7 @@
 
 	export let siblings;
 
+	export let gotoMessage: Function;
 	export let showPreviousMessage: Function;
 	export let showNextMessage: Function;
 
@@ -33,6 +36,10 @@
 
 	export let isFirstMessage: boolean;
 	export let readOnly: boolean;
+
+	let showDeleteConfirm = false;
+
+	let messageIndexEdit = false;
 
 	let edit = false;
 	let editedContent = '';
@@ -85,9 +92,17 @@
 	});
 </script>
 
+<DeleteConfirmDialog
+	bind:show={showDeleteConfirm}
+	title={$i18n.t('Delete message?')}
+	on:confirm={() => {
+		deleteMessageHandler();
+	}}
+/>
+
 <div class=" flex w-full user-message" dir={$settings.chatDirection} id="message-{message.id}">
 	{#if !($settings?.chatBubble ?? true)}
-		<div class={`flex-shrink-0 ${($settings?.chatDirection ?? 'LTR') === 'LTR' ? 'mr-3' : 'ml-3'}`}>
+		<div class={`shrink-0 ${($settings?.chatDirection ?? 'LTR') === 'LTR' ? 'mr-3' : 'ml-3'}`}>
 			<ProfileImage
 				src={message.user
 					? ($models.find((m) => m.id === message.user)?.info?.meta?.profile_image_url ??
@@ -152,7 +167,7 @@
 							<textarea
 								id="message-edit-{message.id}"
 								bind:this={messageEditTextAreaElement}
-								class=" bg-transparent outline-none w-full resize-none"
+								class=" bg-transparent outline-hidden w-full resize-none"
 								bind:value={editedContent}
 								on:input={(e) => {
 									e.target.style.height = '';
@@ -255,11 +270,52 @@
 											</svg>
 										</button>
 
-										<div
-											class="text-sm tracking-widest font-semibold self-center dark:text-gray-100"
-										>
-											{siblings.indexOf(message.id) + 1}/{siblings.length}
-										</div>
+										{#if messageIndexEdit}
+											<div
+												class="text-sm flex justify-center font-semibold self-center dark:text-gray-100 min-w-fit"
+											>
+												<input
+													id="message-index-input-{message.id}"
+													type="number"
+													value={siblings.indexOf(message.id) + 1}
+													min="1"
+													max={siblings.length}
+													on:focus={(e) => {
+														e.target.select();
+													}}
+													on:blur={(e) => {
+														gotoMessage(message, e.target.value - 1);
+														messageIndexEdit = false;
+													}}
+													on:keydown={(e) => {
+														if (e.key === 'Enter') {
+															gotoMessage(message, e.target.value - 1);
+															messageIndexEdit = false;
+														}
+													}}
+													class="bg-transparent font-semibold self-center dark:text-gray-100 min-w-fit outline-hidden"
+												/>/{siblings.length}
+											</div>
+										{:else}
+											<!-- svelte-ignore a11y-no-static-element-interactions -->
+											<div
+												class="text-sm tracking-widest font-semibold self-center dark:text-gray-100 min-w-fit"
+												on:dblclick={async () => {
+													messageIndexEdit = true;
+
+													await tick();
+													const input = document.getElementById(
+														`message-index-input-${message.id}`
+													);
+													if (input) {
+														input.focus();
+														input.select();
+													}
+												}}
+											>
+												{siblings.indexOf(message.id) + 1}/{siblings.length}
+											</div>
+										{/if}
 
 										<button
 											class="self-center p-1 hover:bg-black/5 dark:hover:bg-white/5 dark:hover:text-white hover:text-black rounded-md transition"
@@ -335,12 +391,12 @@
 								</button>
 							</Tooltip>
 
-							{#if !isFirstMessage && !readOnly}
+							{#if !readOnly && (!isFirstMessage || siblings.length > 1)}
 								<Tooltip content={$i18n.t('Delete')} placement="bottom">
 									<button
-										class="invisible group-hover:visible p-1 rounded dark:hover:text-white hover:text-black transition"
+										class="invisible group-hover:visible p-1 rounded-sm dark:hover:text-white hover:text-black transition"
 										on:click={() => {
-											deleteMessageHandler();
+											showDeleteConfirm = true;
 										}}
 									>
 										<svg
@@ -386,11 +442,52 @@
 											</svg>
 										</button>
 
-										<div
-											class="text-sm tracking-widest font-semibold self-center dark:text-gray-100"
-										>
-											{siblings.indexOf(message.id) + 1}/{siblings.length}
-										</div>
+										{#if messageIndexEdit}
+											<div
+												class="text-sm flex justify-center font-semibold self-center dark:text-gray-100 min-w-fit"
+											>
+												<input
+													id="message-index-input-{message.id}"
+													type="number"
+													value={siblings.indexOf(message.id) + 1}
+													min="1"
+													max={siblings.length}
+													on:focus={(e) => {
+														e.target.select();
+													}}
+													on:blur={(e) => {
+														gotoMessage(message, e.target.value - 1);
+														messageIndexEdit = false;
+													}}
+													on:keydown={(e) => {
+														if (e.key === 'Enter') {
+															gotoMessage(message, e.target.value - 1);
+															messageIndexEdit = false;
+														}
+													}}
+													class="bg-transparent font-semibold self-center dark:text-gray-100 min-w-fit outline-hidden"
+												/>/{siblings.length}
+											</div>
+										{:else}
+											<!-- svelte-ignore a11y-no-static-element-interactions -->
+											<div
+												class="text-sm tracking-widest font-semibold self-center dark:text-gray-100 min-w-fit"
+												on:dblclick={async () => {
+													messageIndexEdit = true;
+
+													await tick();
+													const input = document.getElementById(
+														`message-index-input-${message.id}`
+													);
+													if (input) {
+														input.focus();
+														input.select();
+													}
+												}}
+											>
+												{siblings.indexOf(message.id) + 1}/{siblings.length}
+											</div>
+										{/if}
 
 										<button
 											class="self-center p-1 hover:bg-black/5 dark:hover:bg-white/5 dark:hover:text-white hover:text-black rounded-md transition"

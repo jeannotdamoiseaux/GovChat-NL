@@ -20,6 +20,10 @@ from open_webui.utils.auth import get_admin_user, get_verified_user
 from open_webui.constants import TASKS
 
 from open_webui.routers.pipelines import process_pipeline_inlet_filter
+from open_webui.utils.filter import (
+    get_sorted_filter_ids,
+    process_filter_functions,
+)
 from open_webui.utils.task import get_task_model_id
 
 from open_webui.config import (
@@ -58,6 +62,7 @@ async def get_task_config(request: Request, user=Depends(get_verified_user)):
         "AUTOCOMPLETE_GENERATION_INPUT_MAX_LENGTH": request.app.state.config.AUTOCOMPLETE_GENERATION_INPUT_MAX_LENGTH,
         "TAGS_GENERATION_PROMPT_TEMPLATE": request.app.state.config.TAGS_GENERATION_PROMPT_TEMPLATE,
         "ENABLE_TAGS_GENERATION": request.app.state.config.ENABLE_TAGS_GENERATION,
+        "ENABLE_TITLE_GENERATION": request.app.state.config.ENABLE_TITLE_GENERATION,
         "ENABLE_SEARCH_QUERY_GENERATION": request.app.state.config.ENABLE_SEARCH_QUERY_GENERATION,
         "ENABLE_RETRIEVAL_QUERY_GENERATION": request.app.state.config.ENABLE_RETRIEVAL_QUERY_GENERATION,
         "QUERY_GENERATION_PROMPT_TEMPLATE": request.app.state.config.QUERY_GENERATION_PROMPT_TEMPLATE,
@@ -68,6 +73,7 @@ async def get_task_config(request: Request, user=Depends(get_verified_user)):
 class TaskConfigForm(BaseModel):
     TASK_MODEL: Optional[str]
     TASK_MODEL_EXTERNAL: Optional[str]
+    ENABLE_TITLE_GENERATION: bool
     TITLE_GENERATION_PROMPT_TEMPLATE: str
     IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE: str
     ENABLE_AUTOCOMPLETE_GENERATION: bool
@@ -86,6 +92,7 @@ async def update_task_config(
 ):
     request.app.state.config.TASK_MODEL = form_data.TASK_MODEL
     request.app.state.config.TASK_MODEL_EXTERNAL = form_data.TASK_MODEL_EXTERNAL
+    request.app.state.config.ENABLE_TITLE_GENERATION = form_data.ENABLE_TITLE_GENERATION
     request.app.state.config.TITLE_GENERATION_PROMPT_TEMPLATE = (
         form_data.TITLE_GENERATION_PROMPT_TEMPLATE
     )
@@ -122,6 +129,7 @@ async def update_task_config(
     return {
         "TASK_MODEL": request.app.state.config.TASK_MODEL,
         "TASK_MODEL_EXTERNAL": request.app.state.config.TASK_MODEL_EXTERNAL,
+        "ENABLE_TITLE_GENERATION": request.app.state.config.ENABLE_TITLE_GENERATION,
         "TITLE_GENERATION_PROMPT_TEMPLATE": request.app.state.config.TITLE_GENERATION_PROMPT_TEMPLATE,
         "IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE": request.app.state.config.IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE,
         "ENABLE_AUTOCOMPLETE_GENERATION": request.app.state.config.ENABLE_AUTOCOMPLETE_GENERATION,
@@ -139,6 +147,13 @@ async def update_task_config(
 async def generate_title(
     request: Request, form_data: dict, user=Depends(get_verified_user)
 ):
+
+    if not request.app.state.config.ENABLE_TITLE_GENERATION:
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={"detail": "Title generation is disabled"},
+        )
+
     if getattr(request.state, "direct", False) and hasattr(request.state, "model"):
         models = {
             request.state.model["id"]: request.state.model,
@@ -197,7 +212,7 @@ async def generate_title(
         "stream": False,
         **(
             {"max_tokens": 1000}
-            if models[task_model_id]["owned_by"] == "ollama"
+            if models[task_model_id].get("owned_by") == "ollama"
             else {
                 "max_completion_tokens": 1000,
             }
@@ -209,6 +224,12 @@ async def generate_title(
             "chat_id": form_data.get("chat_id", None),
         },
     }
+
+    # Process the payload through the pipeline
+    try:
+        payload = await process_pipeline_inlet_filter(request, payload, user, models)
+    except Exception as e:
+        raise e
 
     try:
         return await generate_chat_completion(request, form_data=payload, user=user)
@@ -279,6 +300,12 @@ async def generate_chat_tags(
         },
     }
 
+    # Process the payload through the pipeline
+    try:
+        payload = await process_pipeline_inlet_filter(request, payload, user, models)
+    except Exception as e:
+        raise e
+
     try:
         return await generate_chat_completion(request, form_data=payload, user=user)
     except Exception as e:
@@ -344,6 +371,12 @@ async def generate_image_prompt(
             "chat_id": form_data.get("chat_id", None),
         },
     }
+
+    # Process the payload through the pipeline
+    try:
+        payload = await process_pipeline_inlet_filter(request, payload, user, models)
+    except Exception as e:
+        raise e
 
     try:
         return await generate_chat_completion(request, form_data=payload, user=user)
@@ -421,6 +454,12 @@ async def generate_queries(
             "chat_id": form_data.get("chat_id", None),
         },
     }
+
+    # Process the payload through the pipeline
+    try:
+        payload = await process_pipeline_inlet_filter(request, payload, user, models)
+    except Exception as e:
+        raise e
 
     try:
         return await generate_chat_completion(request, form_data=payload, user=user)
@@ -503,6 +542,12 @@ async def generate_autocompletion(
         },
     }
 
+    # Process the payload through the pipeline
+    try:
+        payload = await process_pipeline_inlet_filter(request, payload, user, models)
+    except Exception as e:
+        raise e
+
     try:
         return await generate_chat_completion(request, form_data=payload, user=user)
     except Exception as e:
@@ -560,7 +605,7 @@ async def generate_emoji(
         "stream": False,
         **(
             {"max_tokens": 4}
-            if models[task_model_id]["owned_by"] == "ollama"
+            if models[task_model_id].get("owned_by") == "ollama"
             else {
                 "max_completion_tokens": 4,
             }
@@ -572,6 +617,12 @@ async def generate_emoji(
             "task_body": form_data,
         },
     }
+
+    # Process the payload through the pipeline
+    try:
+        payload = await process_pipeline_inlet_filter(request, payload, user, models)
+    except Exception as e:
+        raise e
 
     try:
         return await generate_chat_completion(request, form_data=payload, user=user)
@@ -632,6 +683,12 @@ async def generate_moa_response(
             "task_body": form_data,
         },
     }
+
+    # Process the payload through the pipeline
+    try:
+        payload = await process_pipeline_inlet_filter(request, payload, user, models)
+    except Exception as e:
+        raise e
 
     try:
         return await generate_chat_completion(request, form_data=payload, user=user)

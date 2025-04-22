@@ -14,6 +14,7 @@
 	import SensitiveInput from '$lib/components/common/SensitiveInput.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Switch from '$lib/components/common/Switch.svelte';
+	import Tags from './common/Tags.svelte';
 
 	export let onSubmit: Function = () => {};
 	export let onDelete: Function = () => {};
@@ -31,6 +32,7 @@
 
 	let prefixId = '';
 	let enable = true;
+	let tags = [];
 
 	let modelId = '';
 	let modelIds = [];
@@ -77,17 +79,21 @@
 	const submitHandler = async () => {
 		loading = true;
 
-		if (!ollama && (!url || !key)) {
+		if (!ollama && !url) {
 			loading = false;
-			toast.error('URL and Key are required');
+			toast.error('URL is required');
 			return;
 		}
+
+		// remove trailing slash from url
+		url = url.replace(/\/$/, '');
 
 		const connection = {
 			url,
 			key,
 			config: {
 				enable: enable,
+				tags: tags,
 				prefix_id: prefixId,
 				model_ids: modelIds
 			}
@@ -101,6 +107,7 @@
 		url = '';
 		key = '';
 		prefixId = '';
+		tags = [];
 		modelIds = [];
 	};
 
@@ -110,6 +117,7 @@
 			key = connection.key;
 
 			enable = connection.config?.enable ?? true;
+			tags = connection.config?.tags ?? [];
 			prefixId = connection.config?.prefix_id ?? '';
 			modelIds = connection.config?.model_ids ?? [];
 		}
@@ -169,7 +177,7 @@
 
 								<div class="flex-1">
 									<input
-										class="w-full text-sm bg-transparent placeholder:text-gray-300 dark:placeholder:text-gray-700 outline-none"
+										class="w-full text-sm bg-transparent placeholder:text-gray-300 dark:placeholder:text-gray-700 outline-hidden"
 										type="text"
 										bind:value={url}
 										placeholder={$i18n.t('API Base URL')}
@@ -179,7 +187,7 @@
 								</div>
 							</div>
 
-							<Tooltip content="Verify Connection" className="self-end -mb-1">
+							<Tooltip content={$i18n.t('Verify Connection')} className="self-end -mb-1">
 								<button
 									class="self-center p-1 bg-transparent hover:bg-gray-100 dark:bg-gray-900 dark:hover:bg-gray-850 rounded-lg transition"
 									on:click={() => {
@@ -202,7 +210,7 @@
 								</button>
 							</Tooltip>
 
-							<div class="flex flex-col flex-shrink-0 self-end">
+							<div class="flex flex-col shrink-0 self-end">
 								<Tooltip content={enable ? $i18n.t('Enabled') : $i18n.t('Disabled')}>
 									<Switch bind:state={enable} />
 								</Tooltip>
@@ -215,10 +223,10 @@
 
 								<div class="flex-1">
 									<SensitiveInput
-										className="w-full text-sm bg-transparent placeholder:text-gray-300 dark:placeholder:text-gray-700 outline-none"
+										className="w-full text-sm bg-transparent placeholder:text-gray-300 dark:placeholder:text-gray-700 outline-hidden"
 										bind:value={key}
 										placeholder={$i18n.t('API Key')}
-										required={!ollama}
+										required={false}
 									/>
 								</div>
 							</div>
@@ -233,13 +241,36 @@
 										)}
 									>
 										<input
-											class="w-full text-sm bg-transparent placeholder:text-gray-300 dark:placeholder:text-gray-700 outline-none"
+											class="w-full text-sm bg-transparent placeholder:text-gray-300 dark:placeholder:text-gray-700 outline-hidden"
 											type="text"
 											bind:value={prefixId}
 											placeholder={$i18n.t('Prefix ID')}
 											autocomplete="off"
 										/>
 									</Tooltip>
+								</div>
+							</div>
+						</div>
+
+						<div class="flex gap-2 mt-2">
+							<div class="flex flex-col w-full">
+								<div class=" mb-1.5 text-xs text-gray-500">{$i18n.t('Tags')}</div>
+
+								<div class="flex-1">
+									<Tags
+										bind:tags
+										on:add={(e) => {
+											tags = [
+												...tags,
+												{
+													name: e.detail
+												}
+											];
+										}}
+										on:delete={(e) => {
+											tags = tags.filter((tag) => tag.name !== e.detail);
+										}}
+									/>
 								</div>
 							</div>
 						</div>
@@ -258,7 +289,7 @@
 											<div class=" text-sm flex-1 py-1 rounded-lg">
 												{modelId}
 											</div>
-											<div class="flex-shrink-0">
+											<div class="shrink-0">
 												<button
 													type="button"
 													on:click={() => {
@@ -274,12 +305,12 @@
 							{:else}
 								<div class="text-gray-500 text-xs text-center py-2 px-10">
 									{#if ollama}
-										{$i18n.t('Leave empty to include all models from "{{URL}}/api/tags" endpoint', {
-											URL: url
+										{$i18n.t('Leave empty to include all models from "{{url}}/api/tags" endpoint', {
+											url: url
 										})}
 									{:else}
-										{$i18n.t('Leave empty to include all models from "{{URL}}/models" endpoint', {
-											URL: url
+										{$i18n.t('Leave empty to include all models from "{{url}}/models" endpoint', {
+											url: url
 										})}
 									{/if}
 								</div>
@@ -292,7 +323,7 @@
 							<input
 								class="w-full py-1 text-sm rounded-lg bg-transparent {modelId
 									? ''
-									: 'text-gray-500'} placeholder:text-gray-300 dark:placeholder:text-gray-700 outline-none"
+									: 'text-gray-500'} placeholder:text-gray-300 dark:placeholder:text-gray-700 outline-hidden"
 								bind:value={modelId}
 								placeholder={$i18n.t('Add a model ID')}
 							/>
