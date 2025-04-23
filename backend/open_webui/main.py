@@ -367,7 +367,7 @@ from open_webui.utils.security_headers import SecurityHeadersMiddleware
 
 from open_webui.tasks import stop_task, list_tasks  # Import from tasks.py
 
-from open_webui.routers import taalniveau
+from open_webui.routers import taalniveau, subsidies
 
 
 from open_webui.utils.redis import get_sentinels_from_env
@@ -942,7 +942,7 @@ app.include_router(utils.router, prefix="/api/v1/utils", tags=["utils"])
 
 # Voeg dit toe bij de andere app.include_router statements
 app.include_router(taalniveau.router, prefix="/api/b1", tags=["taalniveau"])
-
+app.include_router(subsidies.router, prefix="/api/subsidies", tags=["Subsidies"])
 
 
 try:
