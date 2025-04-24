@@ -1,13 +1,13 @@
 <script lang="ts">
-	import Lechat from '$lib/components/chat/lechat.svelte';
+	import Template from '$lib/components/app-launcher/page-template/template.svelte';
 	import AppGrid from '$lib/components/app-launcher/AppGrid.svelte';
 </script>
 
 <!-- Content Slot -->
-<Lechat>
+<Template>
 	<div slot="content" class="pt-16">
 		<div class="max-w-7xl mx-auto">
             <AppGrid />
         </div>
 	</div>
-</Lechat>
+</Template>

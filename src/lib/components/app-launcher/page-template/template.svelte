@@ -17,7 +17,7 @@
 	import { updateUserSettings } from '$lib/apis/users';
 
 	import Navbar from '$lib/components/chat/Navbar.svelte';
-	import B1Logic from '../app-launcher/b1-taalniveau/b1-logic.svelte';
+	
 
 	export let chatIdProp = '';
 
