@@ -88,13 +88,40 @@ def split_into_chunks(text: str, max_tokens: int = 1500) -> List[str]:
     return [chunk for chunk in chunks if chunk is not None]
 
 
+# Define language level examples outside the functions for clarity
+LANGUAGE_LEVEL_EXAMPLES = {
+    "B1": """
+- Betreffende -> Over
+- Creëren -> Maken
+- Prioriteit -> Wat eerst moet, voorrang
+- Relevant -> Belangrijk (voor dit onderwerp)
+- Verstrekken -> Geven
+""",
+    "B2": """
+- Betreffende -> Met betrekking tot, Over
+- Creëren -> Maken, ontwikkelen
+- Prioriteit -> Belangrijkste punt, voorrang
+- Relevant -> Van toepassing, belangrijk
+- Verstrekken -> Geven, aanbieden
+""",
+    "DEFAULT": """
+- Betreffende -> Over
+- Creëren -> Ontwerpen, vormen, vormgeven, maken
+- Prioriteit -> Voorrang, voorkeur
+- Relevant -> Belangrijk
+- Verstrekken -> Geven
+"""
+}
+
 async def generate_version(request: Request, chunk: str, model: str, preserved_words: List[str], language_level: str, user: Any, index: int, temperature: float) -> dict:
     """Generate a single version of simplified text for a specific temperature and return with index and temperature"""
     if not chunk or chunk.isspace():
-        # Return empty strings as they might be intentional paragraph breaks
-        return {"index": index, "temperature": temperature, "text": chunk, "error": None} # Ensure error key exists
+        return {"index": index, "temperature": temperature, "text": chunk, "error": None}
 
     preserved_words_text = ", ".join(f"'{word}'" for word in preserved_words) if preserved_words else "geen"
+    # Get examples using dictionary lookup with a default fallback
+    level_examples = LANGUAGE_LEVEL_EXAMPLES.get(language_level.upper(), LANGUAGE_LEVEL_EXAMPLES["DEFAULT"])
+
     # Updated system prompt with instruction for bold text and preserved words
     generation_system_prompt = f"""Je taak is om de volgende tekst te analyseren en te herschrijven naar een versie die voldoet aan het {language_level}-taalniveau.
 Hierbij is het belangrijk om de informatie zo letterlijk mogelijk over te brengen en de structuur zoveel mogelijk te behouden, zonder onnodige weglatingen.
@@ -108,13 +135,7 @@ Hier zijn enkele richtlijnen om je te helpen bij deze taak:
 - Vermijd passieve zinnen en ingewikkelde grammaticale constructies.
 - Gebruik concrete voorbeelden om abstracte concepten te verduidelijken.
 
-Hier zijn enkele voorbeelden van woorden op C1-niveau en hun eenvoudigere {language_level}-equivalenten:
-- Betreffende -> Over
-- Creëren -> Ontwerpen, vormen, vormgeven, maken
-- Prioriteit -> Voorrang, voorkeur
-- Relevant -> Belangrijk
-- Verstrekken -> Geven
-
+Hier zijn enkele voorbeelden van woorden op C1-niveau en hun eenvoudigere {language_level}-equivalenten:{level_examples}
 BELANGRIJK: De volgende woorden moeten exact behouden blijven en mogen NIET vereenvoudigd worden: {preserved_words_text}.
 
 Zorg ervoor dat de hoofdboodschap van de tekst behouden blijft en dat de vereenvoudigde versie nog steeds een accurate weergave is van de oorspronkelijke inhoud.
@@ -125,55 +146,39 @@ Plaats de verbeterde paragraaf tussen "<<<" en ">>>" tekens. Als de tekst te kor
 
     form_data = {
         "model": model,
-        "stream": False, # Ensure streaming is off for this internal call
-        "temperature": temperature, # Add temperature parameter
+        "stream": False,
+        "temperature": temperature,
         "messages": [
-            {
-                "role": "system",
-                "content": generation_system_prompt # Use the updated prompt
-            },
-            {
-                "role": "user",
-                "content": chunk
-            }
+            {"role": "system", "content": generation_system_prompt},
+            {"role": "user", "content": chunk}
         ]
     }
 
     try:
-        # Assuming generate_chat_completion handles potential API errors gracefully
-        # and accepts the 'temperature' key in form_data
         response = await generate_chat_completion(request=request, form_data=form_data, user=user)
         llm_output = response['choices'][0]['message']['content']
-
-        # --- REMOVED EXTRACTION LOGIC ---
-        # The llm_output now contains the full response, potentially including <<< >>>
         simplified_text = llm_output.strip()
-        # Optional: Still clean potential markdown code blocks if the model adds them unexpectedly
         simplified_text = re.sub(r'^```[a-zA-Z]*\n?', '', simplified_text)
         simplified_text = re.sub(r'\n?```$', '', simplified_text)
-        # --- END REMOVED EXTRACTION LOGIC ---
-
-
-        return {"index": index, "temperature": temperature, "text": simplified_text, "error": None} # Return the full (cleaned) output
+        return {"index": index, "temperature": temperature, "text": simplified_text, "error": None}
     except Exception as e:
-        # Log the error for debugging purposes
-        print(f"Error processing chunk {index} with model {model} at temperature {e}")
-        # Return the original chunk in case of an error to avoid data loss, include temperature and error info
+        print(f"Error processing chunk {index} with model {model} at temperature {temperature}: {e}") # Corrected temperature variable name
         return {"index": index, "temperature": temperature, "text": chunk, "error": str(e)}
 
-async def select_best_version(request: Request, original_chunk: str, generated_versions: List[dict], model: str, language_level: str, preserved_words: List[str], user: Any, index: int) -> dict: # Added preserved_words
+async def select_best_version(request: Request, original_chunk: str, generated_versions: List[dict], model: str, language_level: str, preserved_words: List[str], user: Any, index: int) -> dict:
     """Selects the best version from generated texts using an LLM based on a specific prompt."""
 
-    # Filter successful versions (generated_versions now contain the full LLM output from generate_version)
     successful_versions = [v for v in generated_versions if v.get("error") is None and v.get("text", "").strip()]
 
-    # Handle cases with no successful versions or only empty results
     if not successful_versions:
          print(f"Warning: No successful versions generated for chunk {index}. Returning original chunk.")
          return {"index": index, "text": original_chunk, "selection_error": "No successful versions to select from."}
 
     preserved_words_text = ", ".join(f"'{word}'" for word in preserved_words) if preserved_words else "geen"
-    # System prompt for selection remains the same
+    # Get examples using dictionary lookup with a default fallback
+    level_examples = LANGUAGE_LEVEL_EXAMPLES.get(language_level.upper(), LANGUAGE_LEVEL_EXAMPLES["DEFAULT"])
+
+    # System prompt for selection uses dynamic examples
     selection_system_prompt = f"""Je taak is om de volgende tekst te analyseren en te herschrijven naar een versie die voldoet aan het {language_level}-taalniveau.
 Hierbij is het belangrijk om de informatie zo letterlijk mogelijk over te brengen en de structuur zoveel mogelijk te behouden, zonder onnodige weglatingen.
 Het {language_level}-niveau kenmerkt zich door duidelijk en eenvoudig taalgebruik, geschikt voor een breed publiek met basisvaardigheden in de taal.
@@ -186,13 +191,7 @@ Hier zijn enkele richtlijnen om je te helpen bij deze taak:
 - Vermijd passieve zinnen en ingewikkelde grammaticale constructies.
 - Gebruik concrete voorbeelden om abstracte concepten te verduidelijken.
 
-Hier zijn enkele voorbeelden van woorden op C1-niveau en hun eenvoudigere {language_level}-equivalenten:
-- Betreffende -> Over
-- Creëren -> Ontwerpen, vormen, vormgeven, maken
-- Prioriteit -> Voorrang, voorkeur
-- Relevant -> Belangrijk
-- Verstrekken -> Geven
-
+Hier zijn enkele voorbeelden van woorden op C1-niveau en hun eenvoudigere {language_level}-equivalenten:{level_examples}
 BELANGRIJK: De volgende woorden moeten exact behouden blijven en mogen NIET vereenvoudigd worden: {preserved_words_text}.
 
 Zorg ervoor dat de inhoud en nuances van de oorspronkelijke tekst behouden blijven en dat de vereenvoudigde versie nog steeds een accurate weergave is van de oorspronkelijke inhoud.
@@ -201,13 +200,12 @@ BELANGRIJK: Zorg ervoor dat tekst tussen dubbele sterretjes (zoals **dit**) ook 
 Zorg ervoor dat de inhoud en nuances van de oorspronkelijke tekst behouden blijven en dat de vereenvoudigde versie nog steeds een accurate weergave is van de oorspronkelijke inhoud.
 Je ontvangt de originele paragraaf, samen met enkele varianten van deze tekst in eenvoudigere taal ({language_level}). Deze varianten kunnen nog de "<<<" en ">>>" tekens bevatten. Het is jouw taak om tot een definitieve {language_level}-versie te komen ZONDER deze tekens, maar wel met behoud van **dikgedrukte** tekst.
 
-Plaats de definitieve, verbeterde paragraaf tussen "<<<" en ">>>" tekens. Als de tekst te kort is om te verbeteren neem je de tekst een-op-een over en plaats deze tussen de genoemende tekens, bijv. "<<< **Artikel 3.2** >>>".""" # Prompt still asks selection model to use <<< >>>
+Plaats de definitieve, verbeterde paragraaf tussen "<<<" en ">>>" tekens. Als de tekst te kort is om te verbeteren neem je de tekst een-op-een over en plaats deze tussen de genoemende tekens, bijv. "<<< **Artikel 3.2** >>>"."""
 
     variants_text = ""
     for i, version_data in enumerate(successful_versions):
-        # Pass the full text (potentially with <<< >>>) from generate_version
         variant_text = version_data.get('text', '')
-        variants_text += f"Variant {i+1} (gegenereerd met temperature={version_data['temperature']}):\n{variant_text}\n---\n" # Pass the raw text
+        variants_text += f"Variant {i+1} (gegenereerd met temperature={version_data['temperature']}):\n{variant_text}\n---\n"
 
     selection_user_content = f"""Originele Paragraaf:
 ---
@@ -218,7 +216,7 @@ Gegenereerde {language_level} Varianten (kunnen '<<<' en '>>>' bevatten):
 ---
 {variants_text}
 Kies de beste variant of combineer/verbeter ze tot de definitieve {language_level}-versie, geplaatst tussen <<< en >>>. Verwijder de <<< en >>> uit de input varianten in de uiteindelijke output. Zorg ervoor dat tekst binnen **dubbele sterretjes** ook vereenvoudigd is en behoud de sterretjes in de output.
-BELANGRIJK: Zorg ervoor dat de volgende woorden exact behouden blijven en NIET vereenvoudigd worden: {preserved_words_text}.""" # Updated user content instruction
+BELANGRIJK: Zorg ervoor dat de volgende woorden exact behouden blijven en NIET vereenvoudigd worden: {preserved_words_text}."""
 
     form_data = {
         "model": model,
@@ -233,24 +231,19 @@ BELANGRIJK: Zorg ervoor dat de volgende woorden exact behouden blijven en NIET v
     try:
         response = await generate_chat_completion(request=request, form_data=form_data, user=user)
         llm_output = response['choices'][0]['message']['content']
-
-        # Extract text between <<< and >>> for the FINAL output from the selection step
         match = re.search(r'<<<([\s\S]*?)>>>', llm_output, re.DOTALL)
         if match:
             final_text = match.group(1).strip()
             return {"index": index, "text": final_text}
         else:
-            # Fallback if the SELECTION model didn't use <<< >>>
             print(f"Warning: Could not parse '<<<' and '>>>' from selection output for chunk {index}. Output was: {llm_output}")
-            # Fallback: Try to return the raw output from the selection model, hoping it's usable.
-            # Or revert to the first generated version (which might still have <<< >>>)
-            # Let's return the raw selection output as fallback here.
             fallback_text = llm_output.strip()
+            # Remove potential delimiters from fallback text as well
+            fallback_text = fallback_text.replace('<<<', '').replace('>>>', '').strip()
             return {"index": index, "text": fallback_text, "selection_warning": "Could not parse final version delimiters from selection output."}
 
     except Exception as e:
         print(f"Error during selection step for chunk {index} with model {model}: {e}")
-        # Fallback in case of selection error - return original chunk
         return {"index": index, "text": original_chunk, "selection_error": str(e)}
 
 
@@ -304,7 +297,7 @@ async def simplify_text_endpoint(request: Request, data: SimplifyTextRequest, us
                     versions = chunk_results[idx]
                     # Schedule the selection task
                     selection_tasks.append(
-                        select_best_version(request, original_chunk, versions, data.model, data.language_level, data.preserved_words, user, idx) # Added preserved_words
+                        select_best_version(request, original_chunk, versions, data.model, data.language_level, data.preserved_words, user, idx)
                     )
                     # Optional: Clean up memory if chunks are very large
                     # del chunk_results[idx] # Be careful if original_chunk is needed elsewhere
