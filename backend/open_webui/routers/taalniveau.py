@@ -25,8 +25,6 @@ def split_into_chunks(text: str, max_tokens: int = 1500) -> List[str]:
                 chunks.append("\n".join(current_chunk_parts))
                 current_chunk_parts = []
                 current_length = 0
-            # Decide whether to keep empty lines as chunks or skip them
-            # Keeping them preserves paragraph structure more accurately
             chunks.append("")
             continue
 
@@ -35,60 +33,49 @@ def split_into_chunks(text: str, max_tokens: int = 1500) -> List[str]:
         para_current_length = 0
 
         for word in words:
-            # Estimate token count; consider caching encoding.encode for performance if needed
-            # Using len(encoding.encode(word)) per word can be slow for very long texts
             try:
                 word_tokens = len(encoding.encode(word))
-            except Exception: # Handle potential errors during encoding if needed
-                word_tokens = len(word) // 3 # Rough estimate as fallback
+            except Exception:
+                word_tokens = len(word) // 3
 
-            # Check if adding the next word exceeds max_tokens for the current chunk or paragraph part
             if (current_length + para_current_length + word_tokens > max_tokens and current_chunk_parts) or \
                (para_current_length + word_tokens > max_tokens and paragraph_parts):
-                # Finish current chunk if it exists
                 if current_chunk_parts:
                     chunks.append("\n".join(current_chunk_parts))
                     current_chunk_parts = []
                     current_length = 0
-                # Finish current paragraph part if it became a chunk on its own
                 if paragraph_parts:
                     chunks.append(" ".join(paragraph_parts))
-                    paragraph_parts = [word] # Start new paragraph part with current word
+                    paragraph_parts = [word]
                     para_current_length = word_tokens
-                else: # Word itself is too long or first word of a new chunk
+                else:
                      chunks.append(word)
-                     para_current_length = 0 # Reset para length as this word forms a chunk
+                     para_current_length = 0
             else:
                 paragraph_parts.append(word)
                 para_current_length += word_tokens
 
-        # Add the remaining part of the paragraph to the current chunk
         if paragraph_parts:
             paragraph_text = " ".join(paragraph_parts)
-            # Recalculate tokens for the whole paragraph part for accuracy
             try:
                 paragraph_tokens = len(encoding.encode(paragraph_text))
             except Exception:
-                paragraph_tokens = len(paragraph_text) // 3 # Fallback estimate
+                paragraph_tokens = len(paragraph_text) // 3
 
-            # Check if adding this paragraph exceeds the limit for the current chunk
             if current_length + paragraph_tokens > max_tokens and current_chunk_parts:
                  chunks.append("\n".join(current_chunk_parts))
-                 current_chunk_parts = [paragraph_text] # Start new chunk with this paragraph
+                 current_chunk_parts = [paragraph_text]
                  current_length = paragraph_tokens
             else:
                  current_chunk_parts.append(paragraph_text)
                  current_length += paragraph_tokens
 
-    # Add the last remaining chunk
     if current_chunk_parts:
         chunks.append("\n".join(current_chunk_parts))
 
-    # Filter out potential None values, though the logic aims to avoid them
     return [chunk for chunk in chunks if chunk is not None]
 
 
-# Define language level examples outside the functions for clarity
 LANGUAGE_LEVEL_EXAMPLES = {
     "B1": """
 - Betreffende -> Over
@@ -113,35 +100,57 @@ LANGUAGE_LEVEL_EXAMPLES = {
 """
 }
 
+LEVEL_DESCRIPTIONS = {
+    "B1": "Het B1-niveau kenmerkt zich door duidelijk en eenvoudig taalgebruik, geschikt voor een breed publiek met basisvaardigheden in de taal.",
+    "B2": "Het B2-niveau kenmerkt zich door helder en gedetailleerd taalgebruik, geschikt voor een publiek met gevorderde taalvaardigheden. De tekst moet toegankelijk zijn zonder overmatig gebruik van complexe termen, gericht op lezers die bekend zijn met de basisprincipes van de taal en in staat zijn om zowel praktische als theoretische onderwerpen te begrijpen."
+}
+LEVEL_GUIDELINES = {
+    "B1": """- Gebruik korte zinnen en vermijd lange, complexe zinsconstructies.
+- Vervang moeilijke woorden door meer gangbare alternatieven.
+- Leg technische termen en (ambtelijk) jargon uit in eenvoudige bewoordingen.
+- Gebruik actieve zinsconstructies waar mogelijk.
+- Vermijd passieve zinnen en ingewikkelde grammaticale constructies.
+- Gebruik concrete voorbeelden om abstracte concepten te verduidelijken.""",
+    "B2": """- Gebruik korte tot middelmatige zinnen en vermijd extreme complexiteit, maar behoud enige diepgang in de formulering.
+- Vervang zeer complexe woorden door alternatieven die nauwkeurig zijn maar minder specialistisch.
+- Leg technische termen en ambtelijk jargon duidelijk uit, waarbij je enige mate van detail behoudt om de nauwkeurigheid te waarborgen.
+- Gebruik actieve zinsconstructies waar mogelijk, maar passieve zinnen kunnen gebruikt worden als dit de tekst logischer maakt.
+- Beperk ingewikkelde grammaticale constructies, maar behoud een zekere variatie in de zinsopbouw.
+- Gebruik passende en concrete voorbeelden om abstracte of lastigere concepten uit te leggen, zodat de lezer een context heeft om de informatie te begrijpen."""
+}
+LEVEL_SOURCE_EXAMPLE = {
+    "B1": "C1",
+    "B2": "C2"
+}
+
 async def generate_version(request: Request, chunk: str, model: str, preserved_words: List[str], language_level: str, user: Any, index: int, temperature: float) -> dict:
     """Generate a single version of simplified text for a specific temperature and return with index and temperature"""
     if not chunk or chunk.isspace():
         return {"index": index, "temperature": temperature, "text": chunk, "error": None}
 
     preserved_words_text = ", ".join(f"'{word}'" for word in preserved_words) if preserved_words else "geen"
-    # Get examples using dictionary lookup with a default fallback
-    level_examples = LANGUAGE_LEVEL_EXAMPLES.get(language_level.upper(), LANGUAGE_LEVEL_EXAMPLES["DEFAULT"])
+    level_upper = language_level.upper()
+    level_examples = LANGUAGE_LEVEL_EXAMPLES.get(level_upper, LANGUAGE_LEVEL_EXAMPLES["DEFAULT"])
 
-    # Updated system prompt with instruction for bold text and preserved words
-    generation_system_prompt = f"""Je taak is om de volgende tekst te analyseren en te herschrijven naar een versie die voldoet aan het {language_level}-taalniveau.
+    selected_description = LEVEL_DESCRIPTIONS.get(level_upper, LEVEL_DESCRIPTIONS["B1"])
+    selected_guidelines = LEVEL_GUIDELINES.get(level_upper, LEVEL_GUIDELINES["B1"])
+    selected_source_example = LEVEL_SOURCE_EXAMPLE.get(level_upper, LEVEL_SOURCE_EXAMPLE["B1"])
+    effective_language_level = language_level if level_upper in ["B1", "B2"] else "B1"
+
+    generation_system_prompt = f"""Je taak is om de volgende tekst te analyseren en te herschrijven naar een versie die voldoet aan het {effective_language_level}-taalniveau.
 Hierbij is het belangrijk om de informatie zo letterlijk mogelijk over te brengen en de structuur zoveel mogelijk te behouden, zonder onnodige weglatingen.
-Het {language_level}-niveau kenmerkt zich door duidelijk en eenvoudig taalgebruik, geschikt voor een breed publiek met basisvaardigheden in de taal.
+{selected_description}
 
 Hier zijn enkele richtlijnen om je te helpen bij deze taak:
-- Gebruik korte zinnen en vermijd lange, complexe zinsconstructies.
-- Vervang moeilijke woorden door meer gangbare alternatieven.
-- Leg technische termen en (ambtelijk) jargon uit in eenvoudige bewoordingen.
-- Gebruik actieve zinsconstructies waar mogelijk.
-- Vermijd passieve zinnen en ingewikkelde grammaticale constructies.
-- Gebruik concrete voorbeelden om abstracte concepten te verduidelijken.
+{selected_guidelines}
 
-Hier zijn enkele voorbeelden van woorden op C1-niveau en hun eenvoudigere {language_level}-equivalenten:{level_examples}
+Hier zijn enkele voorbeelden van woorden op {selected_source_example}-niveau en hun eenvoudigere {effective_language_level}-equivalenten:{level_examples}
 BELANGRIJK: De volgende woorden moeten exact behouden blijven en mogen NIET vereenvoudigd worden: {preserved_words_text}.
 
 Zorg ervoor dat de hoofdboodschap van de tekst behouden blijft en dat de vereenvoudigde versie nog steeds een accurate weergave is van de oorspronkelijke inhoud.
-BELANGRIJK: Tekst tussen dubbele sterretjes (zoals **dit**) moet ook vereenvoudigd worden naar {language_level}-niveau. Behoud de dubbele sterretjes rond de vereenvoudigde tekst in de output. Dit geldt ook voor kopjes of andere belangrijke termen die zo gemarkeerd zijn.
+BELANGRIJK: Tekst tussen dubbele sterretjes (zoals **dit**) moet ook vereenvoudigd worden naar {effective_language_level}-niveau. Behoud de dubbele sterretjes rond de vereenvoudigde tekst in de output. Dit geldt ook voor kopjes of andere belangrijke termen die zo gemarkeerd zijn.
 Zorg ervoor dat de hoofdboodschap van de tekst behouden blijft en dat de vereenvoudigde versie nog steeds een accurate weergave is van de oorspronkelijke inhoud.
-Gebruik deze instructies om de tekst te vereenvoudigen en zorg ervoor dat deze voldoet aan het {language_level}-taalniveau.
+Gebruik deze instructies om de tekst te vereenvoudigen en zorg ervoor dat deze voldoet aan het {effective_language_level}-taalniveau.
 Plaats de verbeterde paragraaf tussen "<<<" en ">>>" tekens. Als de tekst te kort is om te verbeteren neem je de tekst een-op-een over en plaats deze tussen de genoemende tekens, bijv. "<<< **Artikel 3.2** >>>"."""
 
     form_data = {
@@ -160,9 +169,16 @@ Plaats de verbeterde paragraaf tussen "<<<" en ">>>" tekens. Als de tekst te kor
         simplified_text = llm_output.strip()
         simplified_text = re.sub(r'^```[a-zA-Z]*\n?', '', simplified_text)
         simplified_text = re.sub(r'\n?```$', '', simplified_text)
+        match = re.search(r'<<<([\s\S]*?)>>>', simplified_text, re.DOTALL)
+        if match:
+            simplified_text = match.group(1).strip()
+        else:
+            print(f"Warning: Delimiters '<<<' and '>>>' not found in generation output for chunk {index}, temp {temperature}. Using cleaned output.")
+            simplified_text = simplified_text.replace('<<<', '').replace('>>>', '').strip()
+
         return {"index": index, "temperature": temperature, "text": simplified_text, "error": None}
     except Exception as e:
-        print(f"Error processing chunk {index} with model {model} at temperature {temperature}: {e}") # Corrected temperature variable name
+        print(f"Error processing chunk {index} with model {model} at temperature {temperature}: {e}")
         return {"index": index, "temperature": temperature, "text": chunk, "error": str(e)}
 
 async def select_best_version(request: Request, original_chunk: str, generated_versions: List[dict], model: str, language_level: str, preserved_words: List[str], user: Any, index: int) -> dict:
@@ -175,36 +191,36 @@ async def select_best_version(request: Request, original_chunk: str, generated_v
          return {"index": index, "text": original_chunk, "selection_error": "No successful versions to select from."}
 
     preserved_words_text = ", ".join(f"'{word}'" for word in preserved_words) if preserved_words else "geen"
-    # Get examples using dictionary lookup with a default fallback
-    level_examples = LANGUAGE_LEVEL_EXAMPLES.get(language_level.upper(), LANGUAGE_LEVEL_EXAMPLES["DEFAULT"])
+    level_upper = language_level.upper()
+    level_examples = LANGUAGE_LEVEL_EXAMPLES.get(level_upper, LANGUAGE_LEVEL_EXAMPLES["DEFAULT"])
 
-    # System prompt for selection uses dynamic examples
-    selection_system_prompt = f"""Je taak is om de volgende tekst te analyseren en te herschrijven naar een versie die voldoet aan het {language_level}-taalniveau.
+    selected_description = LEVEL_DESCRIPTIONS.get(level_upper, LEVEL_DESCRIPTIONS["B1"])
+    selected_guidelines = LEVEL_GUIDELINES.get(level_upper, LEVEL_GUIDELINES["B1"])
+    selected_source_example = LEVEL_SOURCE_EXAMPLE.get(level_upper, LEVEL_SOURCE_EXAMPLE["B1"])
+    effective_language_level = language_level if level_upper in ["B1", "B2"] else "B1"
+
+    selection_system_prompt = f"""Je taak is om de volgende tekst te analyseren en te herschrijven naar een versie die voldoet aan het {effective_language_level}-taalniveau.
 Hierbij is het belangrijk om de informatie zo letterlijk mogelijk over te brengen en de structuur zoveel mogelijk te behouden, zonder onnodige weglatingen.
-Het {language_level}-niveau kenmerkt zich door duidelijk en eenvoudig taalgebruik, geschikt voor een breed publiek met basisvaardigheden in de taal.
+{selected_description}
 
 Hier zijn enkele richtlijnen om je te helpen bij deze taak:
-- Gebruik korte zinnen en vermijd lange, complexe zinsconstructies.
-- Vervang moeilijke woorden door meer gangbare alternatieven.
-- Leg technische termen en (ambtelijk) jargon uit in eenvoudige bewoordingen.
-- Gebruik actieve zinsconstructies waar mogelijk.
-- Vermijd passieve zinnen en ingewikkelde grammaticale constructies.
-- Gebruik concrete voorbeelden om abstracte concepten te verduidelijken.
+{selected_guidelines}
 
-Hier zijn enkele voorbeelden van woorden op C1-niveau en hun eenvoudigere {language_level}-equivalenten:{level_examples}
+Hier zijn enkele voorbeelden van woorden op {selected_source_example}-niveau en hun eenvoudigere {effective_language_level}-equivalenten:{level_examples}
 BELANGRIJK: De volgende woorden moeten exact behouden blijven en mogen NIET vereenvoudigd worden: {preserved_words_text}.
 
 Zorg ervoor dat de inhoud en nuances van de oorspronkelijke tekst behouden blijven en dat de vereenvoudigde versie nog steeds een accurate weergave is van de oorspronkelijke inhoud.
-BELANGRIJK: Zorg ervoor dat tekst tussen dubbele sterretjes (zoals **dit**) ook vereenvoudigd is naar {language_level}-niveau in de definitieve versie. Behoud de dubbele sterretjes rond de vereenvoudigde tekst in de output. Dit geldt ook voor kopjes of andere belangrijke termen die zo gemarkeerd zijn.
+BELANGRIJK: Zorg ervoor dat tekst tussen dubbele sterretjes (zoals **dit**) ook vereenvoudigd is naar {effective_language_level}-niveau in de definitieve versie. Behoud de dubbele sterretjes rond de vereenvoudigde tekst in de output. Dit geldt ook voor kopjes of andere belangrijke termen die zo gemarkeerd zijn.
 
 Zorg ervoor dat de inhoud en nuances van de oorspronkelijke tekst behouden blijven en dat de vereenvoudigde versie nog steeds een accurate weergave is van de oorspronkelijke inhoud.
-Je ontvangt de originele paragraaf, samen met enkele varianten van deze tekst in eenvoudigere taal ({language_level}). Deze varianten kunnen nog de "<<<" en ">>>" tekens bevatten. Het is jouw taak om tot een definitieve {language_level}-versie te komen ZONDER deze tekens, maar wel met behoud van **dikgedrukte** tekst.
+Je ontvangt de originele paragraaf, samen met enkele varianten van deze tekst in eenvoudigere taal ({effective_language_level}). Deze varianten kunnen nog de "<<<" en ">>>" tekens bevatten. Het is jouw taak om tot een definitieve {effective_language_level}-versie te komen ZONDER deze tekens, maar wel met behoud van **dikgedrukte** tekst.
 
 Plaats de definitieve, verbeterde paragraaf tussen "<<<" en ">>>" tekens. Als de tekst te kort is om te verbeteren neem je de tekst een-op-een over en plaats deze tussen de genoemende tekens, bijv. "<<< **Artikel 3.2** >>>"."""
 
     variants_text = ""
     for i, version_data in enumerate(successful_versions):
         variant_text = version_data.get('text', '')
+        variant_text = variant_text.replace('<<<', '').replace('>>>', '').strip()
         variants_text += f"Variant {i+1} (gegenereerd met temperature={version_data['temperature']}):\n{variant_text}\n---\n"
 
     selection_user_content = f"""Originele Paragraaf:
@@ -212,10 +228,10 @@ Plaats de definitieve, verbeterde paragraaf tussen "<<<" en ">>>" tekens. Als de
 {original_chunk}
 ---
 
-Gegenereerde {language_level} Varianten (kunnen '<<<' en '>>>' bevatten):
+Gegenereerde {effective_language_level} Varianten:
 ---
 {variants_text}
-Kies de beste variant of combineer/verbeter ze tot de definitieve {language_level}-versie, geplaatst tussen <<< en >>>. Verwijder de <<< en >>> uit de input varianten in de uiteindelijke output. Zorg ervoor dat tekst binnen **dubbele sterretjes** ook vereenvoudigd is en behoud de sterretjes in de output.
+Kies de beste variant of combineer/verbeter ze tot de definitieve {effective_language_level}-versie, geplaatst tussen <<< en >>>. Zorg ervoor dat tekst binnen **dubbele sterretjes** ook vereenvoudigd is en behoud de sterretjes in de output.
 BELANGRIJK: Zorg ervoor dat de volgende woorden exact behouden blijven en NIET vereenvoudigd worden: {preserved_words_text}."""
 
     form_data = {
@@ -231,15 +247,15 @@ BELANGRIJK: Zorg ervoor dat de volgende woorden exact behouden blijven en NIET v
     try:
         response = await generate_chat_completion(request=request, form_data=form_data, user=user)
         llm_output = response['choices'][0]['message']['content']
+        llm_output = re.sub(r'^```[a-zA-Z]*\n?', '', llm_output)
+        llm_output = re.sub(r'\n?```$', '', llm_output)
         match = re.search(r'<<<([\s\S]*?)>>>', llm_output, re.DOTALL)
         if match:
             final_text = match.group(1).strip()
             return {"index": index, "text": final_text}
         else:
             print(f"Warning: Could not parse '<<<' and '>>>' from selection output for chunk {index}. Output was: {llm_output}")
-            fallback_text = llm_output.strip()
-            # Remove potential delimiters from fallback text as well
-            fallback_text = fallback_text.replace('<<<', '').replace('>>>', '').strip()
+            fallback_text = llm_output.replace('<<<', '').replace('>>>', '').strip()
             return {"index": index, "text": fallback_text, "selection_warning": "Could not parse final version delimiters from selection output."}
 
     except Exception as e:
@@ -268,7 +284,6 @@ async def simplify_text_endpoint(request: Request, data: SimplifyTextRequest, us
         return StreamingResponse(empty_stream(), media_type="application/x-ndjson")
 
     async def stream_results():
-        # Send total chunk count first (client expects one final result per chunk)
         yield json.dumps({"total_chunks": num_chunks}) + "\n"
 
         generation_tasks = []
@@ -278,12 +293,10 @@ async def simplify_text_endpoint(request: Request, data: SimplifyTextRequest, us
                     generate_version(request, chunk, data.model, data.preserved_words, data.language_level, user, i, temp)
                 )
 
-        # Use dictionaries to store results and track completion
         chunk_results = {i: [] for i in range(num_chunks)}
         tasks_outstanding = {i: len(temperatures) for i in range(num_chunks)}
-        selection_tasks = [] # Store tasks for the selection step
+        selection_tasks = []
 
-        # Process generation results as they complete
         for future in asyncio.as_completed(generation_tasks):
             try:
                 gen_result = await future
@@ -291,39 +304,24 @@ async def simplify_text_endpoint(request: Request, data: SimplifyTextRequest, us
                 chunk_results[idx].append(gen_result)
                 tasks_outstanding[idx] -= 1
 
-                # If all versions for a chunk are generated, create selection task
                 if tasks_outstanding[idx] == 0:
                     original_chunk = chunks[idx]
                     versions = chunk_results[idx]
-                    # Schedule the selection task
                     selection_tasks.append(
                         select_best_version(request, original_chunk, versions, data.model, data.language_level, data.preserved_words, user, idx)
                     )
-                    # Optional: Clean up memory if chunks are very large
-                    # del chunk_results[idx] # Be careful if original_chunk is needed elsewhere
 
             except Exception as e:
-                 # Handle errors during the await future itself (less likely if generate_version catches errors)
                  print(f"Error awaiting generation task result: {e}")
-                 # Consider how to handle this failure downstream. Maybe skip selection for this chunk?
-                 # For now, it might prevent the selection task from being scheduled if an error occurs here.
-                 pass # Continue processing other tasks
+                 pass
 
-        # Process selection results as they complete and yield them
         for future in asyncio.as_completed(selection_tasks):
              try:
                  final_result = await future
-                 # --- DOUBLE CHECK and REMOVE DELIMITERS ---
                  if 'text' in final_result and isinstance(final_result['text'], str):
-                     # Remove <<< and >>> just in case they slipped through selection/parsing
                      final_result['text'] = final_result['text'].replace('<<<', '').replace('>>>', '').strip()
-                 # --- END DOUBLE CHECK ---
                  yield json.dumps(final_result) + "\n"
              except Exception as e:
                  print(f"Error awaiting or processing selection task result: {e}")
-                 # Decide how to inform the client about selection failure
-                 # Example: yield json.dumps({"index": final_result.get('index', -1), "error": f"Processing failed after selection: {e}"}) + "\n"
-                 # Current select_best_version tries to return fallback text with error info.
-
 
     return StreamingResponse(stream_results(), media_type="application/x-ndjson")
