@@ -1,7 +1,7 @@
 import json # Import json module
 from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
-from typing import Any, Optional, List # Import List
+from typing import Any, Optional, List, Dict, Union  # Union toegevoegd
 from open_webui.utils.chat import generate_chat_completion
 from open_webui.utils.auth import get_current_user
 # --- Placeholder voor Database interactie ---
@@ -28,6 +28,20 @@ class SubsidyQueryOutput(BaseModel):
     summary: Optional[str] = None # Optioneel een samenvatting
     # Voeg eventueel andere velden toe
 
+# --- Modellen voor beoordeling subsidieaanvraag ---
+class SubsidyApplicationInput(BaseModel):
+    application_text: str
+    criteria: List[SubsidyCriterion]
+    model: Optional[str] = None
+
+class SubsidyAssessmentItem(BaseModel):
+    Criterium: str
+    Score: Union[str, int]  # Aanpassen om zowel strings als integers te accepteren
+    Toelichting: str
+
+class SubsidyAssessmentOutput(BaseModel):
+    assessment: Dict[str, SubsidyAssessmentItem]  # {"1": {...}, "2": {...}, ...}
+
 # --- Aangepaste System Prompt voor JSON Output ---
 # Instrueer de LLM om een JSON object terug te geven met specifieke sleutels.
 SYSTEM_PROMPT = """Je bent een expert op het gebied van Nederlandse subsidies. Analyseer de volgende subsidieregeling die door de gebruiker wordt verstrekt. Identificeer alle relevante criteria waaraan een aanvrager moet voldoen. Geef je antwoord ALLEEN als een geldig JSON-object terug. Het JSON-object moet de volgende structuur hebben:
@@ -40,6 +54,30 @@ SYSTEM_PROMPT = """Je bent een expert op het gebied van Nederlandse subsidies. A
   "summary": "Een korte samenvatting van de belangrijkste criteria of de regeling (optioneel)."
 }
 Zorg ervoor dat de 'text' van elk criterium duidelijk en volledig is. Nummer de criteria opeenvolgend in het 'id' veld. Als er geen criteria gevonden worden, geef dan een lege lijst terug: { "criteria": [], "summary": "Geen specifieke criteria gevonden." }. Geef GEEN andere tekst terug buiten het JSON-object."""
+
+# --- System Prompt voor beoordeling subsidieaanvraag ---
+ASSESSMENT_SYSTEM_PROMPT = """Je bent verantwoordelijk voor het beoordelen van een subsidieaanvraag aan de hand van een subsidieregeling. Deze regeling ontvang je als een geneste JSON-indeling, waarbij elk artikel en daaronder de bijbehorende criteria worden weergegeven. Het is jouw taak om voor elk criterium in de ontvangen JSON een score tussen 0 en 10, en een beknopte toelichting die de redenering achter de gegeven score beschrijft, toe te voegen.
+
+Een score van 0 geeft aan dat het criterium niet voldoet, terwijl een score van 10 aangeeft dat het criterium volledig voldoet. In het geval dat een criterium een afwijzingsgrond is, betekent een score van 10 dat de afwijzingsgrond niet van toepassing is, en een score van 0 betekent dat deze wel van toepassing is.
+
+Na het beoordelen van alle artikelen en criteria, controleer of er geen gemiste artikelen of criteria zijn. Als er gemiste onderdelen zijn, dien je deze alsnog te beoordelen en te documenteren.
+
+Het is belangrijk om geen aannames te maken en alleen uit te gaan van de informatie in de aanvraag. Als je niet zeker weet hoe je een criterium moet beoordelen, kun je "Onzeker" gebruiken. De vereiste outputstructuur is opnieuw een geneste JSON-indeling, die zoals hieronder aangegeven moet zijn, met behulp van accolades voor de notatie.
+
+{
+    "1": {
+        "Criterium": "Volledige tekst van het eerste criterium",
+        "Score": "Uw score (0-10 of 'Onzeker')",
+        "Toelichting": "Uw beknopte toelichting voor dit criterium."
+    },
+    "2": {
+        "Criterium": "Volledige tekst van het tweede criterium",
+        "Score": "Uw score (0-10 of 'Onzeker')",
+        "Toelichting": "Uw beknopte toelichting voor dit criterium."
+    }
+}
+
+Zorg ervoor dat je altijd nested accolades ({}) gebruikt om de structuur van je output weer te geven. Wees volledig en neem altijd alle criteria mee in je evaluatie. Geef ALLEEN het JSON-object terug zonder extra tekst."""
 
 @router.post("/query", response_model=SubsidyQueryOutput)
 async def handle_subsidy_query(
@@ -151,4 +189,123 @@ async def handle_subsidy_query(
         # traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Interne serverfout: {str(e)}")
 
-# ... (rest van het bestand) ...
+@router.post("/assess", response_model=SubsidyAssessmentOutput)
+async def handle_subsidy_assessment(
+    request: Request,
+    assessment_input: SubsidyApplicationInput,
+    user = Depends(get_current_user),
+):
+    """
+    Beoordeelt een subsidieaanvraag tegen een set van eerder geëxtraheerde criteria 
+    m.b.v. een LLM en geeft een gestructureerde beoordeling terug.
+    """
+    if not assessment_input.application_text:
+        raise HTTPException(status_code=400, detail="Subsidieaanvraag tekst mag niet leeg zijn.")
+    if not assessment_input.criteria or len(assessment_input.criteria) == 0:
+        raise HTTPException(status_code=400, detail="Er zijn geen criteria opgegeven om te beoordelen.")
+
+    # Model Selectie met betere foutafhandeling
+    DEFAULT_MODEL_FALLBACK = "openai/gpt-4o"
+    model_to_use = None
+    
+    # Probeer een model te krijgen, met uitgebreide foutafhandeling
+    try:
+        model_to_use = assessment_input.model
+        # Als model leeg is of None, gebruik fallback
+        if not model_to_use:
+            print(f"Geen model gespecificeerd, gebruik fallback: {DEFAULT_MODEL_FALLBACK}")
+            model_to_use = DEFAULT_MODEL_FALLBACK
+            
+        # Log het gebruikte model voor debugging
+        print(f"Model dat gebruikt wordt voor beoordeling: {model_to_use}")
+    except Exception as e:
+        print(f"Fout bij het selecteren van het model: {e}")
+        model_to_use = DEFAULT_MODEL_FALLBACK
+        
+    if not model_to_use:
+        raise HTTPException(status_code=400, detail="Kon geen geldig model selecteren voor de beoordeling.")
+
+    DEFAULT_TEMPERATURE = 0.2  # Lagere temperatuur voor meer consistente beoordelingen
+
+    # Bereid criteria voor in een genummerde lijst voor de LLM
+    criteria_context = []
+    for criterion in assessment_input.criteria:
+        criteria_context.append(f"Criterium {criterion.id}: {criterion.text}")
+    
+    criteria_text = "\n".join(criteria_context)
+
+    user_message_content = f"""Beoordeel de volgende subsidieaanvraag:
+--- START SUBSIDIEAANVRAAG ---
+{assessment_input.application_text}
+--- EINDE SUBSIDIEAANVRAAG ---
+
+Aan de hand van de volgende criteria uit de subsidieregeling:
+--- START CRITERIA SUBSIDIEREGELING ---
+{criteria_text}
+--- EINDE CRITERIA SUBSIDIEREGELING ---
+
+Volg de instructies in de system prompt nauwkeurig voor de beoordeling en de outputstructuur.
+Zorg ervoor dat elk criterium uit de lijst hierboven wordt beoordeeld.
+Het "Criterium" veld in je JSON output MOET de volledige tekst van het beoordeelde criterium bevatten.
+De output moet een JSON-object zijn waarbij de sleutels genummerd zijn (als strings, "1", "2", etc.) overeenkomend met de nummering van de criteria hierboven.
+"""
+
+    form_data = {
+        "model": model_to_use,
+        "stream": False,
+        "temperature": DEFAULT_TEMPERATURE,
+        "response_format": { "type": "json_object" },
+        "messages": [
+            { "role": "system", "content": ASSESSMENT_SYSTEM_PROMPT },
+            { "role": "user", "content": user_message_content }
+        ]
+    }
+
+    try:
+        completion_result = await generate_chat_completion(
+            request=request, form_data=form_data, user=user
+        )
+
+        raw_response_content = ""
+        if completion_result and "choices" in completion_result and len(completion_result["choices"]) > 0:
+            message = completion_result["choices"][0].get("message", {})
+            raw_response_content = message.get("content", "").strip()
+
+        if not raw_response_content:
+            raise HTTPException(status_code=500, detail="Lege response van LLM bij beoordeling.")
+
+        # Parse de JSON response van de LLM
+        try:
+            # Verwijder eventuele markdown code block markering
+            if raw_response_content.startswith("```json"):
+                raw_response_content = raw_response_content[7:]
+            if raw_response_content.endswith("```"):
+                raw_response_content = raw_response_content[:-3]
+            raw_response_content = raw_response_content.strip()
+
+            parsed_data = json.loads(raw_response_content)
+            
+            if not isinstance(parsed_data, dict):
+                raise ValueError("LLM response voor beoordeling is geen geldige JSON dictionary.")
+            
+            # Converteer alle score waarden naar strings indien nodig
+            for key, item in parsed_data.items():
+                if "Score" in item and isinstance(item["Score"], int):
+                    item["Score"] = str(item["Score"])
+            
+            # Validatie via Pydantic model
+            assessment_output = SubsidyAssessmentOutput(assessment=parsed_data)
+            return assessment_output
+
+        except (json.JSONDecodeError, ValueError, TypeError) as e:
+            print(f"Fout bij parsen LLM JSON response voor beoordeling: {e}")
+            print(f"Ontvangen raw response LLM (beoordeling):\n{raw_response_content}")
+            raise HTTPException(status_code=500, detail=f"Kon de LLM beoordelingsresponse niet correct verwerken: {e}")
+
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        print(f"Error in handle_subsidy_assessment: {e}")
+        # import traceback
+        # traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Interne serverfout bij beoordeling: {str(e)}")

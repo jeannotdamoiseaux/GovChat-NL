@@ -18,7 +18,7 @@
       {
         name: 'Transcriptie',
         icon: '🎤',
-        href: '/app-launcher/transcriptie',
+        href: '/app-launcher/subsidies2',
         permission: (user) => user?.role === 'admin' || user?.permissions?.appLauncher?.transcriptie
       },
     ];
