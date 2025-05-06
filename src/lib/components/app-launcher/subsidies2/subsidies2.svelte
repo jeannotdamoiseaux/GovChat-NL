@@ -25,6 +25,13 @@
         Samenvatting: string
     } | null = null;
     
+    // Rapport resultaat
+    let reportResult: {
+        Samenvatting: string,
+        Eindoordeel: string,
+        Bedrag: string
+    } | null = null;
+    
     // Status tracking
     let isLoading: boolean = false;
     let error: string | null = null;
@@ -32,6 +39,10 @@
     // Status voor samenvatting
     let isLoadingSummary: boolean = false;
     let summaryError: string | null = null;
+
+    // Status voor rapport
+    let isLoadingReport: boolean = false;
+    let reportError: string | null = null;
 
     const unsubscribe = subsidyStore.subscribe(store => {
         selectedDataFromPart1 = store.selectedOutput;
@@ -152,6 +163,120 @@
         }
     }
 
+    async function handleReportGeneration() {
+        if (!assessmentResults || !summaryResult) {
+            toast.error("Zowel de beoordeling als de samenvatting zijn nodig voor het rapport");
+            return;
+        }
+        
+        const currentModelId = $settings?.models?.[0] || "openai/gpt-4o";
+        
+        isLoadingReport = true;
+        reportError = null;
+        reportResult = null;
+        
+        try {
+            const backendUrl = WEBUI_BASE_URL || 'http://localhost:8080';
+            const res = await fetch(`${backendUrl}/api/subsidies/generate_report`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                },
+                body: JSON.stringify({
+                    assessment_results: assessmentResults,
+                    summary_result: summaryResult,
+                    model: currentModelId
+                })
+            });
+            
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => ({ detail: 'Onbekende fout' }));
+                throw new Error(errorData.detail || `HTTP error! status: ${res.status}`);
+            }
+            
+            reportResult = await res.json();
+            toast.success("Eindrapport succesvol gegenereerd!");
+            
+        } catch (e: any) {
+            console.error('Fout bij genereren eindrapport:', e);
+            reportError = `Er is een fout opgetreden: ${e.message || 'Kon de server niet bereiken.'}`;
+            toast.error(reportError);
+        } finally {
+            isLoadingReport = false;
+        }
+    }
+
+    async function handleCompleteAssessment() {
+        if (!selectedDataFromPart1?.criteria || selectedDataFromPart1.criteria.length === 0) {
+            toast.error("Er zijn geen criteria geselecteerd om te beoordelen");
+            return;
+        }
+        
+        if (!applicationText.trim()) {
+            toast.error("Voer alstublieft een subsidieaanvraag in om te beoordelen");
+            return;
+        }
+        
+        const currentModelId = $settings?.models?.[0];
+        if (!currentModelId) {
+            toast.warn("Geen model geselecteerd, standaard model wordt gebruikt");
+        }
+        
+        // Reset alle status variabelen
+        isLoading = true;
+        isLoadingSummary = true;
+        isLoadingReport = true;
+        error = null;
+        summaryError = null;
+        reportError = null;
+        assessmentResults = null;
+        summaryResult = null;
+        reportResult = null;
+        
+        try {
+            const backendUrl = WEBUI_BASE_URL || 'http://localhost:8080';
+            const res = await fetch(`${backendUrl}/api/subsidies/complete_assessment`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                },
+                body: JSON.stringify({
+                    application_text: applicationText,
+                    criteria: selectedDataFromPart1.criteria,
+                    model: currentModelId
+                })
+            });
+            
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => ({ detail: 'Onbekende fout' }));
+                throw new Error(errorData.detail || `HTTP error! status: ${res.status}`);
+            }
+            
+            const responseData = await res.json();
+            
+            // Update alle resultaten
+            assessmentResults = responseData.assessment;
+            summaryResult = responseData.summary;
+            reportResult = responseData.report;
+            
+            toast.success("Volledige beoordeling succesvol afgerond!");
+            
+        } catch (e) {
+            console.error('Fout bij complete beoordeling:', e);
+            const errorMessage = `Er is een fout opgetreden: ${e.message || 'Kon de server niet bereiken.'}`;
+            error = errorMessage;
+            summaryError = errorMessage;
+            reportError = errorMessage;
+            toast.error(errorMessage);
+        } finally {
+            isLoading = false;
+            isLoadingSummary = false;
+            isLoadingReport = false;
+        }
+    }
+
     function getScoreColorClass(score: string): string {
         if (score === 'Onzeker') return 'text-yellow-600 dark:text-yellow-400';
         const numScore = parseInt(score);
@@ -218,6 +343,7 @@
                         ></textarea>
                     </div>
 
+
                     <div class="flex space-x-2 mt-3">
                         <button
                             type="button"
@@ -250,6 +376,44 @@
                                 Genereren...
                             {:else}
                                 Genereer Samenvatting
+                            {/if}
+                        </button>
+                    </div>
+
+                    <div class="mt-4">
+                        <button
+                            type="button"
+                            on:click={handleReportGeneration}
+                            disabled={isLoadingReport || !assessmentResults || !summaryResult}
+                            class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                        >
+                            {#if isLoadingReport}
+                                <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Rapport Genereren...
+                            {:else}
+                                Genereer Eindrapport
+                            {/if}
+                        </button>
+                    </div>
+
+                    <div class="mt-4">
+                        <button
+                            type="button"
+                            on:click={handleCompleteAssessment}
+                            disabled={isLoading || isLoadingSummary || isLoadingReport || !applicationText.trim() || !selectedDataFromPart1?.criteria.length}
+                            class="w-full bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                        >
+                            {#if isLoading || isLoadingSummary || isLoadingReport}
+                                <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Volledige Beoordeling...
+                            {:else}
+                                Voer Volledige Beoordeling Uit
                             {/if}
                         </button>
                     </div>
@@ -305,6 +469,39 @@
                 <div class="mt-4 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded-lg p-3 text-red-800 dark:text-red-300">
                     <p class="font-medium">Er is een fout opgetreden bij het genereren van de samenvatting:</p>
                     <p>{summaryError}</p>
+                </div>
+            {/if}
+
+            <!-- Eindrapport -->
+            {#if reportResult}
+                <div class="mt-8 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-4 shadow-sm" transition:fade={{ duration: 300 }}>
+                    <h3 class="text-xl font-bold text-purple-800 dark:text-purple-400 mb-4">
+                        Eindrapport Subsidieaanvraag
+                    </h3>
+                    
+                    <div class="space-y-4">
+                        <div>
+                            <h4 class="font-semibold text-purple-700 dark:text-purple-300 mb-2">Samenvatting</h4>
+                            <p class="text-gray-800 dark:text-gray-200 p-3 bg-white dark:bg-gray-800 rounded-md">{reportResult.Samenvatting}</p>
+                        </div>
+                        
+                        <div>
+                            <h4 class="font-semibold text-purple-700 dark:text-purple-300 mb-2">Eindoordeel</h4>
+                            <p class="text-gray-800 dark:text-gray-200 p-3 bg-white dark:bg-gray-800 rounded-md">{reportResult.Eindoordeel}</p>
+                        </div>
+                        
+                        <div>
+                            <h4 class="font-semibold text-purple-700 dark:text-purple-300 mb-2">Geadviseerd Bedrag</h4>
+                            <p class="text-gray-800 dark:text-gray-200 p-3 bg-white dark:bg-gray-800 rounded-md font-mono">{reportResult.Bedrag}</p>
+                        </div>
+                    </div>
+                </div>
+            {/if}
+
+            {#if reportError}
+                <div class="mt-4 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded-lg p-3 text-red-800 dark:text-red-300">
+                    <p class="font-medium">Er is een fout opgetreden bij het genereren van het eindrapport:</p>
+                    <p>{reportError}</p>
                 </div>
             {/if}
 
