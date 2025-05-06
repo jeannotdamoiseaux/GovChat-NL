@@ -79,6 +79,28 @@ Het is belangrijk om geen aannames te maken en alleen uit te gaan van de informa
 
 Zorg ervoor dat je altijd nested accolades ({}) gebruikt om de structuur van je output weer te geven. Wees volledig en neem altijd alle criteria mee in je evaluatie. Geef ALLEEN het JSON-object terug zonder extra tekst."""
 
+# --- System Prompt voor samenvatting subsidieaanvraag ---
+SUMMARY_SYSTEM_PROMPT = """Je taak is om een korte samenvatting te maken van een subsidieaanvraag, waarbij je uitsluitend gebruikmaakt van het aanvraagformulier als bron van gegevens. De gewenste outputstructuur is een geneste JSON-indeling, waarbij je de volgende structuur volgt:
+{
+"Aanvrager": "",
+"Datum_aanvraag": "",
+"Datum_evenement": "",
+"Bedrag": "",
+"Samenvatting": ""
+}
+
+Probeer alle velden te vullen op basis van de informatie in de aanvraag. Als informatie ontbreekt, gebruik dan "Onbekend" als waarde. De "Aanvrager" is de persoon of organisatie die de subsidie aanvraagt. "Datum_aanvraag" is wanneer de aanvraag is ingediend. "Datum_evenement" is wanneer het evenement of project waarvoor subsidie wordt aangevraagd plaatsvindt. "Bedrag" is het aangevraagde subsidiebedrag. "Samenvatting" is een beknopte beschrijving van het doel van de aanvraag.
+
+Zorg ervoor dat je altijd nested accolades ({}) gebruikt om de structuur van je output weer te geven en ALLEEN het JSON-object teruggeeft zonder extra tekst."""
+
+# --- Model voor samenvatting output ---
+class SubsidySummaryOutput(BaseModel):
+    Aanvrager: str
+    Datum_aanvraag: str
+    Datum_evenement: str
+    Bedrag: str
+    Samenvatting: str
+
 @router.post("/query", response_model=SubsidyQueryOutput)
 async def handle_subsidy_query(
     request: Request,
@@ -309,3 +331,94 @@ De output moet een JSON-object zijn waarbij de sleutels genummerd zijn (als stri
         # import traceback
         # traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Interne serverfout bij beoordeling: {str(e)}")
+
+@router.post("/summarize", response_model=SubsidySummaryOutput)
+async def handle_subsidy_summary(
+    request: Request,
+    assessment_input: SubsidyApplicationInput,
+    user = Depends(get_current_user),
+):
+    """
+    Genereert een beknopte samenvatting van een subsidieaanvraag
+    met gestructureerde informatie zoals aanvrager, data en bedrag.
+    """
+    if not assessment_input.application_text:
+        raise HTTPException(status_code=400, detail="Subsidieaanvraag tekst mag niet leeg zijn.")
+
+    # Model Selectie met betere foutafhandeling
+    DEFAULT_MODEL_FALLBACK = "openai/gpt-4o"
+    model_to_use = assessment_input.model or DEFAULT_MODEL_FALLBACK
+    
+    if not model_to_use:
+        print(f"Geen model gespecificeerd, gebruik fallback: {DEFAULT_MODEL_FALLBACK}")
+        model_to_use = DEFAULT_MODEL_FALLBACK
+        
+    print(f"Model dat gebruikt wordt voor samenvatting: {model_to_use}")
+
+    DEFAULT_TEMPERATURE = 0.3  # Temperatuur voor de samenvatting
+
+    user_message_content = f"""Maak een samenvatting van de volgende subsidieaanvraag:
+--- START SUBSIDIEAANVRAAG ---
+{assessment_input.application_text}
+--- EINDE SUBSIDIEAANVRAAG ---
+
+Identificeer de aanvrager, datums, bedrag en maak een beknopte samenvatting.
+Zorg ervoor dat je de JSON output structuur volgt zoals beschreven in de systeemprompt.
+"""
+
+    form_data = {
+        "model": model_to_use,
+        "stream": False,
+        "temperature": DEFAULT_TEMPERATURE,
+        "response_format": { "type": "json_object" },
+        "messages": [
+            { "role": "system", "content": SUMMARY_SYSTEM_PROMPT },
+            { "role": "user", "content": user_message_content }
+        ]
+    }
+
+    try:
+        completion_result = await generate_chat_completion(
+            request=request, form_data=form_data, user=user
+        )
+
+        raw_response_content = ""
+        if completion_result and "choices" in completion_result and len(completion_result["choices"]) > 0:
+            message = completion_result["choices"][0].get("message", {})
+            raw_response_content = message.get("content", "").strip()
+
+        if not raw_response_content:
+            raise HTTPException(status_code=500, detail="Lege response van LLM bij samenvatting.")
+
+        # Parse de JSON response van de LLM
+        try:
+            # Verwijder eventuele markdown code block markering
+            if raw_response_content.startswith("```json"):
+                raw_response_content = raw_response_content[7:]
+            if raw_response_content.endswith("```"):
+                raw_response_content = raw_response_content[:-3]
+            raw_response_content = raw_response_content.strip()
+
+            parsed_data = json.loads(raw_response_content)
+            
+            # Converteer de sleutels naar de verwachte Pydantic model veldnamen
+            # (merk op dat we underscore gebruiken in het Pydantic model vanwege Python conventies)
+            if "Datum_aanvraag" not in parsed_data and "Datum aanvraag" in parsed_data:
+                parsed_data["Datum_aanvraag"] = parsed_data.pop("Datum aanvraag")
+            if "Datum_evenement" not in parsed_data and "Datum evenement" in parsed_data:
+                parsed_data["Datum_evenement"] = parsed_data.pop("Datum evenement")
+            
+            # Validatie via Pydantic model
+            summary_output = SubsidySummaryOutput(**parsed_data)
+            return summary_output
+
+        except (json.JSONDecodeError, ValueError, TypeError) as e:
+            print(f"Fout bij parsen LLM JSON response voor samenvatting: {e}")
+            print(f"Ontvangen raw response LLM (samenvatting):\n{raw_response_content}")
+            raise HTTPException(status_code=500, detail=f"Kon de LLM samenvattingsresponse niet correct verwerken: {e}")
+
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        print(f"Error in handle_subsidy_summary: {e}")
+        raise HTTPException(status_code=500, detail=f"Interne serverfout bij samenvatting: {str(e)}")

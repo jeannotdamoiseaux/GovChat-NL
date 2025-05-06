@@ -16,9 +16,22 @@
     // Beoordeling resultaten
     let assessmentResults: Record<string, {Criterium: string, Score: string, Toelichting: string}> | null = null;
     
+    // Samenvatting resultaat
+    let summaryResult: {
+        Aanvrager: string,
+        Datum_aanvraag: string,
+        Datum_evenement: string,
+        Bedrag: string,
+        Samenvatting: string
+    } | null = null;
+    
     // Status tracking
     let isLoading: boolean = false;
     let error: string | null = null;
+    
+    // Status voor samenvatting
+    let isLoadingSummary: boolean = false;
+    let summaryError: string | null = null;
 
     const unsubscribe = subsidyStore.subscribe(store => {
         selectedDataFromPart1 = store.selectedOutput;
@@ -92,6 +105,53 @@
         }
     }
 
+    async function handleSummaryRequest() {
+        if (!applicationText.trim()) {
+            toast.error("Voer alstublieft een subsidieaanvraag in om samen te vatten");
+            return;
+        }
+        
+        const currentModelId = $settings?.models?.[0];
+        if (!currentModelId) {
+            toast.warn("Geen model geselecteerd, standaard model wordt gebruikt");
+        }
+        
+        isLoadingSummary = true;
+        summaryError = null;
+        summaryResult = null;
+        
+        try {
+            const backendUrl = WEBUI_BASE_URL || 'http://localhost:8080';
+            const res = await fetch(`${backendUrl}/api/subsidies/summarize`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                },
+                body: JSON.stringify({
+                    application_text: applicationText,
+                    criteria: selectedDataFromPart1?.criteria || [],
+                    model: currentModelId
+                })
+            });
+            
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => ({ detail: 'Onbekende fout' }));
+                throw new Error(errorData.detail || `HTTP error! status: ${res.status}`);
+            }
+            
+            summaryResult = await res.json();
+            toast.success("Samenvatting succesvol gegenereerd!");
+            
+        } catch (e: any) {
+            console.error('Fout bij genereren samenvatting:', e);
+            summaryError = `Er is een fout opgetreden: ${e.message || 'Kon de server niet bereiken.'}`;
+            toast.error(summaryError);
+        } finally {
+            isLoadingSummary = false;
+        }
+    }
+
     function getScoreColorClass(score: string): string {
         if (score === 'Onzeker') return 'text-yellow-600 dark:text-yellow-400';
         const numScore = parseInt(score);
@@ -158,24 +218,41 @@
                         ></textarea>
                     </div>
 
-                    <button
-                        type="button"
-                        on:click={handleAssessmentSubmit}
-                        disabled={isLoading || !applicationText.trim() || !$settings?.models?.[0]}
-                        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-                    >
-                        {#if isLoading}
-                            <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            Beoordeling Verwerken...
-                        {:else if !$settings?.models?.[0]}
-                            Selecteer een model in de navigatiebalk
-                        {:else}
-                            Beoordeel Aanvraag
-                        {/if}
-                    </button>
+                    <div class="flex space-x-2 mt-3">
+                        <button
+                            type="button"
+                            on:click={handleAssessmentSubmit}
+                            disabled={isLoading || !applicationText.trim() || !$settings?.models?.[0]}
+                            class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                        >
+                            {#if isLoading}
+                                <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Beoordeling Verwerken...
+                            {:else}
+                                Beoordeel Aanvraag
+                            {/if}
+                        </button>
+                        
+                        <button
+                            type="button"
+                            on:click={handleSummaryRequest}
+                            disabled={isLoadingSummary || !applicationText.trim()}
+                            class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                        >
+                            {#if isLoadingSummary}
+                                <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Genereren...
+                            {:else}
+                                Genereer Samenvatting
+                            {/if}
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -183,6 +260,51 @@
                 <div class="bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded-lg p-3 text-red-800 dark:text-red-300">
                     <p class="font-medium">Er is een fout opgetreden:</p>
                     <p>{error}</p>
+                </div>
+            {/if}
+
+            <!-- Samenvatting -->
+            {#if summaryResult}
+                <div class="mt-6 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4 shadow-sm" transition:fade={{ duration: 300 }}>
+                    <h3 class="text-xl font-bold text-green-800 dark:text-green-400 mb-3">
+                        Samenvatting Aanvraag
+                    </h3>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="space-y-2">
+                            <div>
+                                <h4 class="font-semibold text-green-700 dark:text-green-300">Aanvrager</h4>
+                                <p class="text-gray-800 dark:text-gray-200">{summaryResult.Aanvrager}</p>
+                            </div>
+                            
+                            <div>
+                                <h4 class="font-semibold text-green-700 dark:text-green-300">Datum aanvraag</h4>
+                                <p class="text-gray-800 dark:text-gray-200">{summaryResult.Datum_aanvraag}</p>
+                            </div>
+                            
+                            <div>
+                                <h4 class="font-semibold text-green-700 dark:text-green-300">Datum evenement</h4>
+                                <p class="text-gray-800 dark:text-gray-200">{summaryResult.Datum_evenement}</p>
+                            </div>
+                            
+                            <div>
+                                <h4 class="font-semibold text-green-700 dark:text-green-300">Bedrag</h4>
+                                <p class="text-gray-800 dark:text-gray-200">{summaryResult.Bedrag}</p>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <h4 class="font-semibold text-green-700 dark:text-green-300">Samenvatting</h4>
+                            <p class="text-gray-800 dark:text-gray-200">{summaryResult.Samenvatting}</p>
+                        </div>
+                    </div>
+                </div>
+            {/if}
+
+            {#if summaryError}
+                <div class="mt-4 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded-lg p-3 text-red-800 dark:text-red-300">
+                    <p class="font-medium">Er is een fout opgetreden bij het genereren van de samenvatting:</p>
+                    <p>{summaryError}</p>
                 </div>
             {/if}
 
