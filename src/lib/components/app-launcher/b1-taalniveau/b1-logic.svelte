@@ -432,19 +432,34 @@
         <div class="mt-2 text-sm text-gray-600 dark:text-gray-400">
           <div class="flex flex-wrap gap-1">
             {#each preservedWords.slice(0, 5) as word}
-              <span class="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 px-2 py-0.5 rounded-md">
+              <!-- Added cursor-pointer and on:click to open modal -->
+              <span 
+                class="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 px-2 py-0.5 rounded-md cursor-pointer hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors"
+                on:click={() => showPreservedWordsModal = true}
+                role="button"
+              >
                 {word}
               </span>
             {/each}
             {#if preservedWords.length > 5}
-              <span class="text-gray-500 dark:text-gray-400 px-2 py-0.5">
+              <!-- Also made "more" text clickable -->
+              <span 
+                class="text-gray-500 dark:text-gray-400 px-2 py-0.5 cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+                on:click={() => showPreservedWordsModal = true}
+                role="button"
+              >
                 +{preservedWords.length - 5} meer...
               </span>
             {/if}
           </div>
         </div>
       {:else}
-        <div class="mt-2 text-sm text-gray-600 dark:text-gray-400 italic">
+        <!-- Made "No words selected" text clickable too -->
+        <div 
+          class="mt-2 text-sm text-gray-600 dark:text-gray-400 italic cursor-pointer hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+          on:click={() => showPreservedWordsModal = true}
+          role="button"
+        >
           Geen woorden geselecteerd
         </div>
       {/if}
@@ -480,71 +495,68 @@
             }}
           ></textarea>
 
-          <!-- Container for controls/info below input textarea -->
+          <!-- Status indicators for upload - MOVED ABOVE the upload button -->
           <div class="mt-2">
-            <!-- File Upload Progress - Always visible -->
-            <div class="flex items-center gap-2">
-              <!-- Progress Bar Container -->
-              <div class="flex-grow bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+            <!-- File upload progress bar -->
+            <div class="mt-2 flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+              <div class="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                 <div
-                  class="bg-blue-600 h-2 rounded-full transition-all duration-150 ease-linear"
+                  class="bg-blue-600 h-2 rounded-full transition-all duration-200"
                   style="width: {isProcessingFile ? fileProcessingProgress : (fileProcessingProgress === 100 ? 100 : 0)}%"
                 ></div>
               </div>
-              <!-- Percentage Text -->
-              <span class="text-sm text-gray-600 dark:text-gray-400 min-w-[3rem] text-right">
+              <span class="min-w-[4rem] text-right">
                 {isProcessingFile ? fileProcessingProgress : (fileProcessingProgress === 100 ? 100 : 0)}%
               </span>
             </div>
-
-            <!-- Upload knop en drag & drop hint -->
-            <div class="mt-2 flex items-center justify-between gap-2"> 
+            
+            {#if isProcessingFile}
               <div class="flex items-center gap-2">
-                <input
-                  type="file"
-                  accept=".doc,.docx,.pdf,.txt,.rtf"
-                  class="hidden"
-                  bind:this={fileInput}
-                  on:change={handleFileUpload}
-                />
-                <button
-                  on:click={() => fileInput.click()}
-                  disabled={isProcessingFile}
-                  class="bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-white font-medium py-1 px-3 rounded focus:outline-none focus:shadow-outline disabled:opacity-50 flex items-center gap-2"
-                >
-                  {#if isProcessingFile}
-                    <!-- Show spinner while processing -->
-                    <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    <span>Verwerken...</span>
-                  {:else if !isProcessingFile && fileProcessingProgress === 100}
-                    <!-- Show checkmark when done -->
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                    </svg>
-                    <span>Bestand verwerkt</span>
-                  {:else}
-                    <!-- Default upload icon -->
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3 3m0 0l-3-3m3 3V8" />
-                    </svg>
-                    <span>Upload document</span>
-                  {/if}
-                </button>
+                <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span>Verwerken...</span>
               </div>
-              <span class="text-sm text-gray-500 dark:text-gray-400 text-right">
-                of sleep bestand naar invoerveld<br>(Word, PDF, TXT, RTF)
-              </span>
-            </div>
+            {:else if !isProcessingFile && fileProcessingProgress === 100}
+              <div class="flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                </svg>
+                <span>Bestand verwerkt</span>
+              </div>
+            {/if}
+          </div>
+
+          <!-- File upload area -->
+          <div class="flex items-center justify-between mt-4">
+            <input
+              type="file"
+              id="fileInput"
+              class="hidden"
+              bind:this={fileInput}
+              accept=".doc,.docx,.pdf,.txt,.rtf"
+              on:change={handleFileUpload}
+            />
+            
+            <button
+              on:click={() => fileInput.click()}
+              disabled={isProcessingFile}
+              class="bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-white font-medium py-1 px-3 rounded focus:outline-none focus:shadow-outline disabled:opacity-50"
+            >
+              Upload document
+            </button>
+            
+            <span class="text-sm text-gray-500 dark:text-gray-400 text-right">
+              of sleep bestand naar invoerveld<br>(Word, PDF, TXT, RTF)
+            </span>
           </div>
         </div>
       </div>
 
       <!-- Midden: Vertaalknop voor kleine schermen -->
       <div class="md:hidden w-full">
-        <button 
+        <button
           on:click={simplifyText}
           disabled={isLoading || !selectedModels[0]}
           class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline disabled:opacity-50"
@@ -564,10 +576,10 @@
           {/if}
         </button>
       </div>
-      
+
       <!-- Midden: Vertaalpijl voor grotere schermen -->
       <div class="hidden md:flex flex-col items-center justify-center">
-        <button 
+        <button
           on:click={simplifyText}
           disabled={isLoading || !selectedModels[0]}
           class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-full focus:outline-none focus:shadow-outline disabled:opacity-50 h-12 w-12 flex items-center justify-center"
@@ -582,20 +594,19 @@
             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
             </svg>
-          {/if}
+          {/if} 
         </button>
       </div>
-      
+
       <!-- Rechter kolom: Output -->
       <div class="flex-1">
         <label for="output" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
           {languageLevel}-taalniveau tekst
         </label>
-        
         <div class="relative">
           <!-- Output content area - conditional display -->
           {#if showOutput}
-            <div 
+            <div
               id="output"
               class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white min-h-[250px] md:min-h-[400px] max-h-[250px] md:max-h-[400px] overflow-y-auto whitespace-pre-wrap font-[system-ui]"
               transition:fade={{ duration: 200 }}
@@ -607,7 +618,7 @@
               <p>Hier verschijnt de vereenvoudigde tekst na verwerking</p>
             </div>
           {/if}
-          
+
           <!-- Progress bar - ALWAYS visible -->
           <div class="mt-2 flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
             <div class="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
@@ -620,7 +631,7 @@
               {progressDisplay}%
             </span>
           </div>
-          
+
           <!-- Status text - ALWAYS visible -->
           <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
             {#if isLoading}
@@ -631,7 +642,7 @@
               Klaar om te verwerken
             {/if}
           </div>
-          
+
           <!-- Kopieer knop - Always visible but disabled when no content -->
           <div class="mt-1 flex justify-end">
             <button
@@ -658,7 +669,7 @@
 </div>
 
 <!-- Modal for preserved words management -->
-<Modal 
+<Modal
   bind:show={showPreservedWordsModal}
   size="md"
   containerClassName="p-0"
@@ -694,7 +705,7 @@
         Toevoegen
       </button>
     </div>
-    
+
     <!-- Toggle for default words -->
     <div class="mb-4 flex items-center gap-2">
       <div class="flex items-center">
@@ -714,7 +725,7 @@
         Standaard niet te veranderen woorden (Bodembeleid, Subsidie, etc.)
       </span>
     </div>
-    
+
     <!-- List of preserved words -->
     <div class="max-h-[300px] overflow-y-auto border border-gray-300 rounded-md p-2 bg-gray-50 dark:bg-gray-700 dark:border-gray-600">
       <div class="flex flex-wrap gap-2">
@@ -730,14 +741,13 @@
           </div>
         {/each}
       </div>
-      
       {#if preservedWords.length === 0}
         <div class="text-center text-gray-500 dark:text-gray-400 py-4">
           Geen woorden geselecteerd. Voeg woorden toe die niet vereenvoudigd mogen worden.
         </div>
       {/if}
     </div>
-    
+
     <div class="mt-4 flex justify-end">
       <button
         on:click={() => showPreservedWordsModal = false}
@@ -750,7 +760,7 @@
 </Modal>
 
 <!-- New modal for app information -->
-<Modal 
+<Modal
   bind:show={showInfoModal}
   size="md"
   containerClassName="p-0"
@@ -774,7 +784,6 @@
       <p>
         De B1-taalniveau Vereenvoudiger helpt je om complexe teksten naar eenvoudigere taal om te zetten, zodat ze beter te begrijpen zijn voor een breder publiek.
       </p>
-      
       <h3 class="text-lg font-medium text-gray-800 dark:text-white mt-4">Wat is B1-taalniveau?</h3>
       <p>
         B1-taalniveau is een taalvaardigheidsniveau volgens het Europees Referentiekader (ERK). Teksten op B1-niveau:
@@ -785,7 +794,6 @@
         <li>Vermijden moeilijke zinsconstructies en jargon</li>
         <li>Zijn concreet en direct</li>
       </ul>
-      
       <h3 class="text-lg font-medium text-gray-800 dark:text-white mt-4">Hoe werkt het?</h3>
       <ol class="list-decimal pl-5 space-y-1">
         <li>Voer je tekst in of upload een document (Word, PDF, TXT of RTF)</li>
@@ -793,7 +801,6 @@
         <li>Klik op de "Vereenvoudig" knop</li>
         <li>De AI zal je tekst omzetten naar B1-taalniveau</li>
       </ol>
-      
       <h3 class="text-lg font-medium text-gray-800 dark:text-white mt-4">Tips voor betere resultaten</h3>
       <ul class="list-disc pl-5 space-y-1">
         <li>Voeg vaktermen en organisatienamen toe aan "Woorden die niet vereenvoudigd worden"</li>
@@ -801,7 +808,6 @@
         <li>Voor langere teksten kun je beter stukken apart invoeren</li>
       </ul>
     </div>
-    
     <div class="mt-6 flex justify-end">
       <button
         on:click={() => showInfoModal = false}
@@ -823,26 +829,18 @@
     border-top-color: #3b82f6;
     animation: spin 1s linear infinite;
   }
-  
+
   @keyframes spin {
     to { transform: rotate(360deg); }
   }
   
-  /* Progress line animation */
-
-  
-  @keyframes progress {
-    0% { transform: translateX(-100%); }
-    50% { transform: translateX(0); }
-    100% { transform: translateX(100%); }
-  }
-
+  /* Output strong elements */
   :global(#output strong) {
     font-weight: 700;
     color: inherit;
   }
 
-  /*flash animation*/
+  /* Flash animation */
   @keyframes flash {
     0% {
       background-color: rgba(59, 130, 246, 0);
@@ -852,18 +850,16 @@
     15% {
       background-color: rgba(59, 130, 246, 0.2);
       transform: scale(1.02);
-      box-shadow: 
-        0 0 30px 15px rgba(96, 165, 250, 0.3),
-        0 0 0 30px rgba(96, 165, 250, 0.1),
-        inset 0 0 15px rgba(255, 255, 255, 0.4);
+      box-shadow: 0 0 30px 15px rgba(96, 165, 250, 0.3),
+                 0 0 0 30px rgba(96, 165, 250, 0.1),
+                 inset 0 0 15px rgba(255, 255, 255, 0.4);
     }
     30% {
       background-color: rgba(59, 130, 246, 0.1);
       transform: scale(1);
-      box-shadow: 
-        0 0 50px 20px rgba(96, 165, 250, 0.1),
-        0 0 0 40px rgba(96, 165, 250, 0),
-        inset 0 0 20px rgba(255, 255, 255, 0.2);
+      box-shadow: 0 0 50px 20px rgba(96, 165, 250, 0.1),
+                 0 0 0 40px rgba(96, 165, 250, 0),
+                 inset 0 0 20px rgba(255, 255, 255, 0.2);
     }
     100% {
       background-color: rgba(59, 130, 246, 0);
@@ -880,6 +876,6 @@
 
   /* Optional: Style for the progress text during loading */
   .progress-text {
-     font-variant-numeric: tabular-nums; /* Keeps numbers aligned */
+    font-variant-numeric: tabular-nums; /* Keeps numbers aligned */
   }
 </style>
