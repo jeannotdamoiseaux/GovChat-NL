@@ -1,0 +1,26 @@
+version: "3.3"
+services:
+
+  # postgres:
+  #   image: postgres:latest
+  #   restart: always
+  #   environment:
+  #     POSTGRES_USER: $[POSTGRES_USER]
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+  #     POSTGRES_DB: litellm
+  #   ports:
+  #     - "5432:5432"
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    platform: linux/amd64
+    restart: always
+    ports:
+      - "4000:4000"
+    environment:
+      - AZURE_API_KEY=${AZURE_API_KEY}
+      - AZURE_API_BASE=${AZURE_API_BASE}
+      - AZURE_API_VERSION=${AZURE_API_VERSION}
+    volumes:
+      - ./litellm/litellm_config.yaml:/app/config.yaml
+    command: --config /app/config.yaml --detailed_debug
