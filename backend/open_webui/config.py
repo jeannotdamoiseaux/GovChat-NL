@@ -2595,3 +2595,21 @@ LOGIN_SCREEN_SUBTITLE = PersistentConfig(
     "customization.login_screen_subtitle",
     os.getenv("LOGIN_SCREEN_SUBTITLE", None)
 )
+
+ENABLE_CALL = PersistentConfig(
+    "ENABLE_CALL",
+    "customization.enable_call",
+    os.getenv("ENABLE_CALL", "False").lower() == "true",
+)
+
+ENABLE_MULTIPLE_MODELS = PersistentConfig(
+    "ENABLE_MULTIPLE_MODELS",
+    "customization.enable_multiple_models",
+    os.getenv("ENABLE_MULTIPLE_MODELS", "False").lower() == "true",
+)
+
+ENABLE_CONTROLS_BUTTON = PersistentConfig(
+    "ENABLE_CONTROLS_BUTTON",
+    "customization.enable_controls_button",
+    os.getenv("ENABLE_CONTROLS_BUTTON", "False").lower() == "true",
+)
