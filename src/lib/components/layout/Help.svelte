@@ -6,6 +6,7 @@
     import Info from '$lib/components/icons/Info.svelte';
     import Modal from '$lib/components/common/Modal.svelte';
     import { sections } from './Help/HelpContent';
+    import { WEBUI_NAME } from '$lib/stores';
 
     let showShortcuts = false;
     let showHelp = false;
@@ -67,36 +68,15 @@
         return html;
     }
     function printHelpContent() {
-        const printContents = getFullManualHtml();
-        const printWindow = window.open('', '', 'height=900,width=900');
+        // Genereer de handleiding
+        const manualHtml = getFullManualHtml();
+        const replacedHtml = manualHtml.replace(/{{APP_NAME}}/g, $WEBUI_NAME);
+        const printWindow = window.open();
         if (!printWindow) return;
-        printWindow.document.write(`
-            <html>
-            <head>
-                <title>LAICA Handleiding</title>
-                <style>
-                body { font-family: 'Inter', Arial, sans-serif; color: #222; background: #fff; margin: 2em; }
-                section { margin-bottom: 2em; }
-                h1, h2, h3, .font-semibold { font-weight: bold; }
-                ul, ol { margin-left: 1.5em; }
-                a { color: #2d6cdf; text-decoration: underline; }
-                </style>
-            </head>
-            <body>
-                <h1>Handleiding LAICA</h1>
-                ${printContents}
-            </body>
-            </html>
-        `);
+        printWindow.document.write(`<html><body>${replacedHtml}</body></html>`);
         printWindow.document.close();
-        printWindow.focus();
-        setTimeout(() => printWindow.print(), 200);
+        printWindow.print();
     }
-    onMount(() => {
-        if (contentDiv) {
-            activeSection = sections[0].id
-        }
-    });
 </script>
 
 <!-- Floating helpbutton -->
@@ -126,7 +106,7 @@
         <div class="flex justify-between items-start px-5">
             <div class="text-xl font-semibold flex items-center gap-2">
                 <Info class="w-6 h-6 text-blue-500" />
-                Hulp en uitleg bij LAICA
+                Hulp en uitleg
             </div>
             <div class="flex items-center gap-2">
                 <!-- PRINT-KNOP -->
@@ -182,7 +162,7 @@
                                 aria-current={activeSection === sec.id ? 'page' : undefined}
                             >
                                 <span>{sec.emoji}</span>
-                                <span>{sec.title}</span>
+                                <span>{sec.title.replace(/{{APP_NAME}}/g, $WEBUI_NAME)}</span>
                                 {#if sec.items}
                                     <span
                                         class="ml-auto flex items-center"
@@ -217,7 +197,7 @@
                                                 aria-current={activeSubsectionId === item.id ? 'page' : undefined}
                                             >
                                                 <span>{item.emoji}</span>
-                                                <span>{item.title}</span>
+                                                <span>{item.title.replace(/{{APP_NAME}}/g, $WEBUI_NAME)}</span>
                                             </a>
                                         </li>
                                     {/each}
@@ -228,32 +208,33 @@
                 </ul>
             </nav>
         
-            <!-- Rechter kolom: hoofd-content, bind:this={contentDiv} als hoofdvenster -->
+            <!-- Rechter kolom: hoofd-content --> 
             <div class="flex flex-col flex-1 min-w-0">
                 <div bind:this={contentDiv} class="flex-1 overflow-y-scroll px-2 md:px-0 pr-2">
                     {#each sections as sec}
-                        {#if activeSection === sec.id}
-                            <section id={sec.id} class="mb-8 scroll-mt-24">
-                                {@html sec.content}
+                    {#if activeSection === sec.id}
+                        <!-- Toon altijd hoofdstuktitel (h2) bovenaan -->
+                        <section id={sec.id} class="mb-8 scroll-mt-24">
+                        {@html sec.content.replace(/{{APP_NAME}}/g, $WEBUI_NAME)}
+                        </section>
+                        {#if sec.items}
+                        {#each sec.items as item (item.id)}
+                            <section id={item.id} class="mb-8 scroll-mt-24">
+                            <h3 class="help-section-title">{item.emoji} {item.title.replace(/{{APP_NAME}}/g, $WEBUI_NAME)}</h3>
+                            {@html item.content.replace(/{{APP_NAME}}/g, $WEBUI_NAME)}
                             </section>
-                            {#if sec.items}
-                                {#each sec.items as item}
-                                    <section id={item.id} class="mb-8 scroll-mt-24">
-                                        <div class="font-semibold text-base mb-2">{item.emoji} {item.title}</div>
-                                        {@html item.content}
-                                    </section>
-                                {/each}
-                            {/if}
+                        {/each}
                         {/if}
+                    {/if}
                     {/each}
                 </div>
+                <!-- Sluitenknop -->
                 <div class="flex justify-end pt-3 px-5 shrink-0">
                     <button
-                        on:click={() => showHelp = false}
-                        class="px-3.5 py-1.5 mt-6 mb-3 text-sm font-medium bg-black hover:bg-gray-900 text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-full"
+                    on:click={() => showHelp = false}
+                    class="px-3.5 py-1.5 mt-6 mb-3 text-sm font-medium bg-black hover:bg-gray-900 text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-full"
                     >Sluiten</button>
                 </div>
-            </div>
-        </div>
+                </div>
 </Modal>
 <ShortcutsModal bind:show={showShortcuts} />

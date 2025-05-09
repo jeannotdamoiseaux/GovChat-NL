@@ -372,3 +372,20 @@ input[type='number'] {
 .hljs-strong {
 	font-weight: 700;
 }
+
+/* GovChat-NL Manual */
+.help-chapter-title {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: #174ea6;
+  padding-bottom: 0;
+  display: flex;
+  align-items: center;
+}
+
+.help-section-title {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #205295;
+  margin-top: 1rem;
+}
