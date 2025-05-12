@@ -2595,3 +2595,24 @@ LOGIN_SCREEN_SUBTITLE = PersistentConfig(
     "customization.login_screen_subtitle",
     os.getenv("LOGIN_SCREEN_SUBTITLE", None)
 )
+
+B1_INFO_MODAL_CONTENT = PersistentConfig(
+    "B1_INFO_MODAL_CONTENT",
+    "customization.b1_info.content",
+    {
+        "title": "Welkom bij B1 Taalniveau",
+        "introduction": "B1 is een taalniveau binnen het Europees Referentiekader (ERK). Teksten op B1-niveau zijn:",
+        "points": [
+            "Helder en eenvoudig geschreven",
+            "Geschikt voor mensen met basiskennis van de taal",
+            "Makkelijk te begrijpen voor een breed publiek"
+        ],
+        "conclusion": "Met deze app kunt u controleren of uw teksten voldoen aan het B1-taalniveau en krijgt u suggesties voor verbetering."
+    }
+)
+
+B1_INFO_MODAL_VERSION = PersistentConfig(
+    "B1_INFO_MODAL_VERSION",
+    "customization.b1_info.version",
+    12  # Default version, increment if B1 info content changes
+)

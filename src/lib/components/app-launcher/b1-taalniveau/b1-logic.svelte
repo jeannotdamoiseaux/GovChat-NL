@@ -5,6 +5,7 @@
   import { fade } from 'svelte/transition';
   import { toast } from 'svelte-sonner';
   import Modal from '$lib/components/common/Modal.svelte';
+  import { browser } from '$app/environment'; // Import browser for client-side check
   
   // Add modal control variables
   let showPreservedWordsModal = false;
@@ -47,24 +48,63 @@
   let selectedModels = ['']; 
   $: availableModels = $models || [];
 
-  onMount(async () => {
-    // Load model selection from settings or local storage
-    const storedModels = $settings?.models?.length > 0 ? $settings.models : null;
-    const storedModelLegacy = localStorage.getItem('selectedModel'); // Check legacy single model storage
+  // Reactive statement to auto-select model when available
+  $: if (availableModels && availableModels.length > 0 && (!selectedModels[0] || selectedModels[0] === '')) {
+    selectedModels = [availableModels[0].id];
+    console.log('Auto-selected first available model:', selectedModels);
+  }
 
-    if (storedModels) {
-      selectedModels = storedModels;
-    } else if (storedModelLegacy) {
-       selectedModels = [storedModelLegacy]; // Convert legacy storage to array
-       localStorage.removeItem('selectedModel'); // Clean up legacy item
-       // Optionally save the new array format back to settings/localStorage
-       settings.update(s => ({ ...s, models: selectedModels }));
-       localStorage.setItem('selectedModels', JSON.stringify(selectedModels)); // Example using new key
-    } else {
-      // Fallback to first available model if no selection stored
-      selectedModels = availableModels.length ? [availableModels[0].id] : [''];
+  onMount(async () => {
+    try {
+      // Check sessionStorage first (like the navbar does)
+      if (browser && sessionStorage.getItem('selectedModels')) {
+        try {
+          selectedModels = JSON.parse(sessionStorage.getItem('selectedModels'));
+          console.log('Model loaded from sessionStorage:', selectedModels);
+        } catch (e) {
+          console.error('Error parsing sessionStorage models:', e);
+        }
+      } 
+      // Fallback to settings
+      else if ($settings?.models?.length > 0) {
+        selectedModels = $settings.models;
+        console.log('Model loaded from settings:', selectedModels);
+      }
+      
+      // Ensure the model is valid (exists in availableModels)
+      if (selectedModels[0] && availableModels.length > 0) {
+        const modelExists = availableModels.some(m => m.id === selectedModels[0]);
+        if (!modelExists) {
+          selectedModels = [availableModels[0].id];
+          console.log('Selected model not available, using first available:', selectedModels);
+        }
+      }
+    } catch (err) {
+      console.error('Error loading model:', err);
     }
   });
+
+  // Better mechanism to detect model updates
+  // Works within the same tab/window
+  let previousModelsCheck;
+  
+  setInterval(() => {
+    if (browser) {
+      const currentSelectedModels = sessionStorage.getItem('selectedModels');
+      if (currentSelectedModels !== previousModelsCheck) {
+        previousModelsCheck = currentSelectedModels;
+        try {
+          const parsed = JSON.parse(currentSelectedModels);
+          if (Array.isArray(parsed) && parsed.length > 0 && parsed[0]) {
+            selectedModels = parsed;
+            console.log('Model updated from sessionStorage polling:', selectedModels);
+          }
+        } catch (e) {
+          console.error('Error parsing selectedModels from polling:', e);
+        }
+      }
+    }
+  }, 1000); // Check every second (can be adjusted)
 
   // Word counting and progress variables
   let wordCountPercentage = 0;
