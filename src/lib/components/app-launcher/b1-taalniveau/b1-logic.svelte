@@ -82,12 +82,21 @@
     } catch (err) {
       console.error('Error loading model:', err);
     }
+
+    // Show info modal on first visit
+    if (browser) {
+      const tutorialShown = localStorage.getItem('b1TutorialShown');
+      if (!tutorialShown) {
+        showInfoModal = true;
+        localStorage.setItem('b1TutorialShown', 'true');
+      }
+    }
   });
 
-  // Better mechanism to detect model updates
-  // Works within the same tab/window
+  // Improved mechanism to detect model updates
+  // Works within the same tab/window as well
   let previousModelsCheck;
-  
+
   setInterval(() => {
     if (browser) {
       const currentSelectedModels = sessionStorage.getItem('selectedModels');
@@ -175,8 +184,8 @@
         },
         body: JSON.stringify({
           text: inputText,
-          model: currentModel, // Use the validated model
-          preserved_words: preservedWords, // Use the reactive preservedWords
+          model: currentModel, // Using the validated model
+          preserved_words: preservedWords, 
           language_level: languageLevel
         })
       });
