@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { getContext } from 'svelte';
+    import { browser } from '$app/environment'; // Import browser
     import ShortcutsModal from '../chat/ShortcutsModal.svelte';
     import Tooltip from '../common/Tooltip.svelte';
     import Info from '$lib/components/icons/Info.svelte';
@@ -9,7 +10,10 @@
     import { WEBUI_NAME } from '$lib/stores';
 
     let showShortcuts = false;
-    let showHelp = false;
+    let showHelp = false; // Deze wordt gebonden aan de Modal
+    let dontShowOnStartup = false;
+    const DONT_SHOW_HELP_ON_STARTUP_KEY = 'govchat_dont_show_help_on_startup';
+
     let isFullScreen = false;
     const i18n = getContext('i18n');
 
@@ -17,6 +21,26 @@
     let openSectionId: string | null = sections[0].id;
     let activeSubsectionId: string | null = null;
     let contentDiv: HTMLDivElement;
+
+    onMount(() => {
+        if (browser) {
+            const storedPreference = localStorage.getItem(DONT_SHOW_HELP_ON_STARTUP_KEY);
+            if (storedPreference === 'true') {
+                dontShowOnStartup = true;
+                // showHelp blijft de waarde die het had (waarschijnlijk false), dus modal wordt niet getoond
+            } else {
+                // storedPreference is 'false', null (eerste keer), of iets anders
+                dontShowOnStartup = false;
+                showHelp = true; // Toon de help modal initieel
+            }
+        }
+    });
+
+    function handleCheckboxChange() {
+        if (browser) {
+            localStorage.setItem(DONT_SHOW_HELP_ON_STARTUP_KEY, dontShowOnStartup.toString());
+        }
+    }
 
     $: if (contentDiv && activeSection) {
         contentDiv.scrollTop = 0;
@@ -73,7 +97,7 @@
         const replacedHtml = manualHtml.replace(/{{APP_NAME}}/g, $WEBUI_NAME);
         const printWindow = window.open();
         if (!printWindow) return;
-        printWindow.document.write(`<html><body>${replacedHtml}</body></html>`);
+        printWindow.document.write(`<html><head><title>${$i18n.t('Handleiding')} ${$WEBUI_NAME}</title><style>body{font-family: sans-serif;} h2{margin-top: 2em; border-bottom: 1px solid #ccc;} h3{margin-top: 1.5em;}</style></head><body><h1>${$i18n.t('Handleiding')} ${$WEBUI_NAME}</h1>${replacedHtml}</body></html>`);
         printWindow.document.close();
         printWindow.print();
     }
@@ -228,13 +252,25 @@
                     {/if}
                     {/each}
                 </div>
-                <!-- Sluitenknop -->
-                <div class="flex justify-end pt-3 px-5 shrink-0">
+                <!-- Footer met checkbox en sluitenknop -->
+                <div class="flex justify-end items-center space-x-6 pt-3 px-5 shrink-0 mt-6 mb-3">
+                    <label class="flex items-center space-x-2 cursor-pointer text-sm text-gray-700 dark:text-gray-300">
+                        <input
+                            type="checkbox"
+                            bind:checked={dontShowOnStartup}
+                            on:change={handleCheckboxChange}
+                            class="form-checkbox rounded h-4 w-4 text-blue-600 dark:bg-gray-700 dark:border-gray-600 focus:ring-blue-500 transition duration-150 ease-in-out"
+                        />
+                        <span>{$i18n.t('Niet meer tonen')}</span>
+                    </label>
                     <button
-                    on:click={() => showHelp = false}
-                    class="px-3.5 py-1.5 mt-6 mb-3 text-sm font-medium bg-black hover:bg-gray-900 text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-full"
-                    >Sluiten</button>
+                        on:click={() => showHelp = false}
+                        class="px-3.5 py-1.5 text-sm font-medium bg-black hover:bg-gray-900 text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-full"
+                    >
+                        {$i18n.t('Oke')}
+                    </button>
                 </div>
-                </div>
+            </div>
+        </div>
 </Modal>
 <ShortcutsModal bind:show={showShortcuts} />
