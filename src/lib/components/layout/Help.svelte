@@ -1,7 +1,7 @@
 <script lang="ts">
-    import { onMount } from 'svelte';
-    import { getContext } from 'svelte';
-    import { browser } from '$app/environment'; // Import browser
+    import { onMount, getContext } from 'svelte';
+    import { browser } from '$app/environment'; 
+    import { settings } from '$lib/stores'; // Import settings store
     import ShortcutsModal from '../chat/ShortcutsModal.svelte';
     import Tooltip from '../common/Tooltip.svelte';
     import Info from '$lib/components/icons/Info.svelte';
@@ -10,7 +10,7 @@
     import { WEBUI_NAME } from '$lib/stores';
 
     let showShortcuts = false;
-    let showHelp = false; // Deze wordt gebonden aan de Modal
+    let showHelp = false;
     let dontShowOnStartup = false;
     const DONT_SHOW_HELP_ON_STARTUP_KEY = 'govchat_dont_show_help_on_startup';
 
@@ -22,23 +22,90 @@
     let activeSubsectionId: string | null = null;
     let contentDiv: HTMLDivElement;
 
+    // Add this to expose a global event that can be listened to by other components
+    function dispatchSettingsChange() {
+        // Create a custom event that will bubble up to the document
+        const event = new CustomEvent('tutorial-setting-changed', {
+            detail: { showTutorialOnStartup: !dontShowOnStartup },
+            bubbles: true
+        });
+        document.dispatchEvent(event);
+    }
+
+    // Add this variable to track user interaction with the checkbox
+    let userJustChangedCheckbox = false;
+
+    // Add this reactive statement to sync the checkbox with settings store changes
+    $: if ($settings.showTutorialOnStartup !== undefined && !userJustChangedCheckbox) {
+        // Only update the checkbox if the value actually changed and user didn't just interact with it
+        if (dontShowOnStartup !== !$settings.showTutorialOnStartup) {
+            dontShowOnStartup = !$settings.showTutorialOnStartup;
+            
+            // Also update localStorage for consistency
+            if (browser) {
+                localStorage.setItem(DONT_SHOW_HELP_ON_STARTUP_KEY, dontShowOnStartup.toString());
+            }
+        }
+    }
+
     onMount(() => {
         if (browser) {
+            // PRIORITY 1: Check localStorage first (this gives the user's most recent choice priority)
             const storedPreference = localStorage.getItem(DONT_SHOW_HELP_ON_STARTUP_KEY);
-            if (storedPreference === 'true') {
-                dontShowOnStartup = true;
-                // showHelp blijft de waarde die het had (waarschijnlijk false), dus modal wordt niet getoond
-            } else {
-                // storedPreference is 'false', null (eerste keer), of iets anders
+            if (storedPreference !== null) {
+                dontShowOnStartup = storedPreference === 'true';
+                showHelp = !dontShowOnStartup;
+                
+                // Force the settings store to match our localStorage value
+                settings.update(current => ({
+                    ...current,
+                    showTutorialOnStartup: !dontShowOnStartup
+                }));
+                
+                // Also tell the rest of the application about our setting
+                dispatchSettingsChange();
+            }
+            // PRIORITY 2: Only if localStorage doesn't have a value, use the settings store
+            else if ($settings.showTutorialOnStartup !== undefined) {
+                dontShowOnStartup = !$settings.showTutorialOnStartup;
+                showHelp = $settings.showTutorialOnStartup;
+            }
+            // PRIORITY 3: Default to showing tutorial if nothing is set
+            else {
                 dontShowOnStartup = false;
-                showHelp = true; // Toon de help modal initieel
+                showHelp = true;
+                
+                // Initialize settings
+                settings.update(current => ({
+                    ...current,
+                    showTutorialOnStartup: true
+                }));
+                dispatchSettingsChange();
             }
         }
     });
 
     function handleCheckboxChange() {
         if (browser) {
+            // Set flag to prevent reactive statement from overriding user choice
+            userJustChangedCheckbox = true;
+            
+            // Update localStorage (our source of truth)
             localStorage.setItem(DONT_SHOW_HELP_ON_STARTUP_KEY, dontShowOnStartup.toString());
+            
+            // Update the application settings store 
+            settings.update(current => ({
+                ...current,
+                showTutorialOnStartup: !dontShowOnStartup
+            }));
+            
+            // Tell the rest of the app about this change
+            dispatchSettingsChange();
+            
+            // Reset the flag after a longer delay to ensure settings propagate
+            setTimeout(() => {
+                userJustChangedCheckbox = false;
+            }, 500); // Increased from 100ms to 500ms
         }
     }
 
@@ -258,7 +325,11 @@
                         <input
                             type="checkbox"
                             bind:checked={dontShowOnStartup}
-                            on:change={handleCheckboxChange}
+                            on:click|stopPropagation={() => {
+                                // Manually set the value instead of relying on the bind
+                                dontShowOnStartup = !dontShowOnStartup;
+                                handleCheckboxChange();
+                            }}
                             class="form-checkbox rounded h-4 w-4 text-blue-600 dark:bg-gray-700 dark:border-gray-600 focus:ring-blue-500 transition duration-150 ease-in-out"
                         />
                         <span>{$i18n.t('Niet meer tonen')}</span>
