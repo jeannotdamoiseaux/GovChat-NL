@@ -16,7 +16,16 @@ export const sections: HelpSection[] = [
         id: 'sec1',
         emoji: '📖',
         title: 'Introductie',
-        content: `<h2 class="help-chapter-title">1️⃣ Introductie</h2>`,
+        content: `
+                   <h2 class="help-chapter-title">1️⃣ Introductie</h2>
+                   <div class="mt-3 mb-3 text-base font-semibold text-blue-700 flex items-center gap-2">
+                     <span>
+                       Je kunt deze handleiding op ieder moment openen door rechtsonder op het vraagteken
+                       (<span class="inline-block bg-black text-white rounded-full px-2" style="font-size:1rem;">?</span>)
+                       te klikken.
+                     </span>
+                   </div>
+                 `,
         items: [
             {
                 id: 'sec1a',
@@ -334,6 +343,22 @@ export const sections: HelpSection[] = [
             Neem contact op met de helpdesk of stuur een e-mail naar
             <a href="mailto:[e-mailadres verborgen]" class="underline">[e-mailadres verborgen]</a>.
           </div>
+        `
+      },
+      {
+       id: 'sec7b',
+       emoji: '🎓',
+       title: 'Meer leren over AI',
+       content: `
+            <div class="text-sm mb-2">
+            Wil je je verder verdiepen in kunstmatige intelligentie? Volg dan ook de <b>Nationale AI Cursus</b>,
+            gratis beschikbaar via Studytube voor medewerkers van Provincie Limburg.<br>
+            <a href="https://provincielimburg.studytube.nl/courses/435552/de-nationale-ai-cursus" 
+                target="_blank" 
+                rel="noopener" 
+                class="text-blue-600 underline font-semibold"
+            >Bekijk de Nationale AI Cursus op Studytube</a>
+            </div>
         `
       }
     ]
