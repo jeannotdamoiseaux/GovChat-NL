@@ -2587,7 +2587,7 @@ LDAP_CIPHERS = PersistentConfig(
 EMPTY_CHAT_WELCOME_MESSAGE = PersistentConfig(
     "EMPTY_CHAT_WELCOME_MESSAGE",
     "customization.empty_chat_welcome_message",
-    os.getenv("EMPTY_CHAT_WELCOME_MESSAGE", "welkom bij GovChat-NL")
+    os.getenv("EMPTY_CHAT_WELCOME_MESSAGE", f"welkom bij {WEBUI_NAME}")
 )
 
 LOGIN_SCREEN_SUBTITLE = PersistentConfig(
