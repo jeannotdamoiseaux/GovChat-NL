@@ -7,6 +7,7 @@
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import { updateUserInfo } from '$lib/apis/users';
 	import { getUserPosition } from '$lib/utils';
+	import { browser } from '$app/environment';
 	const dispatch = createEventDispatcher();
 
 	const i18n = getContext('i18n');
@@ -54,6 +55,7 @@
 	// Admin - Show Update Available Toast
 	let showUpdateToast = true;
 	let showChangelog = true;
+	let showTutorialOnStartup = true; // New variable for tutorial setting
 
 	let showEmojiInCall = false;
 	let voiceInterruption = false;
@@ -232,6 +234,18 @@
 		saveSettings({ webSearch: webSearch });
 	};
 
+	const toggleShowTutorialOnStartup = async () => {
+		showTutorialOnStartup = !showTutorialOnStartup;
+		
+		// Save to settings DB
+		saveSettings({ showTutorialOnStartup });
+		
+		// Also update localStorage to keep Help.svelte in sync
+		if (browser) {
+			localStorage.setItem('govchat_dont_show_help_on_startup', (!showTutorialOnStartup).toString());
+		}
+	};
+
 	onMount(async () => {
 		titleAutoGenerate = $settings?.title?.auto ?? true;
 		autoTags = $settings.autoTags ?? true;
@@ -241,6 +255,7 @@
 		showUsername = $settings.showUsername ?? false;
 		showUpdateToast = $settings.showUpdateToast ?? true;
 		showChangelog = $settings.showChangelog ?? true;
+		showTutorialOnStartup = $settings.showTutorialOnStartup ?? true;
 
 		showEmojiInCall = $settings.showEmojiInCall ?? false;
 		voiceInterruption = $settings.voiceInterruption ?? false;
@@ -275,7 +290,33 @@
 
 		backgroundImageUrl = $settings.backgroundImageUrl ?? null;
 		webSearch = $settings.webSearch ?? null;
+
+		// Listen for the tutorial setting change event
+		const handleTutorialSettingChange = (event) => {
+			// Make sure your saveSettings function is called when the event is fired
+			if (event.detail && event.detail.showTutorialOnStartup !== undefined) {
+				saveSettings({ showTutorialOnStartup: event.detail.showTutorialOnStartup });
+			}
+		};
+
+		document.addEventListener('tutorial-setting-changed', handleTutorialSettingChange);
+
+		return () => {
+			document.removeEventListener('tutorial-setting-changed', handleTutorialSettingChange);
+		};
 	});
+
+	// Watch for localStorage changes from Help.svelte
+	$: if (browser) {
+		const storedHelp = localStorage.getItem('govchat_dont_show_help_on_startup');
+		if (storedHelp !== null) {
+			const shouldDontShow = storedHelp === 'true';
+			if (showTutorialOnStartup === shouldDontShow) {
+				// Settings are out of sync with localStorage, update local state
+				showTutorialOnStartup = !shouldDontShow;
+			}
+		}
+	}
 </script>
 
 <form
@@ -433,6 +474,25 @@
 						type="button"
 					>
 						{#if notificationSound === true}
+							<span class="ml-2 self-center">{$i18n.t('On')}</span>
+						{:else}
+							<span class="ml-2 self-center">{$i18n.t('Off')}</span>
+						{/if}
+					</button>
+				</div>
+			</div>
+
+			<div>
+				<div class="py-0.5 flex w-full justify-between">
+					<div class="self-center text-xs">{$i18n.t('Show Tutorial on Startup')}</div>
+					<button
+						class="p-1 px-3 text-xs flex rounded-sm transition"
+						on:click={() => {
+							toggleShowTutorialOnStartup();
+						}}
+						type="button"
+					>
+						{#if showTutorialOnStartup === true}
 							<span class="ml-2 self-center">{$i18n.t('On')}</span>
 						{:else}
 							<span class="ml-2 self-center">{$i18n.t('Off')}</span>
