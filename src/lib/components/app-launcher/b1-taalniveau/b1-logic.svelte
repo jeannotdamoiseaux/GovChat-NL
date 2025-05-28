@@ -37,7 +37,7 @@
     'Bodembeleid', 'Burgerparticipatie', 'Ecologie', 'Ecologisch', 'Groenbeleid',
     'Natuur- en landschapsbeheerorganisaties', 'Informerend stuk', 'Onderwerp', 'Samenvatting', 
     'Kennisnemen van', 'Aanleiding en bestuurlijke context', 'Bevoegdheid', 'Communicatie', 'Vervolg', 
-    'Bijlage(n)', 'Sonderend stuk', 'Vraag aan PS', 'Context', 'Voorstel', 'Statenvoorstel', 'Geachte'
+    'Bijlage(n)', 'Sonderend stuk', 'Vraag aan PS', 'Context', 'Voorstel', 'Statenvoorstel', 'Argumenten', 'Geachte'
   ];
 
   let activeDefaultWords = [...originalDefaultWords];
@@ -45,7 +45,7 @@
   let initialLoadComplete = false; // Vlag om initiële lading bij te houden
 
   // Reactive statement for preservedWords based on user words and default toggle
-  $: preservedWords = useDefaultWords ? [...new Set([...userWords, ...activeDefaultWords])] : [...new Set(userWords)]; // Use Set to ensure uniqueness
+  $: preservedWords = useDefaultWords ? [...new Set([...userWords, ...activeDefaultWords])] : [...new Set(userWords)]; 
 
   // Model selection logic
   let selectedModels = ['']; 
@@ -453,8 +453,10 @@
   // Helper function to convert markdown **bold** to HTML <strong> for display
   function processText(text) {
     if (!text) return '';
-    // Replace **text** with <strong>text</strong>, handle spaces around **
-    return text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    // Tekst wordt nu direct geretourneerd.
+    // De backend is verantwoordelijk voor het correct formatteren van kopjes met <strong> tags.
+    // De {@html outputText} directive in de template zal deze tags renderen.
+    return text;
   }
 
   // Reactive calculation for progress display text
@@ -466,7 +468,7 @@
     <div class="flex justify-between items-center mb-6">
       <div class="flex items-center gap-2">
         <h1 class="text-2xl font-bold text-gray-800 dark:text-white">
-          {languageLevel}-Taalniveau Vereenvoudiger
+          {languageLevel}-DuoLimbo
         </h1>
         <!-- Add info button next to the title -->
         <button
@@ -505,7 +507,7 @@
     <div class="mb-4">
       <!-- Removed the flex justify-between and the button -->
       <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-        Woorden die niet vereenvoudigd mogen worden:
+        Kies woorden die niet vereenvoudigd mogen worden:
       </h3>
       
       <!-- Preview of preserved words (first 5 with count) -->
@@ -740,7 +742,7 @@
   <div class="p-6">
     <div class="flex justify-between items-center mb-4">
       <h2 class="text-xl font-bold text-gray-800 dark:text-white">
-        Woorden die niet vereenvoudigd worden
+        Kies woorden die niet vereenvoudigd worden
       </h2>
       <button
         on:click={() => showPreservedWordsModal = false}

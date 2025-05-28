@@ -91,37 +91,48 @@ def split_into_chunks(text: str, max_tokens: int = 2500) -> List[str]:
 async def generate_version(request: Request, chunk: str, model: str, preserved_words: List[str], language_level: str, user: Any, index: int, temperature: float) -> dict:
     """Generate a single version of simplified text for a specific temperature and return with index and temperature"""
     if not chunk or chunk.isspace():
-        # Return empty strings as they might be intentional paragraph breaks
-        return {"index": index, "temperature": temperature, "text": chunk, "error": None} # Ensure error key exists
+        return {"index": index, "temperature": temperature, "text": chunk, "error": None}
 
     preserved_words_text = ", ".join(f"'{word}'" for word in preserved_words) if preserved_words else "geen"
-    # Updated system prompt with instruction for bold text and preserved words
+    
     generation_system_prompt = f"""Je taak is om de volgende tekst te analyseren en te herschrijven naar een versie die voldoet aan het {language_level}-taalniveau.
-Hierbij is het belangrijk om de informatie zo letterlijk mogelijk over te brengen en de structuur zoveel mogelijk te behouden, zonder onnodige weglatingen.
-Het {language_level}-niveau kenmerkt zich door duidelijk en eenvoudig taalgebruik, geschikt voor een breed publiek met basisvaardigheden in de taal.
+Behoud de structuur zoveel mogelijk.
 
-Hier zijn enkele richtlijnen om je te helpen bij deze taak:
-- Gebruik korte zinnen en vermijd lange, complexe zinsconstructies.
-- Vervang moeilijke woorden door meer gangbare alternatieven.
-- Leg technische termen en (ambtelijk) jargon uit in eenvoudige bewoordingen.
-- Gebruik actieve zinsconstructies waar mogelijk.
-- Vermijd passieve zinnen en ingewikkelde grammaticale constructies.
-- Gebruik concrete voorbeelden om abstracte concepten te verduidelijken.
+Richtlijnen {language_level}-niveau:
+- Korte zinnen.
+- Eenvoudige, alledaagse woorden.
+- Leg jargon uit.
+- Actieve zinsconstructies.
+- Concrete voorbeelden.
 
-Hier zijn enkele voorbeelden van woorden op C1-niveau en hun eenvoudigere {language_level}-equivalenten:
+Voorbeelden C1 -> {language_level}:
 - Betreffende -> Over
-- Creëren -> Ontwerpen, vormen, vormgeven, maken
+- Creëren -> Maken, ontwerpen, vormen
 - Prioriteit -> Voorrang, voorkeur
 - Relevant -> Belangrijk
 - Verstrekken -> Geven
 
-BELANGRIJK: De volgende woorden moeten exact behouden blijven en mogen NIET vereenvoudigd worden: {preserved_words_text}.
+BELANGRIJK - Te behouden woorden: De volgende woorden/termen moeten exact behouden blijven en mogen NIET vereenvoudigd worden: {preserved_words_text}.
 
-Zorg ervoor dat de hoofdboodschap van de tekst behouden blijft en dat de vereenvoudigde versie nog steeds een accurate weergave is van de oorspronkelijke inhoud.
-BELANGRIJK: Tekst tussen dubbele sterretjes (zoals **dit**) moet ook vereenvoudigd worden naar {language_level}-niveau. Behoud de dubbele sterretjes rond de vereenvoudigde tekst in de output. Dit geldt ook voor kopjes of andere belangrijke termen die zo gemarkeerd zijn.
-Zorg ervoor dat de hoofdboodschap van de tekst behouden blijft en dat de vereenvoudigde versie nog steeds een accurate weergave is van de oorspronkelijke inhoud.
-Gebruik deze instructies om de tekst te vereenvoudigen en zorg ervoor dat deze voldoet aan het {language_level}-taalniveau.
-Plaats de verbeterde paragraaf tussen "<<<" en ">>>" tekens. Als de tekst te kort is om te verbeteren neem je de tekst een-op-een over en plaats deze tussen de genoemde tekens, bijv. "<<< **Artikel 3.2** >>>"."""
+BELANGRIJK - Omgaan met **dikgedrukte** tekst (gemarkeerd met dubbele asterisken):
+1.  Als de tekst binnen **...** een KOPJE is (bijvoorbeeld: het staat op een eigen regel, is kort en introduceert een nieuwe sectie):
+    a. Vereenvoudig de inhoud van het kopje naar {language_level}-niveau.
+    b. Formatteer het vereenvoudigde kopje in de output als `<strong>Vereenvoudigd Kopje</strong>`.
+    c. Als een 'te behouden woord' deel is van het kopje, blijft dat woord ongewijzigd binnen de `<strong>` tags.
+2.  Als de tekst binnen **...** GEEN kopje is (maar een ander benadrukt woord of zinsdeel):
+    a. Vereenvoudig de inhoud naar {language_level}-niveau.
+    b. Geef deze vereenvoudigde inhoud weer als normale tekst, ZONDER `<strong>` tags of andere vetgedrukte opmaak. Verwijder de `**` markeringen.
+
+Zorg dat de hoofdboodschap van de tekst behouden blijft en dat de vereenvoudigde versie een accurate weergave is van de oorspronkelijke inhoud.
+Plaats de volledige, verbeterde paragraaf tussen "<<<" en ">>>" tekens.
+Voorbeeld input:
+"**Algemene Inleiding**
+Dit is een **zeer** complexe zin die **onmiddellijk** aandacht behoeft."
+Mogelijke output (als "Algemene Inleiding" een kopje is en "zeer" en "onmiddellijk" niet):
+"<<< <strong>Inleiding</strong>
+Dit is een moeilijke zin die nu aandacht nodig heeft. >>>"
+Als de tekst te kort is om te verbeteren (bijv. alleen een kopje dat al B1 is, of een 'te behouden woord' als kopje), neem de tekst dan over met de juiste formattering. Bijvoorbeeld, input: "**Artikel 3.2**", output (als "Artikel 3.2" een te behouden woord is en als kopje wordt gezien): "<<< <strong>Artikel 3.2</strong> >>>".
+"""
 
     form_data = {
         "model": model,
@@ -164,61 +175,57 @@ Plaats de verbeterde paragraaf tussen "<<<" en ">>>" tekens. Als de tekst te kor
 async def select_best_version(request: Request, original_chunk: str, generated_versions: List[dict], model: str, language_level: str, preserved_words: List[str], user: Any, index: int) -> dict: # Added preserved_words
     """Selects the best version from generated texts using an LLM based on a specific prompt."""
 
-    # Filter successful versions (generated_versions now contain the full LLM output from generate_version)
     successful_versions = [v for v in generated_versions if v.get("error") is None and v.get("text", "").strip()]
 
-    # Handle cases with no successful versions or only empty results
     if not successful_versions:
          print(f"Warning: No successful versions generated for chunk {index}. Returning original chunk.")
          return {"index": index, "text": original_chunk, "selection_error": "No successful versions to select from."}
 
     preserved_words_text = ", ".join(f"'{word}'" for word in preserved_words) if preserved_words else "geen"
-    # System prompt for selection remains the same
-    selection_system_prompt = f"""Je taak is om de volgende tekst te analyseren en te herschrijven naar een versie die voldoet aan het {language_level}-taalniveau.
-Hierbij is het belangrijk om de informatie zo letterlijk mogelijk over te brengen en de structuur zoveel mogelijk te behouden, zonder onnodige weglatingen.
-Het {language_level}-niveau kenmerkt zich door duidelijk en eenvoudig taalgebruik, geschikt voor een breed publiek met basisvaardigheden in de taal.
+    
+    selection_system_prompt = f"""Je taak is het selecteren en eventueel combineren van de beste {language_level}-versie uit de aangeleverde varianten van een originele paragraaf. De definitieve tekst moet voldoen aan {language_level}-taalniveau.
 
-Hier zijn enkele richtlijnen om je te helpen bij deze taak:
-- Gebruik korte zinnen en vermijd lange, complexe zinsconstructies.
-- Vervang moeilijke woorden door meer gangbare alternatieven.
-- Leg technische termen en (ambtelijk) jargon uit in eenvoudige bewoordingen.
-- Gebruik actieve zinsconstructies waar mogelijk.
-- Vermijd passieve zinnen en ingewikkelde grammaticale constructies.
-- Gebruik concrete voorbeelden om abstracte concepten te verduidelijken.
+Richtlijnen {language_level}-niveau:
+- Korte zinnen, eenvoudige woorden.
+- Jargon uitleggen.
+- Actieve zinnen, concreet.
 
-Hier zijn enkele voorbeelden van woorden op C1-niveau en hun eenvoudigere {language_level}-equivalenten:
-- Betreffende -> Over
-- Creëren -> Ontwerpen, vormen, vormgeven, maken
-- Prioriteit -> Voorrang, voorkeur
-- Relevant -> Belangrijk
-- Verstrekken -> Geven
+BELANGRIJK - Te behouden woorden: De volgende woorden/termen moeten exact behouden blijven en mogen NIET vereenvoudigd worden: {preserved_words_text}.
 
-BELANGRIJK: De volgende woorden moeten exact behouden blijven en mogen NIET vereenvoudigd worden: {preserved_words_text}.
+BELANGRIJK - Definitieve formattering van **dikgedrukte** tekst (oorspronkelijk gemarkeerd met dubbele asterisken `**...**`):
+1.  Identificeer KOPJES in de originele tekst (vaak op een eigen regel, kort, introducerend een sectie).
+    a. Zorg dat de inhoud van deze kopjes vereenvoudigd is naar {language_level}-niveau in de gekozen/gecombineerde variant.
+    b. Formatteer deze vereenvoudigde kopjes in de output als `<strong>Vereenvoudigd Kopje</strong>`.
+    c. 'Te behouden woorden' binnen kopjes blijven ongewijzigd binnen de `<strong>` tags.
+2.  Voor andere tekst die oorspronkelijk **dikgedrukt** was (maar GEEN kopje):
+    a. Zorg dat de inhoud vereenvoudigd is naar {language_level}-niveau.
+    b. Geef deze vereenvoudigde inhoud weer als normale tekst, ZONDER `<strong>` tags of andere vetgedrukte opmaak. Verwijder eventuele overgebleven `**` markeringen.
 
-Zorg ervoor dat de inhoud en nuances van de oorspronkelijke tekst behouden blijven en dat de vereenvoudigde versie nog steeds een accurate weergave is van de oorspronkelijke inhoud.
-BELANGRIJK: Zorg ervoor dat tekst tussen dubbele sterretjes (zoals **dit**) ook vereenvoudigd is naar {language_level}-niveau in de definitieve versie. Behoud de dubbele sterretjes rond de vereenvoudigde tekst in de output. Dit geldt ook voor kopjes of andere belangrijke termen die zo gemarkeerd zijn.
+De input varianten kunnen nog `<<<` en `>>>` tekens bevatten en mogelijk `<strong>` tags of `**` markup van de vorige stap.
+Jouw taak is om tot één definitieve, schone {language_level}-versie te komen.
 
-Zorg ervoor dat de inhoud en nuances van de oorspronkelijke tekst behouden blijven en dat de vereenvoudigde versie nog steeds een accurate weergave is van de oorspronkelijke inhoud.
-Je ontvangt de originele paragraaf, samen met enkele varianten van deze tekst in eenvoudigere taal ({language_level}). Deze varianten kunnen nog de "<<<" en ">>>" tekens bevatten. Het is jouw taak om tot een definitieve {language_level}-versie te komen ZONDER deze tekens, maar wel met behoud van **dikgedrukte** tekst.
-
-Plaats de definitieve, verbeterde paragraaf tussen "<<<" en ">>>" tekens. Als de tekst te kort is om te verbeteren neem je de tekst een-op-een over en plaats deze tussen de genoemde tekens, bijv. "<<< **Artikel 3.2** >>>".""" # Prompt still asks selection model to use <<< >>>
+Plaats de definitieve, verbeterde paragraaf tussen "<<<" en ">>>" tekens. Zorg ervoor dat alleen de geïdentificeerde en vereenvoudigde kopjes `<strong>` HTML-tags gebruiken in de uiteindelijke output binnen de `<<<` en `>>>`. Alle andere `**` markeringen moeten verwijderd zijn.
+"""
 
     variants_text = ""
     for i, version_data in enumerate(successful_versions):
-        # Pass the full text (potentially with <<< >>>) from generate_version
         variant_text = version_data.get('text', '')
-        variants_text += f"Variant {i+1} (gegenereerd met temperature={version_data['temperature']}):\n{variant_text}\n---\n" # Pass the raw text
+        variants_text += f"Variant {i+1} (gegenereerd met temperature={version_data['temperature']}):\n{variant_text}\n---\n"
 
     selection_user_content = f"""Originele Paragraaf:
 ---
 {original_chunk}
 ---
 
-Gegenereerde {language_level} Varianten (kunnen '<<<' en '>>>' bevatten):
+Gegenereerde {language_level} Varianten (kunnen '<<<', '>>>', '**', of '<strong>' bevatten):
 ---
 {variants_text}
-Kies de beste variant of combineer/verbeter ze tot de definitieve {language_level}-versie, geplaatst tussen <<< en >>>. Verwijder de <<< en >>> uit de input varianten in de uiteindelijke output. Zorg ervoor dat tekst binnen **dubbele sterretjes** ook vereenvoudigd is en behoud de sterretjes in de output.
-BELANGRIJK: Zorg ervoor dat de volgende woorden exact behouden blijven en NIET vereenvoudigd worden: {preserved_words_text}.""" # Updated user content instruction
+---
+Selecteer/combineer tot de beste {language_level}-versie.
+Pas de formatteringsregels voor KOPJES (`<strong>Kopje</strong>`) en andere **dikgedrukte** tekst (verwijder `**`, normale tekst) correct toe.
+Behoud de 'te behouden woorden': {preserved_words_text}.
+Plaats de definitieve tekst tussen `<<<` en `>>>`.
+"""
 
     form_data = {
         "model": model,
