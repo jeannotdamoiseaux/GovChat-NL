@@ -11,7 +11,7 @@ import re
 
 router = APIRouter()
 
-def split_into_chunks(text: str, max_tokens: int = 1500) -> List[str]:
+def split_into_chunks(text: str, max_tokens: int = 2500) -> List[str]:
     """Split text into chunks of approximately max_tokens"""
     encoding = tiktoken.get_encoding("cl100k_base")
     paragraphs = text.split('\n')
@@ -121,7 +121,7 @@ Zorg ervoor dat de hoofdboodschap van de tekst behouden blijft en dat de vereenv
 BELANGRIJK: Tekst tussen dubbele sterretjes (zoals **dit**) moet ook vereenvoudigd worden naar {language_level}-niveau. Behoud de dubbele sterretjes rond de vereenvoudigde tekst in de output. Dit geldt ook voor kopjes of andere belangrijke termen die zo gemarkeerd zijn.
 Zorg ervoor dat de hoofdboodschap van de tekst behouden blijft en dat de vereenvoudigde versie nog steeds een accurate weergave is van de oorspronkelijke inhoud.
 Gebruik deze instructies om de tekst te vereenvoudigen en zorg ervoor dat deze voldoet aan het {language_level}-taalniveau.
-Plaats de verbeterde paragraaf tussen "<<<" en ">>>" tekens. Als de tekst te kort is om te verbeteren neem je de tekst een-op-een over en plaats deze tussen de genoemende tekens, bijv. "<<< **Artikel 3.2** >>>"."""
+Plaats de verbeterde paragraaf tussen "<<<" en ">>>" tekens. Als de tekst te kort is om te verbeteren neem je de tekst een-op-een over en plaats deze tussen de genoemde tekens, bijv. "<<< **Artikel 3.2** >>>"."""
 
     form_data = {
         "model": model,
@@ -201,7 +201,7 @@ BELANGRIJK: Zorg ervoor dat tekst tussen dubbele sterretjes (zoals **dit**) ook 
 Zorg ervoor dat de inhoud en nuances van de oorspronkelijke tekst behouden blijven en dat de vereenvoudigde versie nog steeds een accurate weergave is van de oorspronkelijke inhoud.
 Je ontvangt de originele paragraaf, samen met enkele varianten van deze tekst in eenvoudigere taal ({language_level}). Deze varianten kunnen nog de "<<<" en ">>>" tekens bevatten. Het is jouw taak om tot een definitieve {language_level}-versie te komen ZONDER deze tekens, maar wel met behoud van **dikgedrukte** tekst.
 
-Plaats de definitieve, verbeterde paragraaf tussen "<<<" en ">>>" tekens. Als de tekst te kort is om te verbeteren neem je de tekst een-op-een over en plaats deze tussen de genoemende tekens, bijv. "<<< **Artikel 3.2** >>>".""" # Prompt still asks selection model to use <<< >>>
+Plaats de definitieve, verbeterde paragraaf tussen "<<<" en ">>>" tekens. Als de tekst te kort is om te verbeteren neem je de tekst een-op-een over en plaats deze tussen de genoemde tekens, bijv. "<<< **Artikel 3.2** >>>".""" # Prompt still asks selection model to use <<< >>>
 
     variants_text = ""
     for i, version_data in enumerate(successful_versions):
@@ -264,9 +264,24 @@ class SimplifyTextRequest(BaseModel):
 async def simplify_text_endpoint(request: Request, data: SimplifyTextRequest, user = Depends(get_current_user)):
     """Endpoint to simplify text to B1/B2 level. Generates 3 versions per chunk, then selects the best."""
 
+    # --- START: Automatically detect and add law articles to preserved_words ---
+    # Regex to find common law article mentions (e.g., Artikel 1, art. 2.3, Artikel 3:16)
+    # This regex aims for "Artikel X", "Artikel X.Y", "Artikel X:Y", "Artikel Xa", "artikel X lid Y" (captures "artikel X")
+    law_article_regex = r'\b(?:[Aa]rtikel|[Aa]rt\.)\s*\d+(?:[.:]\w+)*\b'
+    
+    found_articles = re.findall(law_article_regex, data.text)
+    
+    # Combine with user-provided preserved words, ensuring uniqueness
+    current_preserved_words = set(data.preserved_words)
+    for article in found_articles:
+        current_preserved_words.add(article)
+    
+    data.preserved_words = list(current_preserved_words)
+    # --- END: Automatically detect and add law articles to preserved_words ---
+
     chunks = split_into_chunks(data.text)
     num_chunks = len(chunks)
-    temperatures = [1.0, 0.8, 0.6]
+    temperatures = [1.0, 1.0, 1.0]
 
     if num_chunks == 0:
         async def empty_stream():

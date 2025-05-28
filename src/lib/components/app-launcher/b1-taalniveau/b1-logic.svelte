@@ -35,11 +35,14 @@
     'Provinciale infrastructuur', 'Omgevingsverordening', 'Energietransitie', 'Waterkwaliteit',
     'Duurzaamheidsagenda', 'Natuurbeheerplan', 'Mobiliteitsvisie', 'Sociale agenda',
     'Bodembeleid', 'Burgerparticipatie', 'Ecologie', 'Ecologisch', 'Groenbeleid',
-    'Natuur- en landschapsbeheerorganisaties'
+    'Natuur- en landschapsbeheerorganisaties', 'Informerend stuk', 'Onderwerp', 'Samenvatting', 
+    'Kennisnemen van', 'Aanleiding en bestuurlijke context', 'Bevoegdheid', 'Communicatie', 'Vervolg', 
+    'Bijlage(n)', 'Sonderend stuk', 'Vraag aan PS', 'Context', 'Voorstel', 'Statenvoorstel', 'Geachte'
   ];
 
   let activeDefaultWords = [...originalDefaultWords];
   let userWords = [];
+  let initialLoadComplete = false; // Vlag om initiële lading bij te houden
 
   // Reactive statement for preservedWords based on user words and default toggle
   $: preservedWords = useDefaultWords ? [...new Set([...userWords, ...activeDefaultWords])] : [...new Set(userWords)]; // Use Set to ensure uniqueness
@@ -55,6 +58,34 @@
   }
 
   onMount(async () => {
+    if (browser) {
+      console.log('[B1 Logic] onMount: Attempting to load userWords from localStorage.');
+      const storedUserWords = localStorage.getItem('b1UserPreservedWords');
+      console.log('[B1 Logic] onMount: storedUserWords string from localStorage:', storedUserWords);
+      if (storedUserWords) {
+        try {
+          const parsedWords = JSON.parse(storedUserWords);
+          console.log('[B1 Logic] onMount: Parsed words:', parsedWords);
+          if (Array.isArray(parsedWords)) {
+            userWords = parsedWords;
+            console.log('[B1 Logic] onMount: userWords updated from localStorage:', JSON.parse(JSON.stringify(userWords)));
+          } else {
+            console.warn('[B1 Logic] onMount: Parsed data from localStorage is not an array, resetting userWords.');
+            userWords = [];
+          }
+        } catch (e) {
+          console.error('[B1 Logic] onMount: Error parsing userWords from localStorage:', e);
+          userWords = []; 
+        }
+      } else {
+        console.log('[B1 Logic] onMount: No userWords found in localStorage. userWords remains default empty array.');
+      }
+      initialLoadComplete = true; // Zet vlag na het laden
+      console.log('[B1 Logic] onMount: initialLoadComplete set to true.');
+    } else {
+      console.log('[B1 Logic] onMount: Not in browser environment (e.g., during SSR).');
+      initialLoadComplete = true; // Ook true zetten als niet in browser om onnodige blokkade te voorkomen
+    }
     try {
       // Check sessionStorage first (like the navbar does)
       if (browser && sessionStorage.getItem('selectedModels')) {
@@ -92,6 +123,13 @@
       }
     }
   });
+
+  // Reactive statement to save userWords to localStorage whenever it changes
+  $: if (browser && initialLoadComplete) { // Controleer de vlag
+    console.log('[B1 Logic] Reactive save: Attempting to save userWords to localStorage. Current userWords:', JSON.parse(JSON.stringify(userWords)));
+    localStorage.setItem('b1UserPreservedWords', JSON.stringify(userWords));
+    console.log('[B1 Logic] Reactive save: userWords successfully saved to localStorage.');
+  }
 
   // Improved mechanism to detect model updates
   // Works within the same tab/window as well
@@ -433,12 +471,13 @@
         <!-- Add info button next to the title -->
         <button
           on:click={() => showInfoModal = true}
-          class="bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-white font-medium py-1 px-2 rounded-full focus:outline-none focus:shadow-outline flex items-center justify-center w-6 h-6"
-          aria-label="Informatie over de B1-taalniveau app"
+          class="bg-blue-100 hover:bg-blue-200 dark:bg-blue-700 dark:hover:bg-blue-600 text-blue-700 dark:text-blue-200 font-medium py-1.5 px-3 rounded-md focus:outline-none focus:shadow-outline flex items-center gap-1.5"
+          aria-label="Uitleg over de B1-taalniveau vereenvoudiger"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
+          <span>Uitleg</span>
         </button>
       </div>
       
@@ -751,28 +790,71 @@
     </div>
 
     <!-- List of preserved words -->
-    <div class="max-h-[300px] overflow-y-auto border border-gray-300 rounded-md p-2 bg-gray-50 dark:bg-gray-700 dark:border-gray-600">
-      <div class="flex flex-wrap gap-2">
-        {#each preservedWords as word}
-          <div class="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 px-2 py-1 rounded-md flex items-center">
-            <span>{word}</span>
-            <button 
-              on:click={() => removePreservedWord(word)}
-              class="ml-2 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 focus:outline-none"
-            >
-              ×
-            </button>
+    <div class="max-h-[300px] overflow-y-auto border border-gray-300 rounded-md p-3 bg-gray-50 dark:bg-gray-700 dark:border-gray-600 space-y-4">
+      <!-- User-added words -->
+      <div>
+        <h4 class="text-sm font-semibold text-gray-600 dark:text-gray-300 mb-2">
+          Door Gebruiker Toegevoegde Woorden
+        </h4>
+        {#if userWords.length > 0}
+          <div class="flex flex-wrap gap-2">
+            {#each userWords as word (word)}
+              <div class="bg-green-100 text-green-800 dark:bg-green-700 dark:text-green-100 px-2.5 py-1 rounded-md flex items-center text-sm">
+                <span>{word}</span>
+                <button
+                  on:click={() => removePreservedWord(word)}
+                  class="ml-2 text-green-600 hover:text-green-800 dark:text-green-300 dark:hover:text-green-100 focus:outline-none"
+                  title="Verwijder dit woord"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            {/each}
           </div>
-        {/each}
+        {:else}
+          <p class="text-sm text-gray-500 dark:text-gray-400 italic">Geen eigen woorden toegevoegd.</p>
+        {/if}
       </div>
-      {#if preservedWords.length === 0}
+
+      <!-- Default words (if toggle is on) -->
+      {#if useDefaultWords}
+        <div>
+          <h4 class="text-sm font-semibold text-gray-600 dark:text-gray-300 mb-2">
+            Standaard Woorden (actief)
+          </h4>
+          {#if activeDefaultWords.length > 0}
+            <div class="flex flex-wrap gap-2">
+              {#each activeDefaultWords as word (word)}
+                <div class="bg-blue-100 text-blue-800 dark:bg-blue-700 dark:text-blue-100 px-2.5 py-1 rounded-md flex items-center text-sm">
+                  <span>{word}</span>
+                  <button
+                    on:click={() => removePreservedWord(word)}
+                    class="ml-2 text-blue-600 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-100 focus:outline-none"
+                    title="Verberg dit standaard woord tijdelijk (wordt hersteld als de toggle uit/aan gaat)"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              {/each}
+            </div>
+          {:else}
+             <p class="text-sm text-gray-500 dark:text-gray-400 italic">Alle standaard woorden zijn momenteel verborgen. Zet de toggle hierboven uit en weer aan om ze te herstellen.</p>
+          {/if}
+        </div>
+      {/if}
+
+      {#if userWords.length === 0 && (!useDefaultWords || activeDefaultWords.length === 0)}
         <div class="text-center text-gray-500 dark:text-gray-400 py-4">
-          Geen woorden geselecteerd. Voeg woorden toe die niet vereenvoudigd mogen worden.
+          Geen woorden geselecteerd om te behouden. Voeg eigen woorden toe of activeer de standaardlijst via de toggle hierboven.
         </div>
       {/if}
     </div>
 
-    <div class="mt-4 flex justify-end">
+    <div class="mt-6 flex justify-end">
       <button
         on:click={() => showPreservedWordsModal = false}
         class="bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-white font-medium py-1 px-3 rounded focus:outline-none focus:shadow-outline"
