@@ -4,7 +4,7 @@
     // Lijst van alle beschikbare apps met permissielogica
     let apps = [
       {
-        name: 'DuoLimbo',
+        name: 'Taal-Versimpelaar',
         icon: '🔤',
         href: '/app-launcher/b1-taalniveau',
         permission: (user) => user?.role === 'admin' || user?.permissions?.appLauncher?.b1_taalniveau

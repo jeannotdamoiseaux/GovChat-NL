@@ -468,7 +468,7 @@
     <div class="flex justify-between items-center mb-6">
       <div class="flex items-center gap-2">
         <h1 class="text-2xl font-bold text-gray-800 dark:text-white">
-          {languageLevel}-DuoLimbo
+          {languageLevel}-Versimpelaar
         </h1>
         <!-- Add info button next to the title -->
         <button
