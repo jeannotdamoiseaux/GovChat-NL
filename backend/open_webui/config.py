@@ -2613,3 +2613,45 @@ ENABLE_CONTROLS_BUTTON = PersistentConfig(
     "customization.enable_controls_button",
     os.getenv("ENABLE_CONTROLS_BUTTON", "False").lower() == "true",
 )
+
+SHOW_API_TOKENS = PersistentConfig(
+    "SHOW_API_TOKENS",
+    "customization.show_api_tokens",
+    os.getenv("SHOW_API_TOKENS", "False").lower() == "true",
+)
+
+SHOW_CHANGE_PASSWORD = PersistentConfig(
+    "SHOW_CHANGE_PASSWORD",
+    "customization.show_change_password",
+    os.getenv("SHOW_CHANGE_PASSWORD", "False").lower() == "true",
+)
+
+ALLOW_USERNAME_EDIT = PersistentConfig(
+    "ALLOW_USERNAME_EDIT",
+    "customization.allow_username_edit",
+    os.getenv("ALLOW_USERNAME_EDIT", "False").lower() == "true",
+)
+
+SHOW_ABOUT_TAB = PersistentConfig(
+    "SHOW_ABOUT_TAB",
+    "customization.show_about_tab",
+    os.getenv("SHOW_ABOUT_TAB", "False").lower() == "true",
+)
+
+SHOW_OVERVIEW_IN_DROPDOWN = PersistentConfig(
+    "SHOW_OVERVIEW_IN_DROPDOWN",
+    "customization.show_overview_in_dropdown",
+    os.getenv("SHOW_OVERVIEW_IN_DROPDOWN", "False").lower() == "true",
+)
+
+SHOW_WIDESCREEN_MODE = PersistentConfig(
+    "SHOW_WIDESCREEN_MODE",
+    "customization.show_widescreen_mode",
+    os.getenv("SHOW_WIDESCREEN_MODE", "False").lower() == "true",
+)
+
+SHOW_ARCHIVED_CHATS = PersistentConfig(
+    "SHOW_ARCHIVED_CHATS",
+    "customization.show_archived_chats",
+    os.getenv("SHOW_ARCHIVED_CHATS", "False").lower() == "true",
+)
