@@ -323,6 +323,17 @@ from open_webui.config import (
     # Customization for GovChat-NL
     EMPTY_CHAT_WELCOME_MESSAGE,
     LOGIN_SCREEN_SUBTITLE,
+    ENABLE_CALL,
+    ENABLE_MULTIPLE_MODELS,
+    ENABLE_CONTROLS_BUTTON,
+    SHOW_API_TOKENS,
+    SHOW_CHANGE_PASSWORD,
+    ALLOW_USERNAME_EDIT,
+    SHOW_ABOUT_TAB,
+    SHOW_OVERVIEW_IN_DROPDOWN,
+    SHOW_WIDESCREEN_MODE,
+    SHOW_ARCHIVED_CHATS,
+
     AppConfig,
     reset_config,
 )
@@ -381,6 +392,9 @@ from open_webui.tasks import (
     stop_task,
     list_tasks,
 )  # Import from tasks.py
+
+from open_webui.routers.app_launcher.b1_taalniveau import taalniveau
+
 
 from open_webui.utils.redis import get_sentinels_from_env
 
@@ -929,7 +943,7 @@ async def inspect_websocket(request: Request, call_next):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ALLOW_ORIGIN, #Dit veranderen naar "http://localhost:5173", standaard is dit CORS_ALLOW_ORIGIN
+    allow_origins=["http://localhost:5173"], #Dit veranderen naar "http://localhost:5173", standaard is dit CORS_ALLOW_ORIGIN
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -973,6 +987,10 @@ app.include_router(
     evaluations.router, prefix="/api/v1/evaluations", tags=["evaluations"]
 )
 app.include_router(utils.router, prefix="/api/v1/utils", tags=["utils"])
+
+# Voeg dit toe bij de andere app.include_router statements
+app.include_router(taalniveau.router, prefix="/api/b1", tags=["taalniveau"])
+
 
 
 try:
@@ -1278,7 +1296,16 @@ async def get_app_config(request: Request):
         "customization": {
             "empty_chat_welcome_message": EMPTY_CHAT_WELCOME_MESSAGE.value,
             "login_screen_subtitle": LOGIN_SCREEN_SUBTITLE.value,
-
+            "enable_call": ENABLE_CALL.value,
+            "enable_multiple_models": ENABLE_MULTIPLE_MODELS.value,
+            "enable_controls_button": ENABLE_CONTROLS_BUTTON.value,
+            "show_api_tokens": SHOW_API_TOKENS.value,
+            "show_change_password": SHOW_CHANGE_PASSWORD.value,
+            "allow_username_edit": ALLOW_USERNAME_EDIT.value,
+            "show_about_tab": SHOW_ABOUT_TAB.value,
+            "show_overview_in_dropdown": SHOW_OVERVIEW_IN_DROPDOWN.value,
+            "show_widescreen_mode": SHOW_WIDESCREEN_MODE.value,
+            "show_archived_chats": SHOW_ARCHIVED_CHATS.value,
         },
         "features": {
             "auth": WEBUI_AUTH,

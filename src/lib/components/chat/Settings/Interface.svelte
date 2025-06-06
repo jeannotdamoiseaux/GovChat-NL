@@ -35,9 +35,8 @@
 	let detectArtifacts = true;
 
 	let richTextInput = true;
-	let promptAutocomplete = false;
-
 	let largeTextAsFile = false;
+	let notificationSound = true;
 
 	let landingPageMode = '';
 	let chatBubble = true;
@@ -80,11 +79,6 @@
 	const toggleSplitLargeChunks = async () => {
 		splitLargeChunks = !splitLargeChunks;
 		saveSettings({ splitLargeChunks: splitLargeChunks });
-	};
-
-	const togglePromptAutocomplete = async () => {
-		promptAutocomplete = !promptAutocomplete;
-		saveSettings({ promptAutocomplete: promptAutocomplete });
 	};
 
 	const togglesScrollOnBranchChange = async () => {
@@ -279,7 +273,6 @@
 		voiceInterruption = $settings.voiceInterruption ?? false;
 
 		richTextInput = $settings.richTextInput ?? true;
-		promptAutocomplete = $settings.promptAutocomplete ?? false;
 		largeTextAsFile = $settings.largeTextAsFile ?? false;
 		copyFormatted = $settings.copyFormatted ?? false;
 
@@ -415,25 +408,27 @@
 				</div>
 			{/if}
 
-			<div>
-				<div class=" py-0.5 flex w-full justify-between">
-					<div class=" self-center text-xs">{$i18n.t('Widescreen Mode')}</div>
+			{#if $config?.customization?.show_widescreen_mode ?? true}
+				<div>
+					<div class=" py-0.5 flex w-full justify-between">
+						<div class=" self-center text-xs">{$i18n.t('Widescreen Mode')}</div>
 
-					<button
-						class="p-1 px-3 text-xs flex rounded-sm transition"
-						on:click={() => {
-							toggleWidescreenMode();
-						}}
-						type="button"
-					>
-						{#if widescreenMode === true}
-							<span class="ml-2 self-center">{$i18n.t('On')}</span>
-						{:else}
-							<span class="ml-2 self-center">{$i18n.t('Off')}</span>
-						{/if}
-					</button>
+						<button
+							class="p-1 px-3 text-xs flex rounded-sm transition"
+							on:click={() => {
+								toggleWidescreenMode();
+							}}
+							type="button"
+						>
+							{#if widescreenMode === true}
+								<span class="ml-2 self-center">{$i18n.t('On')}</span>
+							{:else}
+								<span class="ml-2 self-center">{$i18n.t('Off')}</span>
+							{/if}
+						</button>
+					</div>
 				</div>
-			</div>
+			{/if}
 
 			<div>
 				<div class=" py-0.5 flex w-full justify-between">
@@ -590,17 +585,17 @@
 			<div>
 				<div class=" py-0.5 flex w-full justify-between">
 					<div class=" self-center text-xs">
-						{$i18n.t('Auto-Copy Response to Clipboard')}
+						{$i18n.t('Detect Artifacts Automatically')}
 					</div>
 
 					<button
 						class="p-1 px-3 text-xs flex rounded-sm transition"
 						on:click={() => {
-							toggleResponseAutoCopy();
+							toggleDetectArtifacts();
 						}}
 						type="button"
 					>
-						{#if responseAutoCopy === true}
+						{#if detectArtifacts === true}
 							<span class="ml-2 self-center">{$i18n.t('On')}</span>
 						{:else}
 							<span class="ml-2 self-center">{$i18n.t('Off')}</span>
@@ -612,17 +607,17 @@
 			<div>
 				<div class=" py-0.5 flex w-full justify-between">
 					<div class=" self-center text-xs">
-						{$i18n.t('Rich Text Input for Chat')}
+						{$i18n.t('Auto-Copy Response to Clipboard')}
 					</div>
 
 					<button
 						class="p-1 px-3 text-xs flex rounded-sm transition"
 						on:click={() => {
-							toggleRichTextInput();
+							toggleResponseAutoCopy();
 						}}
 						type="button"
 					>
-						{#if richTextInput === true}
+						{#if responseAutoCopy === true}
 							<span class="ml-2 self-center">{$i18n.t('On')}</span>
 						{:else}
 							<span class="ml-2 self-center">{$i18n.t('Off')}</span>

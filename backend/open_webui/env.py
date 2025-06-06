@@ -107,8 +107,6 @@ log.setLevel(SRC_LOG_LEVELS["CONFIG"])
 
 # GovChat-NL
 WEBUI_NAME = os.environ.get("WEBUI_NAME", "GovChat-NL") 
-if WEBUI_NAME != "GovChat-NL":
-    WEBUI_NAME += " (GovChat-NL)"
 
 WEBUI_FAVICON_URL = "https://openwebui.com/favicon.png"
 

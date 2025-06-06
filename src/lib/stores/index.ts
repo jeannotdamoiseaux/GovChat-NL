@@ -198,6 +198,7 @@ type Config = {
 	status: boolean;
 	name: string;
 	version: string;
+	tutorial_version?: string;
 	default_locale: string;
 	default_models: string;
 	default_prompt_suggestions: PromptSuggestion[];

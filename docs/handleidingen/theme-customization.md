@@ -31,3 +31,31 @@ Voorbeeldinstelling:
 ```plaintext
 LOGIN_SCREEN_SUBTITLE="Jouw kennisassistent voor de Provincie Limburg"
 ```
+
+### `ENABLE_CALL` (Default: `False`)
+Met de variabele `ENABLE_CALL` kun je de belfunctie in de chatinterface activeren.  
+Standaard staat deze optie uitgeschakeld, omdat het voeren van een spraakgesprek alleen goed ondersteund wordt door specifieke AI-modellen en niet altijd relevant of duidelijk is voor alle gebruikers. Wanneer je `ENABLE_CALL=True` instelt in de omgeving, verschijnt de call-knop in de chatinterface. Gebruikers kunnen dan direct een spraakconversatie met het gekozen model starten.
+
+Voorbeeldinstelling:
+```plaintext
+ENABLE_CALL=True
+```
+
+### `ENABLE_MULTIPLE_MODELS` (Default: `False`)
+Met `ENABLE_MULTIPLE_MODELS` geef je gebruikers de mogelijkheid om in één chatgesprek meerdere AI-modellen tegelijk te selecteren en te gebruiken.  
+Wanneer deze optie is ingeschakeld (`ENABLE_MULTIPLE_MODELS=True`), kunnen er binnen één gesprek verschillende modellen tegelijkertijd worden bevraagd.
+Standaard staat deze functie uit om de interface eenvoudig te houden.
+
+Voorbeeldinstelling:
+```plaintext
+ENABLE_MULTIPLE_MODELS=True
+```
+
+### `ENABLE_CONTROLS_BUTTON` (Default: `False`)
+Deze optie maakt een extra besturingsknop ("controls button") zichtbaar in de chatinterface, waarmee aanvullende instellingen of actiemogelijkheden toegankelijk kunnen worden gemaakt voor de gebruiker.  
+Standaard is deze extra knop verborgen gehouden om de interface zo overzichtelijk en gebruiksvriendelijk mogelijk te houden. Zet je `ENABLE_CONTROLS_BUTTON=True`, dan verschijnt deze controls-knop.
+
+Voorbeeldinstelling:
+```plaintext
+ENABLE_CONTROLS_BUTTON=True
+```
