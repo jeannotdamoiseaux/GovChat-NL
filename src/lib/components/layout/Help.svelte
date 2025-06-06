@@ -21,7 +21,7 @@
 
     
     let activeSection = sections[0].id;
-    let openSectionId: string | null = sections[0].id;
+    let openSectionId: string | null = null;
     let activeSubsectionId: string | null = null;
     let contentDiv: HTMLDivElement;
 
@@ -268,20 +268,20 @@
                     {/each}
                 </div>
                 <!-- Footer met checkbox en sluitenknop -->
-                <div class="flex justify-end items-center space-x-6 pt-3 px-5 shrink-0 mt-6 mb-3">
+                <div class="flex justify-end items-center space-x-6 pt-3 px-5 shrink-0 mb-3">
                     <label class="flex items-center space-x-2 cursor-pointer text-sm text-gray-700 dark:text-gray-300">
                         <input
                             type="checkbox"
                             bind:checked={dontShowOnStartup}
                             class="form-checkbox rounded h-4 w-4 text-blue-600 dark:bg-gray-700 dark:border-gray-600 focus:ring-blue-500 transition duration-150 ease-in-out"
                         />
-                        <span>{$i18n.t('Niet meer tonen')}</span>
+                        <span>{$i18n.t('Niet meer automatisch tonen')}</span>
                     </label>
                     <button
                         on:click={closeHelp}
                         class="px-3.5 py-1.5 text-sm font-medium bg-black hover:bg-gray-900 text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-full"
                     >
-                        {$i18n.t('Oke')}
+                        {$i18n.t('Sluiten')}
                     </button>
                 </div>
             </div>

@@ -317,6 +317,14 @@ from open_webui.config import (
     ENABLE_CALL,
     ENABLE_MULTIPLE_MODELS,
     ENABLE_CONTROLS_BUTTON,
+    SHOW_API_TOKENS,
+    SHOW_CHANGE_PASSWORD,
+    ALLOW_USERNAME_EDIT,
+    SHOW_ABOUT_TAB,
+    SHOW_OVERVIEW_IN_DROPDOWN,
+    SHOW_WIDESCREEN_MODE,
+    SHOW_ARCHIVED_CHATS,
+
     AppConfig,
     reset_config,
 )
@@ -1234,6 +1242,13 @@ async def get_app_config(request: Request):
             "enable_call": ENABLE_CALL.value,
             "enable_multiple_models": ENABLE_MULTIPLE_MODELS.value,
             "enable_controls_button": ENABLE_CONTROLS_BUTTON.value,
+            "show_api_tokens": SHOW_API_TOKENS.value,
+            "show_change_password": SHOW_CHANGE_PASSWORD.value,
+            "allow_username_edit": ALLOW_USERNAME_EDIT.value,
+            "show_about_tab": SHOW_ABOUT_TAB.value,
+            "show_overview_in_dropdown": SHOW_OVERVIEW_IN_DROPDOWN.value,
+            "show_widescreen_mode": SHOW_WIDESCREEN_MODE.value,
+            "show_archived_chats": SHOW_ARCHIVED_CHATS.value,
         },
         "features": {
             "auth": WEBUI_AUTH,

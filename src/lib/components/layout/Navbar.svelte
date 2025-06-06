@@ -147,7 +147,7 @@
 							</Tooltip>
 						{/if}
 					{/if}
-
+				{/if}			
 				<Tooltip content={$i18n.t('New Chat')}>
 					<button
 						id="new-chat-button"
