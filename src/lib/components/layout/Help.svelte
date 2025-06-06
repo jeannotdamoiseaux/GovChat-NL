@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount, getContext } from 'svelte';
     import { browser } from '$app/environment'; 
-    import { settings } from '$lib/stores'; // Import settings store
+    import { settings, config } from '$lib/stores';
     import ShortcutsModal from '../chat/ShortcutsModal.svelte';
     import Tooltip from '../common/Tooltip.svelte';
     import Info from '$lib/components/icons/Info.svelte';
@@ -12,101 +12,49 @@
     let showShortcuts = false;
     let showHelp = false;
     let dontShowOnStartup = false;
-    const DONT_SHOW_HELP_ON_STARTUP_KEY = 'govchat_dont_show_help_on_startup';
+    
+    
+    const TUTORIAL_VERSION_KEY = 'tutorialVersion';
 
     let isFullScreen = false;
     const i18n = getContext('i18n');
 
+    
     let activeSection = sections[0].id;
     let openSectionId: string | null = null;
     let activeSubsectionId: string | null = null;
     let contentDiv: HTMLDivElement;
 
-    // Add this to expose a global event that can be listened to by other components
-    function dispatchSettingsChange() {
-        // Create a custom event that will bubble up to the document
-        const event = new CustomEvent('tutorial-setting-changed', {
-            detail: { showTutorialOnStartup: !dontShowOnStartup },
-            bubbles: true
-        });
-        document.dispatchEvent(event);
-    }
-
-    // Add this variable to track user interaction with the checkbox
-    let userJustChangedCheckbox = false;
-
-    // Add this reactive statement to sync the checkbox with settings store changes
-    $: if ($settings.showTutorialOnStartup !== undefined && !userJustChangedCheckbox) {
-        // Only update the checkbox if the value actually changed and user didn't just interact with it
-        if (dontShowOnStartup !== !$settings.showTutorialOnStartup) {
-            dontShowOnStartup = !$settings.showTutorialOnStartup;
-            
-            // Also update localStorage for consistency
-            if (browser) {
-                localStorage.setItem(DONT_SHOW_HELP_ON_STARTUP_KEY, dontShowOnStartup.toString());
-            }
-        }
-    }
 
     onMount(() => {
         if (browser) {
-            // PRIORITY 1: Check localStorage first (this gives the user's most recent choice priority)
-            const storedPreference = localStorage.getItem(DONT_SHOW_HELP_ON_STARTUP_KEY);
-            if (storedPreference !== null) {
-                dontShowOnStartup = storedPreference === 'true';
-                showHelp = !dontShowOnStartup;
-                
-                // Force the settings store to match our localStorage value
-                settings.update(current => ({
-                    ...current,
-                    showTutorialOnStartup: !dontShowOnStartup
-                }));
-                
-                // Also tell the rest of the application about our setting
-                dispatchSettingsChange();
-            }
-            // PRIORITY 2: Only if localStorage doesn't have a value, use the settings store
-            else if ($settings.showTutorialOnStartup !== undefined) {
-                dontShowOnStartup = !$settings.showTutorialOnStartup;
-                showHelp = $settings.showTutorialOnStartup;
-            }
-            // PRIORITY 3: Default to showing tutorial if nothing is set
-            else {
-                dontShowOnStartup = false;
-                showHelp = true;
-                
-                // Initialize settings
-                settings.update(current => ({
-                    ...current,
-                    showTutorialOnStartup: true
-                }));
-                dispatchSettingsChange();
+            
+            const storedTutorialVersion = localStorage.getItem(TUTORIAL_VERSION_KEY);
+            
+            
+            if ($config && $config.version) {
+                showHelp = storedTutorialVersion !== $config.version;
+                console.log('Help.svelte - Stored tutorial version:', storedTutorialVersion, 
+                          'Current version:', $config.version, 'Show help:', showHelp);
             }
         }
     });
 
-    function handleCheckboxChange() {
-        if (browser) {
-            // Set flag to prevent reactive statement from overriding user choice
-            userJustChangedCheckbox = true;
+    
+    function closeHelp() {
+        if (browser && dontShowOnStartup && $config) {
             
-            // Update localStorage (our source of truth)
-            localStorage.setItem(DONT_SHOW_HELP_ON_STARTUP_KEY, dontShowOnStartup.toString());
+            localStorage.setItem(TUTORIAL_VERSION_KEY, $config.version);
             
-            // Update the application settings store 
+            
             settings.update(current => ({
                 ...current,
-                showTutorialOnStartup: !dontShowOnStartup
+                showTutorialOnStartup: false
             }));
-            
-            // Tell the rest of the app about this change
-            dispatchSettingsChange();
-            
-            // Reset the flag after a longer delay to ensure settings propagate
-            setTimeout(() => {
-                userJustChangedCheckbox = false;
-            }, 500); // Increased from 100ms to 500ms
         }
+        
+        
+        showHelp = false;
     }
 
     $: if (contentDiv && activeSection) {
@@ -325,17 +273,12 @@
                         <input
                             type="checkbox"
                             bind:checked={dontShowOnStartup}
-                            on:click|stopPropagation={() => {
-                                // Manually set the value instead of relying on the bind
-                                dontShowOnStartup = !dontShowOnStartup;
-                                handleCheckboxChange();
-                            }}
                             class="form-checkbox rounded h-4 w-4 text-blue-600 dark:bg-gray-700 dark:border-gray-600 focus:ring-blue-500 transition duration-150 ease-in-out"
                         />
                         <span>{$i18n.t('Niet meer automatisch tonen')}</span>
                     </label>
                     <button
-                        on:click={() => showHelp = false}
+                        on:click={closeHelp}
                         class="px-3.5 py-1.5 text-sm font-medium bg-black hover:bg-gray-900 text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-full"
                     >
                         {$i18n.t('Sluiten')}
