@@ -25,13 +25,15 @@ LANGUAGE_SPECIFIC_PROMPTS = {
         "level_description": "Het B1-niveau kenmerkt zich door duidelijk en eenvoudig taalgebruik, geschikt voor een breed publiek met basisvaardigheden in de taal."
     },
     "B2": {
-        "examples_intro": "Hier zijn enkele voorbeelden van woorden en zinsconstructies en hun B2-equivalenten:", # Placeholder - pas aan met B2 specifieke voorbeelden
+        "examples_intro": "Hier zijn enkele voorbeelden van woorden op C2-niveau en hun eenvoudigere B2-equivalenten:",
         "examples_list": [
-            "- Voorbeeld B2: Complex woord -> Iets minder complex, maar correct woord", # Placeholder
-            "- Voorbeeld B2: Lange zin -> Kortere, maar goed gestructureerde zin", # Placeholder
-            "- Voorbeeld B2: Formeel -> Iets minder formeel, maar nog steeds professioneel"  # Placeholder
+            "- Faciliteren -> Mogelijk maken",
+            "- Implementatie -> Uitvoering",
+            "- Effectueren -> Realiseren",
+            "- Complexiteit -> Moeilijkheidsgraad",
+            "- Desalniettemin -> Toch"
         ],
-        "level_description": "Het B2-niveau kenmerkt zich door taalgebruik dat geschikt is voor een publiek dat de taal goed beheerst en in staat is om complexere teksten te begrijpen en produceren. De nadruk ligt op helderheid, correctheid en een gepaste stijl." # Placeholder - pas aan
+        "level_description": "Het B2-niveau kenmerkt zich door helder en gedetailleerd taalgebruik, geschikt voor een publiek met gevorderde taalvaardigheden. De tekst moet toegankelijk zijn zonder overmatig gebruik van complexe termen, gericht op lezers die bekend zijn met de basisprincipes van de taal en in staat zijn om zowel praktische als theoretische onderwerpen te begrijpen."
     }
     # Voeg hier eventueel andere taalniveaus toe
 }
