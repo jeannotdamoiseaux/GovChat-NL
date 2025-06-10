@@ -37,7 +37,7 @@
     'Bodembeleid', 'Burgerparticipatie', 'Ecologie', 'Ecologisch', 'Groenbeleid',
     'Natuur- en landschapsbeheerorganisaties', 'Informerend stuk', 'Onderwerp', 'Samenvatting', 
     'Kennisnemen van', 'Aanleiding en bestuurlijke context', 'Bevoegdheid', 'Communicatie', 'Vervolg', 
-    'Bijlage(n)', 'Sonderend stuk', 'Vraag aan PS', 'Context', 'Voorstel', 'Statenvoorstel', 'Geachte'
+    'Bijlage(n)', 'Sonderend stuk', 'Vraag aan PS', 'Context', 'Voorstel', 'Statenvoorstel', 'Geachte', 'Argumenten'
   ];
 
   let activeDefaultWords = [...originalDefaultWords];
@@ -505,7 +505,7 @@
     <div class="mb-4">
       <!-- Removed the flex justify-between and the button -->
       <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-        Woorden die niet vereenvoudigd mogen worden:
+        Woorden die je wil behouden:
       </h3>
       
       <!-- Preview of preserved words (first 5 with count) -->
@@ -740,7 +740,7 @@
   <div class="p-6">
     <div class="flex justify-between items-center mb-4">
       <h2 class="text-xl font-bold text-gray-800 dark:text-white">
-        Woorden die niet vereenvoudigd worden
+        Vul woorden in die je wilt behouden
       </h2>
       <button
         on:click={() => showPreservedWordsModal = false}
@@ -785,7 +785,7 @@
         </button>
       </div>
       <span class="text-sm text-gray-700 dark:text-gray-300">
-        Standaard niet te veranderen woorden (Bodembeleid, Subsidie, etc.)
+        Standaard te behouden woorden (Bodembeleid, Subsidie, etc.)
       </span>
     </div>
 

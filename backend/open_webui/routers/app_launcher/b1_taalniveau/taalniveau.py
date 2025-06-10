@@ -11,7 +11,38 @@ import re
 
 router = APIRouter()
 
-def split_into_chunks(text: str, max_tokens: int = 2500) -> List[str]:
+# --- START: Language Level Specific Prompt Data ---
+LANGUAGE_SPECIFIC_PROMPTS = {
+    "B1": {
+        "examples_intro": "Hier zijn enkele voorbeelden van woorden op C1-niveau en hun eenvoudigere B1-equivalenten:",
+        "examples_list": [
+            "- Betreffende -> Over",
+            "- Creëren -> Ontwerpen, vormen, vormgeven, maken",
+            "- Prioriteit -> Voorrang, voorkeur",
+            "- Relevant -> Belangrijk",
+            "- Verstrekken -> Geven"
+        ],
+        "level_description": "Het B1-niveau kenmerkt zich door duidelijk en eenvoudig taalgebruik, geschikt voor een breed publiek met basisvaardigheden in de taal."
+    },
+    "B2": {
+        "examples_intro": "Hier zijn enkele voorbeelden van woorden en zinsconstructies en hun B2-equivalenten:", # Placeholder - pas aan met B2 specifieke voorbeelden
+        "examples_list": [
+            "- Voorbeeld B2: Complex woord -> Iets minder complex, maar correct woord", # Placeholder
+            "- Voorbeeld B2: Lange zin -> Kortere, maar goed gestructureerde zin", # Placeholder
+            "- Voorbeeld B2: Formeel -> Iets minder formeel, maar nog steeds professioneel"  # Placeholder
+        ],
+        "level_description": "Het B2-niveau kenmerkt zich door taalgebruik dat geschikt is voor een publiek dat de taal goed beheerst en in staat is om complexere teksten te begrijpen en produceren. De nadruk ligt op helderheid, correctheid en een gepaste stijl." # Placeholder - pas aan
+    }
+    # Voeg hier eventueel andere taalniveaus toe
+}
+
+def get_language_specific_text(language_level: str, key: str, default_level="B1"):
+    """Haalt specifieke tekst op voor een taalniveau, met een fallback."""
+    level_data = LANGUAGE_SPECIFIC_PROMPTS.get(language_level, LANGUAGE_SPECIFIC_PROMPTS.get(default_level))
+    return level_data.get(key, "")
+# --- END: Language Level Specific Prompt Data ---
+
+def split_into_chunks(text: str, max_tokens: int = 1500) -> List[str]:
     """Split text into chunks of approximately max_tokens"""
     encoding = tiktoken.get_encoding("cl100k_base")
     paragraphs = text.split('\n')
@@ -95,10 +126,17 @@ async def generate_version(request: Request, chunk: str, model: str, preserved_w
         return {"index": index, "temperature": temperature, "text": chunk, "error": None} # Ensure error key exists
 
     preserved_words_text = ", ".join(f"'{word}'" for word in preserved_words) if preserved_words else "geen"
-    # Updated system prompt with instruction for bold text and preserved words
+    
+    # --- START: Dynamically build prompt parts ---
+    level_description = get_language_specific_text(language_level, "level_description")
+    examples_intro = get_language_specific_text(language_level, "examples_intro")
+    examples = "\n".join(get_language_specific_text(language_level, "examples_list"))
+    # --- END: Dynamically build prompt parts ---
+
     generation_system_prompt = f"""Je taak is om de volgende tekst te analyseren en te herschrijven naar een versie die voldoet aan het {language_level}-taalniveau.
+De herschreven tekst moet goed begrijpelijk zijn voor een breed publiek, inclusief mensen die minder ervaring hebben met complexe of ambtelijke taal, of Nederlands als tweede taal leren op {language_level}-niveau.
 Hierbij is het belangrijk om de informatie zo letterlijk mogelijk over te brengen en de structuur zoveel mogelijk te behouden, zonder onnodige weglatingen.
-Het {language_level}-niveau kenmerkt zich door duidelijk en eenvoudig taalgebruik, geschikt voor een breed publiek met basisvaardigheden in de taal.
+{level_description}
 
 Hier zijn enkele richtlijnen om je te helpen bij deze taak:
 - Gebruik korte zinnen en vermijd lange, complexe zinsconstructies.
@@ -107,21 +145,16 @@ Hier zijn enkele richtlijnen om je te helpen bij deze taak:
 - Gebruik actieve zinsconstructies waar mogelijk.
 - Vermijd passieve zinnen en ingewikkelde grammaticale constructies.
 - Gebruik concrete voorbeelden om abstracte concepten te verduidelijken.
+- Vermijd of vereenvoudig figuurlijk taalgebruik, idiomen en spreekwoorden. Als ze essentieel zijn, leg ze dan kort uit.
 
-Hier zijn enkele voorbeelden van woorden op C1-niveau en hun eenvoudigere {language_level}-equivalenten:
-- Betreffende -> Over
-- Creëren -> Ontwerpen, vormen, vormgeven, maken
-- Prioriteit -> Voorrang, voorkeur
-- Relevant -> Belangrijk
-- Verstrekken -> Geven
+{examples_intro}
+{examples}
 
 BELANGRIJK: De volgende woorden moeten exact behouden blijven en mogen NIET vereenvoudigd worden: {preserved_words_text}.
 
 Zorg ervoor dat de hoofdboodschap van de tekst behouden blijft en dat de vereenvoudigde versie nog steeds een accurate weergave is van de oorspronkelijke inhoud.
 BELANGRIJK: Tekst tussen dubbele sterretjes (zoals **dit**) moet ook vereenvoudigd worden naar {language_level}-niveau. Behoud de dubbele sterretjes rond de vereenvoudigde tekst in de output. Dit geldt ook voor kopjes of andere belangrijke termen die zo gemarkeerd zijn.
-Zorg ervoor dat de hoofdboodschap van de tekst behouden blijft en dat de vereenvoudigde versie nog steeds een accurate weergave is van de oorspronkelijke inhoud.
-Gebruik deze instructies om de tekst te vereenvoudigen en zorg ervoor dat deze voldoet aan het {language_level}-taalniveau.
-Plaats de verbeterde paragraaf tussen "<<<" en ">>>" tekens. Als de tekst te kort is om te verbeteren neem je de tekst een-op-een over en plaats deze tussen de genoemde tekens, bijv. "<<< **Artikel 3.2** >>>"."""
+BELANGRIJK: Plaats de verbeterde paragraaf tussen "<<<" en ">>>" tekens. Als de tekst te kort is om te verbeteren (bijvoorbeeld alleen een titel, referentie of een paar woorden), neem je de tekst een-op-een over en plaats deze tussen de genoemde tekens, bijv. "<<< Artikel 3.2 >>>" of "<<< DOC-12345678 >>>"."""
 
     form_data = {
         "model": model,
@@ -173,35 +206,46 @@ async def select_best_version(request: Request, original_chunk: str, generated_v
          return {"index": index, "text": original_chunk, "selection_error": "No successful versions to select from."}
 
     preserved_words_text = ", ".join(f"'{word}'" for word in preserved_words) if preserved_words else "geen"
-    # System prompt for selection remains the same
-    selection_system_prompt = f"""Je taak is om de volgende tekst te analyseren en te herschrijven naar een versie die voldoet aan het {language_level}-taalniveau.
+    
+    # --- START: Dynamically build prompt parts for selection ---
+    level_description_selection = get_language_specific_text(language_level, "level_description")
+    examples_intro_selection = get_language_specific_text(language_level, "examples_intro")
+    examples_selection = "\n".join(get_language_specific_text(language_level, "examples_list"))
+    # --- END: Dynamically build prompt parts for selection ---
+    
+    selection_system_prompt = f"""Je taak is om de originele paragraaf en de bijgevoegde {language_level}-varianten te analyseren. Selecteer de beste variant, of combineer/verbeter de varianten tot één definitieve, optimale {language_level}-versie.
+De definitieve tekst moet voldoen aan het {language_level}-taalniveau en goed begrijpelijk zijn voor een breed publiek, inclusief mensen die minder ervaring hebben met complexe of ambtelijke taal, of Nederlands als tweede taal leren op {language_level}-niveau.
 Hierbij is het belangrijk om de informatie zo letterlijk mogelijk over te brengen en de structuur zoveel mogelijk te behouden, zonder onnodige weglatingen.
-Het {language_level}-niveau kenmerkt zich door duidelijk en eenvoudig taalgebruik, geschikt voor een breed publiek met basisvaardigheden in de taal.
+{level_description_selection}
 
 Hier zijn enkele richtlijnen om je te helpen bij deze taak:
-- Gebruik korte zinnen en vermijd lange, complexe zinsconstructies.
+- Gebruik korte zinnen en vermijd lange, complexe zinsconstructies. 
 - Vervang moeilijke woorden door meer gangbare alternatieven.
 - Leg technische termen en (ambtelijk) jargon uit in eenvoudige bewoordingen.
 - Gebruik actieve zinsconstructies waar mogelijk.
 - Vermijd passieve zinnen en ingewikkelde grammaticale constructies.
 - Gebruik concrete voorbeelden om abstracte concepten te verduidelijken.
+- Vermijd of vereenvoudig figuurlijk taalgebruik, idiomen en spreekwoorden. Als ze essentieel zijn, leg ze dan kort uit.
 
-Hier zijn enkele voorbeelden van woorden op C1-niveau en hun eenvoudigere {language_level}-equivalenten:
-- Betreffende -> Over
-- Creëren -> Ontwerpen, vormen, vormgeven, maken
-- Prioriteit -> Voorrang, voorkeur
-- Relevant -> Belangrijk
-- Verstrekken -> Geven
+{examples_intro_selection}
+{examples_selection}
 
 BELANGRIJK: De volgende woorden moeten exact behouden blijven en mogen NIET vereenvoudigd worden: {preserved_words_text}.
 
 Zorg ervoor dat de inhoud en nuances van de oorspronkelijke tekst behouden blijven en dat de vereenvoudigde versie nog steeds een accurate weergave is van de oorspronkelijke inhoud.
-BELANGRIJK: Zorg ervoor dat tekst tussen dubbele sterretjes (zoals **dit**) ook vereenvoudigd is naar {language_level}-niveau in de definitieve versie. Behoud de dubbele sterretjes rond de vereenvoudigde tekst in de output. Dit geldt ook voor kopjes of andere belangrijke termen die zo gemarkeerd zijn.
+Je ontvangt de originele paragraaf, samen met enkele varianten van deze tekst in eenvoudigere taal ({language_level}). 
+De aangeleverde varianten kunnen '<<<' en '>>>' tekens bevatten; deze markeringen in de inputvarianten moet je negeren bij het beoordelen en samenstellen van de definitieve tekst.
+Jouw uiteindelijke, gekozen of gecombineerde {language_level}-tekst moet je vervolgens zelf weer omsluiten met '<<<' en '>>>'.
+Behoud **dikgedrukte** tekst (tekst tussen dubbele sterretjes) in de definitieve versie, nadat de inhoud ervan ook vereenvoudigd is naar {language_level}-niveau.
 
-Zorg ervoor dat de inhoud en nuances van de oorspronkelijke tekst behouden blijven en dat de vereenvoudigde versie nog steeds een accurate weergave is van de oorspronkelijke inhoud.
-Je ontvangt de originele paragraaf, samen met enkele varianten van deze tekst in eenvoudigere taal ({language_level}). Deze varianten kunnen nog de "<<<" en ">>>" tekens bevatten. Het is jouw taak om tot een definitieve {language_level}-versie te komen ZONDER deze tekens, maar wel met behoud van **dikgedrukte** tekst.
+Selectiecriteria: Kies of vorm de variant die:
+1. Het meest natuurlijk leest op {language_level}-niveau.
+2. De minste grammaticale fouten bevat.
+3. De oorspronkelijke betekenis het meest accuraat en volledig weergeeft.
+4. De opgegeven richtlijnen en voorbeelden het best volgt.
+5. De lijst met te behouden woorden ({preserved_words_text}) respecteert.
 
-Plaats de definitieve, verbeterde paragraaf tussen "<<<" en ">>>" tekens. Als de tekst te kort is om te verbeteren neem je de tekst een-op-een over en plaats deze tussen de genoemde tekens, bijv. "<<< **Artikel 3.2** >>>".""" # Prompt still asks selection model to use <<< >>>
+Belangrijk: Plaats de definitieve, verbeterde paragraaf tussen "<<<" en ">>>" tekens. Als de tekst te kort is om te verbeteren (bijvoorbeeld alleen een titel, referentie of een paar woorden), neem je de tekst een-op-een over en plaats deze tussen de genoemde tekens, bijv. "<<< Artikel 3.2 >>>" of "<<< DOC-12345678 >>>"."""
 
     variants_text = ""
     for i, version_data in enumerate(successful_versions):
@@ -223,7 +267,7 @@ BELANGRIJK: Zorg ervoor dat de volgende woorden exact behouden blijven en NIET v
     form_data = {
         "model": model,
         "stream": False,
-        "temperature": 0,
+        "temperature": 0.3,
         "messages": [
             {"role": "system", "content": selection_system_prompt},
             {"role": "user", "content": selection_user_content}
@@ -258,7 +302,7 @@ class SimplifyTextRequest(BaseModel):
     text: str
     model: str
     preserved_words: list[str] = []
-    language_level: str = "B1"
+    language_level: str = "B1" # Default to B1
 
 @router.post("/translate")
 async def simplify_text_endpoint(request: Request, data: SimplifyTextRequest, user = Depends(get_current_user)):
@@ -281,7 +325,7 @@ async def simplify_text_endpoint(request: Request, data: SimplifyTextRequest, us
 
     chunks = split_into_chunks(data.text)
     num_chunks = len(chunks)
-    temperatures = [1.0, 1.0, 1.0]
+    temperatures = [0.8, 1.0, 1.2]
 
     if num_chunks == 0:
         async def empty_stream():
