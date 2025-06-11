@@ -372,10 +372,7 @@ from open_webui.config import (
     # Customization for GovChat-NL
     EMPTY_CHAT_WELCOME_MESSAGE,
     LOGIN_SCREEN_SUBTITLE,
-    ENABLE_CALL,
-    ENABLE_MULTIPLE_MODELS,
     ENABLE_CONTROLS_BUTTON,
-    SHOW_API_TOKENS,
     SHOW_CHANGE_PASSWORD,
     ALLOW_USERNAME_EDIT,
     SHOW_ABOUT_TAB,
@@ -1429,10 +1426,7 @@ async def get_app_config(request: Request):
         "customization": {
             "empty_chat_welcome_message": EMPTY_CHAT_WELCOME_MESSAGE.value,
             "login_screen_subtitle": LOGIN_SCREEN_SUBTITLE.value,
-            "enable_call": ENABLE_CALL.value,
-            "enable_multiple_models": ENABLE_MULTIPLE_MODELS.value,
             "enable_controls_button": ENABLE_CONTROLS_BUTTON.value,
-            "show_api_tokens": SHOW_API_TOKENS.value,
             "show_change_password": SHOW_CHANGE_PASSWORD.value,
             "allow_username_edit": ALLOW_USERNAME_EDIT.value,
             "show_about_tab": SHOW_ABOUT_TAB.value,

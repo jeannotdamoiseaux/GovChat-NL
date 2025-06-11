@@ -38,7 +38,6 @@
 
 	let richTextInput = true;
 	let largeTextAsFile = false;
-	let notificationSound = true;
 
 	let landingPageMode = '';
 	let chatBubble = true;

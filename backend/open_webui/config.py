@@ -3004,12 +3004,6 @@ ENABLE_CONTROLS_BUTTON = PersistentConfig(
     os.getenv("ENABLE_CONTROLS_BUTTON", "False").lower() == "true",
 )
 
-SHOW_API_TOKENS = PersistentConfig(
-    "SHOW_API_TOKENS",
-    "customization.show_api_tokens",
-    os.getenv("SHOW_API_TOKENS", "False").lower() == "true",
-)
-
 SHOW_CHANGE_PASSWORD = PersistentConfig(
     "SHOW_CHANGE_PASSWORD",
     "customization.show_change_password",
