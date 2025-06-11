@@ -14,7 +14,6 @@
 		showSidebar,
 		temporaryChatEnabled,
 		user,
-		config
 	} from '$lib/stores';
 
 	import { slide } from 'svelte/transition';
