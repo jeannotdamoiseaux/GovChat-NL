@@ -8,7 +8,19 @@
         icon: '🔤',
         href: '/app-launcher/b1-taalniveau',
         permission: (user) => user?.role === 'admin' || user?.permissions?.appLauncher?.b1_taalniveau
-      }
+      },
+      {
+        name: 'Subsidie extractie',
+        icon: '💰',
+        href: '/app-launcher/subsidies',
+        permission: (user) => user?.role === 'admin' || user?.permissions?.appLauncher?.subsidiesextractie
+      },
+      {
+        name: 'Subsidie beoordeling',
+        icon: '📊',
+        href: '/app-launcher/subsidies2',
+        permission: (user) => user?.role === 'admin' || user?.permissions?.appLauncher?.subsidiesbeoordeling
+      },
     ];
   
     // Filter alleen de apps die zichtbaar moeten zijn voor deze gebruiker
