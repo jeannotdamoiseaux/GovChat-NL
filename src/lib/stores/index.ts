@@ -143,7 +143,7 @@ type Settings = {
 	notificationEnabled?: boolean;
 	title?: TitleSettings;
 	splitLargeDeltas?: boolean;
-	chatDirection: 'LTR' | 'RTL';
+	chatDirection: 'LTR' | 'RTL' | 'auto';
 	ctrlEnterToSend?: boolean;
 
 	system?: string;
@@ -198,6 +198,7 @@ type Config = {
 	status: boolean;
 	name: string;
 	version: string;
+	tutorial_version?: string;
 	default_locale: string;
 	default_models: string;
 	default_prompt_suggestions: PromptSuggestion[];

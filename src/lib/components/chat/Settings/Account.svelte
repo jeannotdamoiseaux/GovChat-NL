@@ -31,8 +31,8 @@
 	let profileImageInputElement: HTMLInputElement;
 
 	const submitHandler = async () => {
-		if (name !== $user.name) {
-			if (profileImageUrl === generateInitialsImage($user.name) || profileImageUrl === '') {
+		if (name !== $user?.name) {
+			if (profileImageUrl === generateInitialsImage($user?.name) || profileImageUrl === '') {
 				profileImageUrl = generateInitialsImage(name);
 			}
 		}
@@ -75,8 +75,8 @@
 	};
 
 	onMount(async () => {
-		name = $user.name;
-		profileImageUrl = $user.profile_image_url;
+		name = $user?.name;
+		profileImageUrl = $user?.profile_image_url;
 		webhookUrl = $settings?.notifications?.webhook_url ?? '';
 
 		APIKey = await getAPIKey(localStorage.token).catch((error) => {
@@ -214,7 +214,7 @@
 						<button
 							class=" text-xs text-center text-gray-800 dark:text-gray-400 rounded-full px-4 py-0.5 bg-gray-100 dark:bg-gray-850"
 							on:click={async () => {
-								const url = await getGravatarUrl(localStorage.token, $user.email);
+								const url = await getGravatarUrl(localStorage.token, $user?.email);
 
 								profileImageUrl = url;
 							}}>{$i18n.t('Use Gravatar')}</button
@@ -230,19 +230,23 @@
 				</div>
 			</div>
 
-			<div class="pt-0.5">
-				<div class="flex flex-col w-full">
-					<div class=" mb-1 text-xs font-medium">{$i18n.t('Name')}</div>
-
-					<div class="flex-1">
-						<input
-							class="w-full rounded-lg py-2 px-4 text-sm dark:text-gray-300 dark:bg-gray-850 outline-hidden"
-							type="text"
-							bind:value={name}
-							required
-						/>
-					</div>
-				</div>
+			<div class="flex-1">
+				{#if $config?.customization?.allow_username_edit ?? true}
+					<input
+						class="w-full rounded-lg py-2 px-4 text-sm dark:text-gray-300 dark:bg-gray-850 outline-hidden"
+						type="text"
+						bind:value={name}
+						required
+					/>
+				{:else}
+					<input
+						class="w-full rounded-lg py-2 px-4 text-sm dark:text-gray-300 dark:bg-gray-850 outline-hidden"
+						type="text"
+						value={name}
+						readonly
+						disabled
+					/>
+				{/if}
 			</div>
 
 			{#if $config?.features?.enable_user_webhooks}
@@ -264,22 +268,26 @@
 			{/if}
 		</div>
 
-		<div class="py-0.5">
-			<UpdatePassword />
-		</div>
+		{#if $config?.customization?.show_change_password}
+			<div class="py-0.5">
+				<UpdatePassword />
+			</div>
+		{/if}
 
-		<hr class="border-gray-100 dark:border-gray-850 my-4" />
+		<hr class="border-gray-50 dark:border-gray-850 my-2" />
 
-		<div class="flex justify-between items-center text-sm">
-			<div class="  font-medium">{$i18n.t('API keys')}</div>
-			<button
-				class=" text-xs font-medium text-gray-500"
-				type="button"
-				on:click={() => {
-					showAPIKeys = !showAPIKeys;
-				}}>{showAPIKeys ? $i18n.t('Hide') : $i18n.t('Show')}</button
-			>
-		</div>
+		{#if $config?.customization?.show_api_tokens}
+			<div class="flex justify-between items-center text-sm">
+				<div class="  font-medium">{$i18n.t('API keys')}</div>
+				<button
+					class=" text-xs font-medium text-gray-500"
+					type="button"
+					on:click={() => {
+						showAPIKeys = !showAPIKeys;
+					}}>{showAPIKeys ? $i18n.t('Hide') : $i18n.t('Show')}</button
+				>
+			</div>
+		{/if}
 
 		{#if showAPIKeys}
 			<div class="flex flex-col gap-4">

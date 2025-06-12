@@ -6,6 +6,8 @@
 
 	const dispatch = createEventDispatcher();
 
+	import { config } from '$lib/stores';
+
 	import {
 		archiveChatById,
 		cloneChatById,
@@ -83,6 +85,8 @@
 			currentChatPage.set(1);
 			await chats.set(await getChatList(localStorage.token, $currentChatPage));
 			await pinnedChats.set(await getPinnedChatList(localStorage.token));
+
+			dispatch('change');
 		}
 	};
 
@@ -350,17 +354,19 @@
 			</div>
 		{:else if shiftKey && mouseOver}
 			<div class=" flex items-center self-center space-x-1.5">
-				<Tooltip content={$i18n.t('Archive')} className="flex items-center">
-					<button
-						class=" self-center dark:hover:text-white transition"
-						on:click={() => {
-							archiveChatHandler(id);
-						}}
-						type="button"
-					>
-						<ArchiveBox className="size-4  translate-y-[0.5px]" strokeWidth="2" />
-					</button>
-				</Tooltip>
+				{#if $config?.customization?.show_archived_chats ?? true}
+					<Tooltip content={$i18n.t('Archive')} className="flex items-center">
+						<button
+							class=" self-center dark:hover:text-white transition"
+							on:click={() => {
+								archiveChatHandler(id);
+							}}
+							type="button"
+						>
+							<ArchiveBox className="size-4  translate-y-[0.5px]" strokeWidth="2" />
+						</button>
+					</Tooltip>
+				{/if}
 
 				<Tooltip content={$i18n.t('Delete')}>
 					<button

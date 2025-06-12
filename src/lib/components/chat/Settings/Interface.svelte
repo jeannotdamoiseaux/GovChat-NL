@@ -32,15 +32,16 @@
 	let showUsername = false;
 	let notificationSound = true;
 
-	let richTextInput = true;
-	let promptAutocomplete = false;
+	let detectArtifacts = true;
 
+	let richTextInput = true;
 	let largeTextAsFile = false;
 
 	let landingPageMode = '';
 	let chatBubble = true;
-	let chatDirection: 'LTR' | 'RTL' = 'LTR';
+	let chatDirection: 'LTR' | 'RTL' | 'auto' = 'auto';
 	let ctrlEnterToSend = false;
+	let copyFormatted = false;
 
 	let collapseCodeBlocks = false;
 	let expandDetails = false;
@@ -61,6 +62,9 @@
 
 	let webSearch = null;
 
+	let iframeSandboxAllowSameOrigin = false;
+	let iframeSandboxAllowForms = false;
+
 	const toggleExpandDetails = () => {
 		expandDetails = !expandDetails;
 		saveSettings({ expandDetails });
@@ -74,11 +78,6 @@
 	const toggleSplitLargeChunks = async () => {
 		splitLargeChunks = !splitLargeChunks;
 		saveSettings({ splitLargeChunks: splitLargeChunks });
-	};
-
-	const togglePromptAutocomplete = async () => {
-		promptAutocomplete = !promptAutocomplete;
-		saveSettings({ promptAutocomplete: promptAutocomplete });
 	};
 
 	const togglesScrollOnBranchChange = async () => {
@@ -176,6 +175,11 @@
 		saveSettings({ autoTags });
 	};
 
+	const toggleDetectArtifacts = async () => {
+		detectArtifacts = !detectArtifacts;
+		saveSettings({ detectArtifacts });
+	};
+
 	const toggleRichTextInput = async () => {
 		richTextInput = !richTextInput;
 		saveSettings({ richTextInput });
@@ -210,8 +214,19 @@
 		}
 	};
 
+	const toggleCopyFormatted = async () => {
+		copyFormatted = !copyFormatted;
+		saveSettings({ copyFormatted });
+	};
+
 	const toggleChangeChatDirection = async () => {
-		chatDirection = chatDirection === 'LTR' ? 'RTL' : 'LTR';
+		if (chatDirection === 'auto') {
+			chatDirection = 'LTR';
+		} else if (chatDirection === 'LTR') {
+			chatDirection = 'RTL';
+		} else if (chatDirection === 'RTL') {
+			chatDirection = 'auto';
+		}
 		saveSettings({ chatDirection });
 	};
 
@@ -232,10 +247,21 @@
 		saveSettings({ webSearch: webSearch });
 	};
 
+	const toggleIframeSandboxAllowSameOrigin = async () => {
+		iframeSandboxAllowSameOrigin = !iframeSandboxAllowSameOrigin;
+		saveSettings({ iframeSandboxAllowSameOrigin });
+	};
+
+	const toggleIframeSandboxAllowForms = async () => {
+		iframeSandboxAllowForms = !iframeSandboxAllowForms;
+		saveSettings({ iframeSandboxAllowForms });
+	};
+
 	onMount(async () => {
 		titleAutoGenerate = $settings?.title?.auto ?? true;
 		autoTags = $settings.autoTags ?? true;
 
+		detectArtifacts = $settings.detectArtifacts ?? true;
 		responseAutoCopy = $settings.responseAutoCopy ?? false;
 
 		showUsername = $settings.showUsername ?? false;
@@ -246,8 +272,8 @@
 		voiceInterruption = $settings.voiceInterruption ?? false;
 
 		richTextInput = $settings.richTextInput ?? true;
-		promptAutocomplete = $settings.promptAutocomplete ?? false;
 		largeTextAsFile = $settings.largeTextAsFile ?? false;
+		copyFormatted = $settings.copyFormatted ?? false;
 
 		collapseCodeBlocks = $settings.collapseCodeBlocks ?? false;
 		expandDetails = $settings.expandDetails ?? false;
@@ -257,7 +283,7 @@
 		widescreenMode = $settings.widescreenMode ?? false;
 		splitLargeChunks = $settings.splitLargeChunks ?? false;
 		scrollOnBranchChange = $settings.scrollOnBranchChange ?? true;
-		chatDirection = $settings.chatDirection ?? 'LTR';
+		chatDirection = $settings.chatDirection ?? 'auto';
 		userLocation = $settings.userLocation ?? false;
 
 		notificationSound = $settings.notificationSound ?? true;
@@ -381,25 +407,27 @@
 				</div>
 			{/if}
 
-			<div>
-				<div class=" py-0.5 flex w-full justify-between">
-					<div class=" self-center text-xs">{$i18n.t('Widescreen Mode')}</div>
+			{#if $config?.customization?.show_widescreen_mode ?? true}
+				<div>
+					<div class=" py-0.5 flex w-full justify-between">
+						<div class=" self-center text-xs">{$i18n.t('Widescreen Mode')}</div>
 
-					<button
-						class="p-1 px-3 text-xs flex rounded-sm transition"
-						on:click={() => {
-							toggleWidescreenMode();
-						}}
-						type="button"
-					>
-						{#if widescreenMode === true}
-							<span class="ml-2 self-center">{$i18n.t('On')}</span>
-						{:else}
-							<span class="ml-2 self-center">{$i18n.t('Off')}</span>
-						{/if}
-					</button>
+						<button
+							class="p-1 px-3 text-xs flex rounded-sm transition"
+							on:click={() => {
+								toggleWidescreenMode();
+							}}
+							type="button"
+						>
+							{#if widescreenMode === true}
+								<span class="ml-2 self-center">{$i18n.t('On')}</span>
+							{:else}
+								<span class="ml-2 self-center">{$i18n.t('Off')}</span>
+							{/if}
+						</button>
+					</div>
 				</div>
-			</div>
+			{/if}
 
 			<div>
 				<div class=" py-0.5 flex w-full justify-between">
@@ -412,8 +440,10 @@
 					>
 						{#if chatDirection === 'LTR'}
 							<span class="ml-2 self-center">{$i18n.t('LTR')}</span>
-						{:else}
+						{:else if chatDirection === 'RTL'}
 							<span class="ml-2 self-center">{$i18n.t('RTL')}</span>
+						{:else}
+							<span class="ml-2 self-center">{$i18n.t('Auto')}</span>
 						{/if}
 					</button>
 				</div>
@@ -441,7 +471,7 @@
 				</div>
 			</div>
 
-			{#if $user.role === 'admin'}
+			{#if $user?.role === 'admin'}
 				<div>
 					<div class=" py-0.5 flex w-full justify-between">
 						<div class=" self-center text-xs">
@@ -532,17 +562,17 @@
 			<div>
 				<div class=" py-0.5 flex w-full justify-between">
 					<div class=" self-center text-xs">
-						{$i18n.t('Auto-Copy Response to Clipboard')}
+						{$i18n.t('Detect Artifacts Automatically')}
 					</div>
 
 					<button
 						class="p-1 px-3 text-xs flex rounded-sm transition"
 						on:click={() => {
-							toggleResponseAutoCopy();
+							toggleDetectArtifacts();
 						}}
 						type="button"
 					>
-						{#if responseAutoCopy === true}
+						{#if detectArtifacts === true}
 							<span class="ml-2 self-center">{$i18n.t('On')}</span>
 						{:else}
 							<span class="ml-2 self-center">{$i18n.t('Off')}</span>
@@ -554,17 +584,39 @@
 			<div>
 				<div class=" py-0.5 flex w-full justify-between">
 					<div class=" self-center text-xs">
-						{$i18n.t('Rich Text Input for Chat')}
+						{$i18n.t('Detect Artifacts Automatically')}
 					</div>
 
 					<button
 						class="p-1 px-3 text-xs flex rounded-sm transition"
 						on:click={() => {
-							toggleRichTextInput();
+							toggleDetectArtifacts();
 						}}
 						type="button"
 					>
-						{#if richTextInput === true}
+						{#if detectArtifacts === true}
+							<span class="ml-2 self-center">{$i18n.t('On')}</span>
+						{:else}
+							<span class="ml-2 self-center">{$i18n.t('Off')}</span>
+						{/if}
+					</button>
+				</div>
+			</div>
+
+			<div>
+				<div class=" py-0.5 flex w-full justify-between">
+					<div class=" self-center text-xs">
+						{$i18n.t('Auto-Copy Response to Clipboard')}
+					</div>
+
+					<button
+						class="p-1 px-3 text-xs flex rounded-sm transition"
+						on:click={() => {
+							toggleResponseAutoCopy();
+						}}
+						type="button"
+					>
+						{#if responseAutoCopy === true}
 							<span class="ml-2 self-center">{$i18n.t('On')}</span>
 						{:else}
 							<span class="ml-2 self-center">{$i18n.t('Off')}</span>
@@ -611,6 +663,28 @@
 						type="button"
 					>
 						{#if largeTextAsFile === true}
+							<span class="ml-2 self-center">{$i18n.t('On')}</span>
+						{:else}
+							<span class="ml-2 self-center">{$i18n.t('Off')}</span>
+						{/if}
+					</button>
+				</div>
+			</div>
+
+			<div>
+				<div class=" py-0.5 flex w-full justify-between">
+					<div class=" self-center text-xs">
+						{$i18n.t('Copy Formatted Text')}
+					</div>
+
+					<button
+						class="p-1 px-3 text-xs flex rounded-sm transition"
+						on:click={() => {
+							toggleCopyFormatted();
+						}}
+						type="button"
+					>
+						{#if copyFormatted === true}
 							<span class="ml-2 self-center">{$i18n.t('On')}</span>
 						{:else}
 							<span class="ml-2 self-center">{$i18n.t('Off')}</span>
@@ -708,7 +782,9 @@
 
 			<div>
 				<div class=" py-0.5 flex w-full justify-between">
-					<div class=" self-center text-xs">{$i18n.t('Haptic Feedback')}</div>
+					<div class=" self-center text-xs">
+						{$i18n.t('Haptic Feedback')} ({$i18n.t('Android')})
+					</div>
 
 					<button
 						class="p-1 px-3 text-xs flex rounded-sm transition"
@@ -807,6 +883,46 @@
 							<span class="ml-2 self-center">{$i18n.t('Always')}</span>
 						{:else}
 							<span class="ml-2 self-center">{$i18n.t('Default')}</span>
+						{/if}
+					</button>
+				</div>
+			</div>
+
+			<div>
+				<div class=" py-0.5 flex w-full justify-between">
+					<div class=" self-center text-xs">{$i18n.t('iframe Sandbox Allow Same Origin')}</div>
+
+					<button
+						class="p-1 px-3 text-xs flex rounded-sm transition"
+						on:click={() => {
+							toggleIframeSandboxAllowSameOrigin();
+						}}
+						type="button"
+					>
+						{#if iframeSandboxAllowSameOrigin === true}
+							<span class="ml-2 self-center">{$i18n.t('On')}</span>
+						{:else}
+							<span class="ml-2 self-center">{$i18n.t('Off')}</span>
+						{/if}
+					</button>
+				</div>
+			</div>
+
+			<div>
+				<div class=" py-0.5 flex w-full justify-between">
+					<div class=" self-center text-xs">{$i18n.t('iframe Sandbox Allow Forms')}</div>
+
+					<button
+						class="p-1 px-3 text-xs flex rounded-sm transition"
+						on:click={() => {
+							toggleIframeSandboxAllowForms();
+						}}
+						type="button"
+					>
+						{#if iframeSandboxAllowForms === true}
+							<span class="ml-2 self-center">{$i18n.t('On')}</span>
+						{:else}
+							<span class="ml-2 self-center">{$i18n.t('Off')}</span>
 						{/if}
 					</button>
 				</div>
