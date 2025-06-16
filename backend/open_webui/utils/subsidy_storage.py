@@ -3,19 +3,21 @@ import json
 import uuid
 import hashlib
 import traceback
+import shutil
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 
 class SubsidyFileStorage:
-    """Helper voor het opslaan van subsidiecriteria in bestanden binnen de uploads map"""
+    """Helper voor het opslaan van subsidiecriteria in bestanden"""
     
     def __init__(self, base_dir: str = None):
         # Gebruik een absoluut pad voor de map
         self.root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         
+        # Verander de basis directory naar data/subsidies folder
         if base_dir is None:
-            # Zorg voor een absoluut pad naar de uploads/subsidies map
-            self.base_dir = os.path.join(self.root_dir, "uploads", "subsidies")
+            # Nieuwe locatie: data/subsidies/
+            self.base_dir = os.path.join(self.root_dir, "data", "subsidies")
         else:
             self.base_dir = base_dir
         
@@ -27,6 +29,7 @@ class SubsidyFileStorage:
         try:
             os.makedirs(self.base_dir, exist_ok=True)
             print(f"Directory succesvol aangemaakt/gecontroleerd: {self.base_dir}")
+            
             # Test schrijfpermissies
             test_file = os.path.join(self.base_dir, "test_write.txt")
             with open(test_file, 'w') as f:
