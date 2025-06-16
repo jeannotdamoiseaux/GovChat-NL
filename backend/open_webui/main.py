@@ -394,7 +394,7 @@ from open_webui.tasks import (
 )  # Import from tasks.py
 
 from open_webui.routers.app_launcher.b1_taalniveau import taalniveau
-# from open_webui.routers.app_launcher import subsidies
+from open_webui.routers.app_launcher import subsidies
 
 
 from open_webui.utils.redis import get_sentinels_from_env
@@ -944,7 +944,8 @@ async def inspect_websocket(request: Request, call_next):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ALLOW_ORIGIN, #Dit veranderen naar "http://localhost:5173", standaard is dit CORS_ALLOW_ORIGIN
+    #allow_origins=CORS_ALLOW_ORIGIN, #Dit veranderen naar "http://localhost:5173", standaard is dit CORS_ALLOW_ORIGIN
+    allow_origins=["http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -991,7 +992,7 @@ app.include_router(utils.router, prefix="/api/v1/utils", tags=["utils"])
 
 # Voeg dit toe bij de andere app.include_router statements
 app.include_router(taalniveau.router, prefix="/api/b1", tags=["taalniveau"])
-# app.include_router(subsidies.router, prefix="/api/subsidies", tags=["Subsidies"])
+app.include_router(subsidies.router, prefix="/api/subsidies", tags=["Subsidies"])
 
 
 
