@@ -344,5 +344,74 @@ export async function saveSelection(selection: SubsidyResponse | null): Promise<
     }
 }
 
+// Voeg hier de nieuwe functies voor globale selectie toe onder de bestaande functies
+
+export async function loadGlobalSelection(): Promise<SubsidyResponse | null> {
+    try {
+        const backendUrl = 'http://localhost:8080';
+        const response = await fetch(`${backendUrl}/api/subsidies/global`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        if (result.success && result.has_global_selection) {
+            console.log("Globale selectie geladen van server:", result.selection);
+            
+            // Update de store met de geladen globale selectie
+            subsidyStore.update(store => ({
+                ...store,
+                selectedOutput: result.selection
+            }));
+            
+            return result.selection;
+        } else {
+            console.log("Geen globale selectie gevonden:", result.message);
+            return null;
+        }
+    } catch (error) {
+        console.error("Fout bij laden van globale selectie:", error);
+        return null;
+    }
+}
+
+export async function setGlobalSelection(selection: SubsidyResponse | null): Promise<boolean> {
+    if (!selection || !selection.savedId) {
+        console.log("Geen geldige selectie om als globaal in te stellen");
+        return false;
+    }
+    
+    try {
+        const backendUrl = 'http://localhost:8080';
+        const response = await fetch(`${backendUrl}/api/subsidies/global/set/${selection.savedId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+        });
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Backend error: ${response.status} - ${errorText}`);
+        }
+        
+        const result = await response.json();
+        console.log("Globale selectie ingesteld:", result);
+        return true;
+    } catch (error) {
+        console.error("Fout bij instellen van globale selectie:", error);
+        return false;
+    }
+}
+
 // Initialize the store on import
 initializeStore();

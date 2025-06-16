@@ -972,3 +972,128 @@ async def get_current_selection(
             "has_selection": False,
             "message": f"Kon selectie niet ophalen: {str(e)}"
         }
+
+# Voeg deze nieuwe endpoints toe aan het einde van het bestand
+
+import os
+import json
+import traceback
+from datetime import datetime
+
+@router.post("/global/set/{subsidy_id}", response_model=Dict[str, Any])
+async def set_global_selection(
+    request: Request,
+    subsidy_id: str,
+    user = Depends(get_current_user)
+):
+    """Stel een bepaalde set subsidiecriteria in als globale standaard voor alle gebruikers"""
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Alleen beheerders kunnen de globale selectie instellen")
+    
+    try:
+        # Controleer of de subsidie bestaat
+        subsidy_data = subsidy_storage.get_criteria_by_id(subsidy_id)
+        
+        if not subsidy_data:
+            raise HTTPException(status_code=404, detail="Subsidiecriteria niet gevonden")
+        
+        # Sla de globale selectie op
+        global_settings = {
+            "global_selection_id": subsidy_id,
+            "set_by_user_id": user.id,
+            "set_by_user_name": user.name,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        # Gebruik een speciale bestandsnaam voor globale instellingen
+        filename = "global_subsidy_settings.json"
+        filepath = os.path.join(subsidy_storage.base_dir, filename)
+        
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(global_settings, f, ensure_ascii=False, indent=2)
+        
+        return {
+            "success": True,
+            "message": "Globale subsidie selectie ingesteld voor alle gebruikers",
+            "selection_id": subsidy_id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error bij instellen globale subsidie selectie: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Kon globale selectie niet instellen: {str(e)}")
+
+@router.get("/global", response_model=Dict[str, Any])
+async def get_global_selection(
+    request: Request,
+    user = Depends(get_current_user)
+):
+    """Haal de globale selectie op die voor alle gebruikers geldt"""
+    try:
+        # Zoek de globale instellingen
+        filename = "global_subsidy_settings.json"
+        filepath = os.path.join(subsidy_storage.base_dir, filename)
+        
+        if not os.path.exists(filepath):
+            return {
+                "success": True,
+                "has_global_selection": False,
+                "message": "Geen globale selectie gevonden"
+            }
+        
+        with open(filepath, 'r', encoding='utf-8') as f:
+            global_settings = json.load(f)
+        
+        selection_id = global_settings.get("global_selection_id")
+        if not selection_id:
+            return {
+                "success": True,
+                "has_global_selection": False,
+                "message": "Geen globale selectie ID gevonden"
+            }
+            
+        # Haal de geselecteerde subsidie op
+        subsidy_data = subsidy_storage.get_criteria_by_id(selection_id)
+        
+        if not subsidy_data:
+            return {
+                "success": True, 
+                "has_global_selection": False,
+                "message": "Globale selectie niet meer gevonden"
+            }
+        
+        # Converteer de data naar het juiste formaat
+        criteria = []
+        for c in subsidy_data.get("criteria", []):
+            if isinstance(c, dict) and "id" in c and "text" in c:
+                criteria.append({"id": c["id"], "text": c["text"]})
+        
+        selection = {
+            "criteria": criteria,
+            "summary": subsidy_data.get("summary"),
+            "name": subsidy_data.get("name"),
+            "savedId": subsidy_data.get("id"),
+            "timestamp": subsidy_data.get("timestamp"),
+            "isSelection": True,
+            "isGlobalSelection": True
+        }
+        
+        return {
+            "success": True,
+            "has_global_selection": True,
+            "selection": selection,
+            "set_by_user_id": global_settings.get("set_by_user_id"),
+            "set_by_user_name": global_settings.get("set_by_user_name"),
+            "timestamp": global_settings.get("timestamp")
+        }
+        
+    except Exception as e:
+        print(f"Error bij ophalen globale subsidie selectie: {e}")
+        traceback.print_exc()
+        return {
+            "success": False,
+            "has_global_selection": False,
+            "message": f"Kon globale selectie niet ophalen: {str(e)}"
+        }

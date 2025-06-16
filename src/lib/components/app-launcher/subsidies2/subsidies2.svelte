@@ -1,7 +1,7 @@
 <script lang="ts">
     import { WEBUI_BASE_URL } from '$lib/constants';
     import { models, settings } from '$lib/stores';
-    import { subsidyStore, fetchSavedOutputs, loadLastSelection } from '$lib/stores/subsidyStore';
+    import { subsidyStore, fetchSavedOutputs, loadLastSelection, loadGlobalSelection } from '$lib/stores/subsidyStore';
     import type { SubsidyResponse } from '$lib/stores/subsidyStore';
     import { onMount } from 'svelte';
     import { toast } from 'svelte-sonner';
@@ -61,19 +61,30 @@
             // Haal eerst alle opgeslagen criteria op
             await fetchSavedOutputs();
             
-            // Probeer dan de laatst geselecteerde criteria te laden
+            // Probeer eerst de globale selectie te laden
+            const globalSelection = await loadGlobalSelection();
+            
+            if (globalSelection) {
+                console.log("Globale standaard selectie geladen:", globalSelection.name);
+                toast.success(`Standaard criteria "${globalSelection.name}" geladen`);
+                
+                // Update de lokale state met de geselecteerde data
+                selectedDataFromPart1 = globalSelection;
+                return; // Stop hier als er een globale selectie is
+            }
+            
+            // Als er geen globale selectie is, probeer dan de persoonlijke selectie
             const lastSelection = await loadLastSelection();
             if (lastSelection) {
-                console.log("Laatste selectie automatisch geladen:", lastSelection.name);
-                toast.success(`Laatste selectie "${lastSelection.name}" geladen`);
+                console.log("Persoonlijke selectie geladen:", lastSelection.name);
+                toast.success(`Selectie "${lastSelection.name}" geladen`);
                 
                 // Update de lokale state met de geselecteerde data
                 selectedDataFromPart1 = lastSelection;
+            } else {
+                // Geen selectie? Toon een melding
+                toast.info("Geen criteria selectie gevonden. Ga naar deel 1 om criteria te selecteren.");
             }
-            
-            // Je kunt hier optioneel filteren op alleen selecties als je dat wilt
-            const selections = $subsidyStore.savedOutputs.filter(item => item.isSelection);
-            console.log("Beschikbare selecties:", selections);
         } catch (error) {
             console.error("Fout bij laden van opgeslagen subsidiecriteria:", error);
             toast.error("Kon opgeslagen subsidiecriteria niet laden");

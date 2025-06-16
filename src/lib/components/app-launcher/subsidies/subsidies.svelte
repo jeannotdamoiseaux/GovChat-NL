@@ -1,10 +1,10 @@
 <script lang="ts">
     import { WEBUI_BASE_URL } from '$lib/constants';
-    import { models, settings } from '$lib/stores';
+    import { models, settings, user } from '$lib/stores';
     import { toast } from 'svelte-sonner';
     import { fade } from 'svelte/transition';
     import { onMount } from 'svelte';
-    import { subsidyStore, fetchSavedOutputs, initializeStore, setSelectedOutput, addSavedOutput, clearSavedOutputs, saveSelection, loadLastSelection } from '$lib/stores/subsidyStore';
+    import { subsidyStore, fetchSavedOutputs, initializeStore, setSelectedOutput, addSavedOutput, clearSavedOutputs, saveSelection, loadLastSelection, setGlobalSelection, loadGlobalSelection } from '$lib/stores/subsidyStore';
     import type { SubsidyResponse } from '$lib/stores/subsidyStore';
 
     let userInput: string = '';
@@ -26,16 +26,24 @@
             // Haal eerst alle opgeslagen criteria op
             await fetchSavedOutputs();
             
-            // Probeer dan de laatst geselecteerde criteria te laden
+            // Probeer eerst de globale selectie te laden
+            const globalSelection = await loadGlobalSelection();
+            
+            if (globalSelection) {
+                console.log("Globale standaard selectie geladen:", globalSelection.name);
+                toast.success(`Globale standaard selectie "${globalSelection.name}" geladen`);
+                return; // Stop hier als er een globale selectie is
+            }
+            
+            // Als er geen globale selectie is, probeer dan de persoonlijke selectie
             const lastSelection = await loadLastSelection();
             if (lastSelection) {
-                console.log("Laatste selectie automatisch geladen:", lastSelection.name);
-                // setSelectedOutput wordt niet nog eens aangeroepen omdat loadLastSelection de store al bijwerkt
-                toast.success(`Laatste selectie "${lastSelection.name}" geladen`);
+                console.log("Persoonlijke selectie geladen:", lastSelection.name);
+                toast.success(`Selectie "${lastSelection.name}" geladen`);
             }
         } catch (error) {
-            console.error("Fout bij laden van opgeslagen subsidiecriteria:", error);
-            toast.error("Kon opgeslagen subsidiecriteria niet laden");
+            console.error("Fout bij laden van selecties:", error);
+            toast.error("Kon selecties niet laden");
         }
     });
 
@@ -234,6 +242,32 @@
             }
         } else {
             toast.error("Er is geen selectie om op te slaan");
+        }
+    }
+
+    async function setAsGlobalStandard() {
+        if (!$subsidyStore.selectedOutput) {
+            toast.error("Selecteer eerst criteria om als standaard in te stellen");
+            return;
+        }
+
+        try {
+            const isAdmin = $user?.role === 'admin';
+            if (!isAdmin) {
+                toast.error("Alleen beheerders kunnen de standaard criteria instellen");
+                return;
+            }
+
+            const success = await setGlobalSelection($subsidyStore.selectedOutput);
+            
+            if (success) {
+                toast.success(`"${$subsidyStore.selectedOutput.name}" is nu de standaard selectie voor alle gebruikers`);
+            } else {
+                toast.error("Kon de selectie niet als standaard instellen");
+            }
+        } catch (error) {
+            console.error("Fout bij instellen globale standaard:", error);
+            toast.error(`Kon de standaard selectie niet instellen: ${error.message}`);
         }
     }
 </script>
@@ -457,6 +491,19 @@
                 </button>
             </div>
         </div>
+    {/if}
+
+    {#if $subsidyStore.selectedOutput && $user?.role === 'admin'}
+        <button
+            type="button"
+            on:click={setAsGlobalStandard}
+            class="mt-2 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline flex items-center gap-2 w-full"
+        >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            </svg>
+            Maak dit de standaardcriteria voor alle gebruikers
+        </button>
     {/if}
 </div>
 
