@@ -4,7 +4,7 @@
     import { toast } from 'svelte-sonner';
     import { fade } from 'svelte/transition';
     import { onMount } from 'svelte';
-    import { subsidyStore, addSavedOutput, setSelectedOutput, clearSavedOutputs } from '$lib/stores/subsidyStore';
+    import { subsidyStore, fetchSavedOutputs, initializeStore, setSelectedOutput, addSavedOutput, clearSavedOutputs } from '$lib/stores/subsidyStore';
     import type { SubsidyResponse } from '$lib/stores/subsidyStore';
 
     let userInput: string = '';
@@ -17,6 +17,18 @@
     let isFlashing = false;
     let fileProcessingProgress = 0;
     let fileProcessingInterval: ReturnType<typeof setInterval> | null = null;
+
+    onMount(async () => {
+        // Initialiseer expliciet bij het laden
+        initializeStore();
+        
+        try {
+            await fetchSavedOutputs();
+        } catch (error) {
+            console.error("Fout bij laden van opgeslagen subsidiecriteria:", error);
+            toast.error("Kon opgeslagen subsidiecriteria niet laden");
+        }
+    });
 
     async function handleSubmit() {
         if (!userInput.trim()) {

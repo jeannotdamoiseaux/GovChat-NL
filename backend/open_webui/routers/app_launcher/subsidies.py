@@ -1,32 +1,43 @@
 import json # Import json module
 from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
-from typing import Any, Optional, List, Dict, Union  # Union toegevoegd
+from typing import Any, Optional, List, Dict, Union
+from datetime import datetime
+import json
+import hashlib
+import traceback
+import os
+import time
+
 from open_webui.utils.chat import generate_chat_completion
 from open_webui.utils.auth import get_current_user
-# --- Placeholder voor Database interactie ---
-# Importeer je database sessie en modellen (bijv. SQLAlchemy)
-# from open_webui.database import get_db
-# from open_webui.models.subsidy import SubsidyData # Voorbeeld DB model
+from open_webui.utils.subsidy_storage import SubsidyFileStorage  # Importeer de nieuwe helper
 
+# Initialiseer de router
 router = APIRouter()
 
-# Model voor de input data van de frontend
+# Initialiseer de storage helper
+subsidy_storage = SubsidyFileStorage()
+
+# Model voor subsidiecriteria
+class SubsidyCriterion(BaseModel):
+    id: int
+    text: str
+
+class SubsidyResponse(BaseModel):
+    criteria: List[SubsidyCriterion]
+    summary: Optional[str] = None
+    savedId: Optional[str] = None
+    timestamp: Optional[str] = None
+    name: Optional[str] = None
+
 class SubsidyQueryInput(BaseModel):
     user_input: str
     model: Optional[str] = None
 
-# --- Aangepast Model voor gestructureerde output ---
-class SubsidyCriterion(BaseModel):
-    id: int # Of UUID
-    text: str
-    # Voeg eventueel andere velden toe (bijv. bron, type)
-
 class SubsidyQueryOutput(BaseModel):
-    # id: int # ID van het opgeslagen record in de DB
     criteria: List[SubsidyCriterion]
-    summary: Optional[str] = None # Optioneel een samenvatting
-    # Voeg eventueel andere velden toe
+    summary: Optional[str] = None
 
 # --- Modellen voor beoordeling subsidieaanvraag ---
 class SubsidyApplicationInput(BaseModel):
@@ -43,7 +54,6 @@ class SubsidyAssessmentOutput(BaseModel):
     assessment: Dict[str, SubsidyAssessmentItem]  # {"1": {...}, "2": {...}, ...}
 
 # --- Aangepaste System Prompt voor JSON Output ---
-# Instrueer de LLM om een JSON object terug te geven met specifieke sleutels.
 SYSTEM_PROMPT = """Je bent een expert op het gebied van Nederlandse subsidies. Analyseer de volgende subsidieregeling die door de gebruiker wordt verstrekt. Identificeer alle relevante criteria waaraan een aanvrager moet voldoen. Geef je antwoord ALLEEN als een geldig JSON-object terug. Het JSON-object moet de volgende structuur hebben:
 {
   "criteria": [
@@ -151,30 +161,160 @@ class SubsidyReportOutput(BaseModel):
     Eindoordeel: str
     Bedrag: str
 
+@router.post("/save", response_model=Dict[str, Any])
+async def save_subsidy_data(
+    request: Request,
+    data: SubsidyResponse,
+    user = Depends(get_current_user)
+):
+    """Sla subsidiecriteria op in een bestand"""
+    print(f"save_subsidy_data aangeroepen voor gebruiker {user.id}")
+    print(f"Te bewaren data: {data}")
+    
+    try:
+        # Wanneer criteria in Pydantic model zitten, eerst naar dict converteren
+        criteria_list = []
+        if data.criteria:
+            try:
+                # Voor Pydantic v2
+                criteria_list = [c.model_dump() for c in data.criteria]
+            except AttributeError:
+                try:
+                    # Voor Pydantic v1
+                    criteria_list = [c.dict() for c in data.criteria]
+                except AttributeError:
+                    # Fallback - Probeer direct als dictionary te gebruiken
+                    criteria_list = [{"id": c.id, "text": c.text} for c in data.criteria]
+        
+        # Bereid criteria voor voor opslag
+        criteria_data = {
+            "criteria": criteria_list,
+            "summary": data.summary
+        }
+        
+        print(f"Criteria data geformatteerd voor opslag: {criteria_data}")
+        
+        # Sla op met de helper
+        subsidy_id = subsidy_storage.save_criteria(
+            user_id=user.id, 
+            criteria=criteria_data,
+            name=data.name
+        )
+        
+        print(f"Succesvol opgeslagen met ID: {subsidy_id}")
+        
+        return {
+            "success": True,
+            "id": subsidy_id,
+            "message": "Subsidie criteria opgeslagen"
+        }
+    
+    except Exception as e:
+        print(f"Error bij opslaan subsidiecriteria: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Kon criteria niet opslaan: {str(e)}")
+
+
+@router.get("/list", response_model=List[SubsidyResponse])
+async def list_subsidy_data(
+    request: Request,
+    user = Depends(get_current_user)
+):
+    """Haal alle opgeslagen criteria op voor een gebruiker"""
+    print(f"list_subsidy_data called for user {user.id}")
+    
+    try:
+        # Haal de lijst op via de helper
+        criteria_list = subsidy_storage.list_criteria_for_user(user_id=user.id)
+        
+        print(f"Found {len(criteria_list)} items for user {user.id}")
+        
+        # Converteer naar het response model formaat
+        result = []
+        for item in criteria_list:
+            try:
+                criteria_objects = []
+                for c in item.get("criteria", []):
+                    # Zorg dat criteria de juiste structuur heeft
+                    if isinstance(c, dict) and "id" in c and "text" in c:
+                        criteria_objects.append(SubsidyCriterion(**c))
+                
+                result.append(SubsidyResponse(
+                    criteria=criteria_objects,
+                    summary=item.get("summary"),
+                    savedId=item.get("id"),
+                    timestamp=item.get("timestamp"),
+                    name=item.get("name")
+                ))
+            except Exception as e:
+                print(f"Error converting item: {e}, item: {item}")
+                continue
+            
+        print(f"Returning {len(result)} formatted items")
+        return result
+        
+    except Exception as e:
+        print(f"Error in list_subsidy_data: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Kon criteria niet ophalen: {str(e)}")
+
+
+@router.delete("/{subsidy_id}", response_model=Dict[str, Any])
+async def delete_subsidy_data(
+    request: Request,
+    subsidy_id: str,
+    user = Depends(get_current_user)
+):
+    """Verwijder opgeslagen criteria"""
+    try:
+        # Verwijder via de helper
+        success = subsidy_storage.delete_criteria(
+            subsidy_id=subsidy_id,
+            user_id=user.id
+        )
+        
+        if not success:
+            raise HTTPException(status_code=404, detail="Subsidiecriteria niet gevonden")
+            
+        return {
+            "success": True,
+            "message": "Subsidiecriteria verwijderd"
+        }
+        
+    except HTTPException:
+        raise
+        
+    except Exception as e:
+        print(f"Error bij verwijderen subsidiecriteria: {e}")
+        raise HTTPException(status_code=500, detail=f"Kon criteria niet verwijderen: {str(e)}")
+
 @router.post("/query", response_model=SubsidyQueryOutput)
 async def handle_subsidy_query(
     request: Request,
     query_input: SubsidyQueryInput,
-    user = Depends(get_current_user),
-    # db: Session = Depends(get_db) # Placeholder voor DB sessie
+    user = Depends(get_current_user)
 ):
     """
     Neemt een subsidieregeling, extraheert criteria via LLM als JSON,
-    slaat het resultaat op (placeholder) en retourneert de gestructureerde data.
+    slaat het resultaat op en retourneert de gestructureerde data.
     """
     if not query_input.user_input:
         raise HTTPException(status_code=400, detail="Input mag niet leeg zijn.")
 
-    # --- Placeholder: Check of deze input al verwerkt is in DB ---
-    # existing_data = db.query(SubsidyData).filter(SubsidyData.input_hash == hash(query_input.user_input)).first()
-    # if existing_data:
-    #     # Converteer opgeslagen data naar SubsidyQueryOutput en return
-    #     try:
-    #         parsed_criteria = json.loads(existing_data.criteria_json)
-    #         return SubsidyQueryOutput(criteria=parsed_criteria, summary=existing_data.summary)
-    #     except json.JSONDecodeError:
-    #         # Fallback naar opnieuw genereren als opgeslagen JSON corrupt is
-    #         pass
+    # Check of deze input al eerder is verwerkt (deduplicatie)
+    input_hash = hashlib.md5(query_input.user_input.encode('utf-8')).hexdigest()
+    existing_data = subsidy_storage.find_by_content_hash(input_hash, user.id)
+    
+    if existing_data:
+        # Hergebruik de bestaande criteria
+        try:
+            return SubsidyQueryOutput(
+                criteria=[SubsidyCriterion(**c) for c in existing_data.get("criteria", [])],
+                summary=existing_data.get("summary")
+            )
+        except Exception:
+            # Bij problemen, genereer opnieuw
+            pass
 
     # --- Model Selectie ---
     DEFAULT_MODEL_FALLBACK = "openai/gpt-4o" # Pas aan indien nodig
@@ -213,15 +353,17 @@ async def handle_subsidy_query(
             # Soms zit de JSON in een code block, probeer dat te strippen
             if raw_response_content.startswith("```json"):
                 raw_response_content = raw_response_content[7:]
+                
             if raw_response_content.endswith("```"):
                 raw_response_content = raw_response_content[:-3]
+                
             raw_response_content = raw_response_content.strip()
 
             parsed_data = json.loads(raw_response_content)
 
             # Valideer de structuur (basis check)
             if "criteria" not in parsed_data or not isinstance(parsed_data["criteria"], list):
-                 raise ValueError("Ongeldige JSON structuur: 'criteria' lijst ontbreekt of is geen lijst.")
+                raise ValueError("Ongeldige JSON structuur: 'criteria' lijst ontbreekt of is geen lijst.")
 
             # Creëer het output object
             output_data = SubsidyQueryOutput(
@@ -229,36 +371,30 @@ async def handle_subsidy_query(
                 summary=parsed_data.get("summary")
             )
 
+            # Sla de criteria op voor toekomstige deduplicatie
+            criteria_data = {
+                "criteria": [{"id": c.id, "text": c.text} for c in output_data.criteria],
+                "summary": output_data.summary
+            }
+            
+            subsidy_storage.save_criteria(
+                user_id=user.id,
+                criteria=criteria_data,
+                input_text=query_input.user_input,
+                name=f"Subsidie {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+            )
+
+            return output_data
+
         except (json.JSONDecodeError, ValueError, TypeError) as e:
             print(f"Fout bij parsen LLM JSON response: {e}")
             print(f"Ontvangen raw response:\n{raw_response_content}")
             raise HTTPException(status_code=500, detail=f"Kon de LLM response niet correct verwerken: {e}")
 
-        # --- Placeholder: Sla gestructureerde data op in DB ---
-        # try:
-        #     new_subsidy_data = SubsidyData(
-        #         input_hash=hash(query_input.user_input), # Simpele hash van input
-        #         criteria_json=json.dumps([c.dict() for c in output_data.criteria]), # Sla criteria op als JSON string
-        #         summary=output_data.summary,
-        #         created_by=user.id # Koppel aan gebruiker
-        #     )
-        #     db.add(new_subsidy_data)
-        #     db.commit()
-        #     db.refresh(new_subsidy_data)
-        #     # output_data.id = new_subsidy_data.id # Voeg DB ID toe aan response indien nodig
-        # except Exception as db_error:
-        #     db.rollback()
-        #     print(f"Database error: {db_error}")
-        #     # Overweeg of je de gebruiker wilt informeren of alleen loggen
-
-        return output_data
-
     except HTTPException as e:
         raise e
     except Exception as e:
         print(f"Error calling generate_chat_completion or processing: {e}")
-        # import traceback
-        # traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Interne serverfout: {str(e)}")
 
 @router.post("/assess", response_model=SubsidyAssessmentOutput)
@@ -285,7 +421,6 @@ async def handle_subsidy_assessment(
         model_to_use = assessment_input.model
         # Als model leeg is of None, gebruik fallback
         if not model_to_use:
-            print(f"Geen model gespecificeerd, gebruik fallback: {DEFAULT_MODEL_FALLBACK}")
             model_to_use = DEFAULT_MODEL_FALLBACK
             
         # Log het gebruikte model voor debugging
@@ -344,42 +479,42 @@ De output moet een JSON-object zijn waarbij de sleutels genummerd zijn (als stri
             raw_response_content = message.get("content", "").strip()
 
         if not raw_response_content:
-            raise HTTPException(status_code=500, detail="Lege response van LLM bij beoordeling.")
+            raise HTTPException(status_code=500, detail="Lege response van LLM.")
 
         # Parse de JSON response van de LLM
         try:
-            # Verwijder eventuele markdown code block markering
+            # Soms zit de JSON in een code block, probeer dat te strippen
             if raw_response_content.startswith("```json"):
                 raw_response_content = raw_response_content[7:]
+                
             if raw_response_content.endswith("```"):
                 raw_response_content = raw_response_content[:-3]
+                
             raw_response_content = raw_response_content.strip()
 
             parsed_data = json.loads(raw_response_content)
             
-            if not isinstance(parsed_data, dict):
-                raise ValueError("LLM response voor beoordeling is geen geldige JSON dictionary.")
-            
-            # Converteer alle score waarden naar strings indien nodig
-            for key, item in parsed_data.items():
-                if "Score" in item and isinstance(item["Score"], int):
-                    item["Score"] = str(item["Score"])
-            
-            # Validatie via Pydantic model
+            # Valideer de structuur (basis check)
+            if not parsed_data or not isinstance(parsed_data, dict):
+                raise ValueError("Ongeldige JSON structuur: verwacht een dictionary met assessment items.")
+
+            # Converteer scores naar string indien nodig
+            for key, value in parsed_data.items():
+                if isinstance(value, dict) and "Score" in value:
+                    parsed_data[key]["Score"] = str(parsed_data[key]["Score"])
+
             assessment_output = SubsidyAssessmentOutput(assessment=parsed_data)
             return assessment_output
 
         except (json.JSONDecodeError, ValueError, TypeError) as e:
-            print(f"Fout bij parsen LLM JSON response voor beoordeling: {e}")
-            print(f"Ontvangen raw response LLM (beoordeling):\n{raw_response_content}")
-            raise HTTPException(status_code=500, detail=f"Kon de LLM beoordelingsresponse niet correct verwerken: {e}")
+            print(f"Fout bij parsen LLM JSON response: {e}")
+            print(f"Ontvangen raw response:\n{raw_response_content}")
+            raise HTTPException(status_code=500, detail=f"Kon de LLM response niet correct verwerken: {e}")
 
     except HTTPException as e:
         raise e
     except Exception as e:
         print(f"Error in handle_subsidy_assessment: {e}")
-        # import traceback
-        # traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Interne serverfout bij beoordeling: {str(e)}")
 
 @router.post("/summarize", response_model=SubsidySummaryOutput)
@@ -445,26 +580,19 @@ Zorg ervoor dat je de JSON output structuur volgt zoals beschreven in de systeem
             # Verwijder eventuele markdown code block markering
             if raw_response_content.startswith("```json"):
                 raw_response_content = raw_response_content[7:]
+                
             if raw_response_content.endswith("```"):
                 raw_response_content = raw_response_content[:-3]
+                
             raw_response_content = raw_response_content.strip()
 
             parsed_data = json.loads(raw_response_content)
-            
-            # Converteer de sleutels naar de verwachte Pydantic model veldnamen
-            # (merk op dat we underscore gebruiken in het Pydantic model vanwege Python conventies)
-            if "Datum_aanvraag" not in parsed_data and "Datum aanvraag" in parsed_data:
-                parsed_data["Datum_aanvraag"] = parsed_data.pop("Datum aanvraag")
-            if "Datum_evenement" not in parsed_data and "Datum evenement" in parsed_data:
-                parsed_data["Datum_evenement"] = parsed_data.pop("Datum evenement")
-            
-            # Validatie via Pydantic model
             summary_output = SubsidySummaryOutput(**parsed_data)
             return summary_output
 
         except (json.JSONDecodeError, ValueError, TypeError) as e:
             print(f"Fout bij parsen LLM JSON response voor samenvatting: {e}")
-            print(f"Ontvangen raw response LLM (samenvatting):\n{raw_response_content}")
+            print(f"Ontvangen raw response:\n{raw_response_content}")
             raise HTTPException(status_code=500, detail=f"Kon de LLM samenvattingsresponse niet correct verwerken: {e}")
 
     except HTTPException as e:
@@ -505,57 +633,24 @@ async def handle_subsidy_report(
     
     try:
         # Probeer eerst de summary_result als een Python dict te krijgen
-        # In Pydantic v2+ gebruik je model_dump() in plaats van dict()
-        # We proberen beide methoden om compatibel te zijn met verschillende Pydantic versies
         try:
-            if hasattr(report_input.summary_result, "model_dump"):
-                summary_dict = report_input.summary_result.model_dump()
-            elif hasattr(report_input.summary_result, "dict"):
+            # In Pydantic v2+ gebruik je model_dump() in plaats van dict()
+            summary_dict = report_input.summary_result.model_dump()
+        except AttributeError:
+            try:
                 summary_dict = report_input.summary_result.dict()
-            else:
-                # Fallback: converteer het naar een dict met __dict__
-                summary_dict = {
-                    "Aanvrager": report_input.summary_result.Aanvrager,
-                    "Datum_aanvraag": report_input.summary_result.Datum_aanvraag,
-                    "Datum_evenement": report_input.summary_result.Datum_evenement,
-                    "Bedrag": report_input.summary_result.Bedrag,
-                    "Samenvatting": report_input.summary_result.Samenvatting
-                }
+            except AttributeError:
+                summary_dict = dict(report_input.summary_result)
                 
-            # Nu pas proberen te serialiseren naar JSON
-            summary_formatted = json.dumps(summary_dict, indent=2, ensure_ascii=False)
-        except Exception as e:
-            print(f"Fout bij het serialiseren van summary_result: {e}")
-            # Handmatige formattering als fallback
-            summary_formatted = f"""{{
-  "Aanvrager": "{report_input.summary_result.Aanvrager}",
-  "Datum_aanvraag": "{report_input.summary_result.Datum_aanvraag}",
-  "Datum_evenement": "{report_input.summary_result.Datum_evenement}",
-  "Bedrag": "{report_input.summary_result.Bedrag}",
-  "Samenvatting": "{report_input.summary_result.Samenvatting}"
-}}"""
+        summary_formatted = json.dumps(summary_dict, ensure_ascii=False)
         
         # Nu de assessment results
         try:
-            assessment_formatted = json.dumps(report_input.assessment_results, indent=2, ensure_ascii=False)
+            # Assessment results is al een dict
+            assessment_formatted = json.dumps(report_input.assessment_results, ensure_ascii=False)
         except Exception as e:
-            print(f"Fout bij het serialiseren van assessment_results: {e}")
-            # Handmatige formattering als fallback - veiliger implementatie
-            assessment_parts = []
-            for key, item in report_input.assessment_results.items():
-                criterium_escaped = item.Criterium.replace('"', '\\"')
-                score_value = item.Score
-                toelichting_escaped = item.Toelichting.replace('"', '\\"')
-                
-                item_json = f'  "{key}": {{\n'
-                item_json += f'    "Criterium": "{criterium_escaped}",\n'
-                item_json += f'    "Score": "{score_value}",\n'
-                item_json += f'    "Toelichting": "{toelichting_escaped}"\n'
-                item_json += '  }'
-                
-                assessment_parts.append(item_json)
-            
-            assessment_formatted = "{\n" + ",\n".join(assessment_parts) + "\n}"
+            print(f"Fout bij formatteren assessment: {e}")
+            raise HTTPException(status_code=500, detail="Kon de beoordelingsresultaten niet formatteren.")
         
     except Exception as e:
         print(f"Algemene fout bij het voorbereiden van input data: {e}")
@@ -692,6 +787,49 @@ async def handle_complete_assessment(
         
     except Exception as e:
         print(f"Error in handle_complete_assessment: {e}")
-        # import traceback
-        # traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Fout bij complete beoordeling: {str(e)}")
+
+@router.get("/debug/write-test", response_model=Dict[str, Any])
+async def test_write_access(
+    request: Request,
+    user = Depends(get_current_user)
+):
+    """Test endpoint om te controleren of de bestandsopslag werkt"""
+    try:
+        # Test directory creatie en schrijfpermissies
+        test_dir = subsidy_storage.base_dir
+        os.makedirs(test_dir, exist_ok=True)
+        
+        # Test bestand aanmaken en schrijven
+        test_file = os.path.join(test_dir, f"test_write_{int(time.time())}.txt")
+        with open(test_file, 'w') as f:
+            f.write(f"Test schrijftoegang voor gebruiker {user.id}")
+        
+        # Lees het bestand om te verifiëren dat het schrijven is gelukt
+        with open(test_file, 'r') as f:
+            content = f.read()
+        
+        # Verwijder het testbestand
+        os.remove(test_file)
+        
+        # Lijst alle bestanden in de directory
+        files = os.listdir(test_dir)
+        
+        return {
+            "success": True,
+            "message": f"Schrijftest geslaagd in {test_dir}",
+            "content": content,
+            "test_file": test_file,
+            "files_in_directory": files[:10],  # Toon slechts de eerste 10 bestanden
+            "directory_exists": os.path.exists(test_dir),
+            "is_writable": os.access(test_dir, os.W_OK)
+        }
+    except Exception as e:
+        print(f"Fout bij testen schrijftoegang: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }

@@ -992,8 +992,16 @@ app.include_router(utils.router, prefix="/api/v1/utils", tags=["utils"])
 
 # Voeg dit toe bij de andere app.include_router statements
 app.include_router(taalniveau.router, prefix="/api/b1", tags=["taalniveau"])
-app.include_router(subsidies.router, prefix="/api/subsidies", tags=["Subsidies"])
-
+app.include_router(
+    subsidies.router,
+    prefix="/api/subsidies",
+    tags=["subsidies"],
+)
+app.include_router(
+    subsidies.router,
+    prefix="/api/app-launcher/subsidies", 
+    tags=["subsidies"],
+)
 
 
 try:
