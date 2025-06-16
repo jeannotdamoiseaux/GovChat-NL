@@ -14,6 +14,7 @@ export interface SubsidyResponse {
     savedId?: string;
     timestamp?: string;
     name?: string;
+    isSelection?: boolean;
 }
 // --- Einde Interface ---
 
@@ -139,13 +140,6 @@ export async function addSavedOutput(output: SubsidyResponse) {
     }
 }
 
-export function setSelectedOutput(output: SubsidyResponse | null) {
-    subsidyStore.update(store => ({
-        ...store,
-        selectedOutput: output
-    }));
-}
-
 export async function deleteOutput(id: string) {
     try {
         // Verwijderen van de backend
@@ -206,6 +200,146 @@ export async function clearSavedOutputs() {
         }));
     } catch (error) {
         console.error("Error clearing saved outputs:", error);
+        throw error;
+    }
+}
+
+// Voeg deze nieuwe functies toe
+
+export async function persistSelection(selection: SubsidyResponse | null): Promise<boolean> {
+    if (!selection || !selection.savedId) {
+        console.log("Geen geldige selectie om persistent te maken");
+        return false;
+    }
+    
+    try {
+        const backendUrl = 'http://localhost:8080';
+        const response = await fetch(`${backendUrl}/api/subsidies/select/${selection.savedId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+        });
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Backend error: ${response.status} - ${errorText}`);
+        }
+        
+        const result = await response.json();
+        console.log("Selectie persistent gemaakt:", result);
+        return true;
+    } catch (error) {
+        console.error("Fout bij persistent maken van selectie:", error);
+        return false;
+    }
+}
+
+export async function loadLastSelection(): Promise<SubsidyResponse | null> {
+    try {
+        const backendUrl = 'http://localhost:8080';
+        const response = await fetch(`${backendUrl}/api/subsidies/selection`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        if (result.success && result.has_selection) {
+            console.log("Laatste selectie geladen:", result.selection);
+            
+            // Update de store met de geladen selectie
+            subsidyStore.update(store => ({
+                ...store,
+                selectedOutput: result.selection
+            }));
+            
+            return result.selection;
+        } else {
+            console.log("Geen eerdere selectie gevonden:", result.message);
+            return null;
+        }
+    } catch (error) {
+        console.error("Fout bij laden van laatste selectie:", error);
+        return null;
+    }
+}
+
+// Update de setSelectedOutput functie om selecties ook persistent te maken
+// VERWIJDER DE OUDE functie definitie van setSelectedOutput en gebruik alleen deze
+export function setSelectedOutput(output: SubsidyResponse | null) {
+    subsidyStore.update(store => ({
+        ...store,
+        selectedOutput: output
+    }));
+    
+    // Maak de selectie meteen persistent
+    if (output && output.savedId) {
+        persistSelection(output).catch(error => {
+            console.error("Fout bij persistent maken van selectie:", error);
+        });
+    }
+}
+
+export async function saveSelection(selection: SubsidyResponse | null): Promise<SubsidyResponse | null> {
+    if (!selection) return null;
+    
+    try {
+        // Bereid de selectie voor met een duidelijke naam
+        const selectionToSave = {
+            ...selection,
+            name: selection.name || `Selectie ${new Date().toLocaleString()}`,
+            timestamp: new Date().toISOString(),
+            isSelection: true // Deze vlag gebruiken we om aan te geven dat dit een selectie is
+        };
+
+        console.log("Opslaan van selectie naar backend:", selectionToSave.name);
+        
+        // Opslaan in backend via de bestaande API route
+        const backendUrl = 'http://localhost:8080';
+        const saveUrl = `${backendUrl}/api/subsidies/save`;
+        
+        const response = await fetch(saveUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: JSON.stringify(selectionToSave)
+        });
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Backend error: ${response.status} - ${errorText}`);
+        }
+
+        const savedData = await response.json();
+        console.log("Selectie succesvol opgeslagen in backend, ID:", savedData.id);
+        
+        // Update de store met het nieuwe ID uit de backend
+        const updatedSelection = {
+            ...selectionToSave,
+            savedId: savedData.id
+        };
+        
+        // Werk de store bij
+        subsidyStore.update(store => ({
+            ...store,
+            selectedOutput: updatedSelection,
+            savedOutputs: [...store.savedOutputs, updatedSelection]
+        }));
+        
+        return updatedSelection;
+    } catch (error) {
+        console.error("Fout bij opslaan van selectie:", error);
         throw error;
     }
 }

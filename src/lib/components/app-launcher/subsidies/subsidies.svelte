@@ -4,7 +4,7 @@
     import { toast } from 'svelte-sonner';
     import { fade } from 'svelte/transition';
     import { onMount } from 'svelte';
-    import { subsidyStore, fetchSavedOutputs, initializeStore, setSelectedOutput, addSavedOutput, clearSavedOutputs } from '$lib/stores/subsidyStore';
+    import { subsidyStore, fetchSavedOutputs, initializeStore, setSelectedOutput, addSavedOutput, clearSavedOutputs, saveSelection, loadLastSelection } from '$lib/stores/subsidyStore';
     import type { SubsidyResponse } from '$lib/stores/subsidyStore';
 
     let userInput: string = '';
@@ -23,7 +23,16 @@
         initializeStore();
         
         try {
+            // Haal eerst alle opgeslagen criteria op
             await fetchSavedOutputs();
+            
+            // Probeer dan de laatst geselecteerde criteria te laden
+            const lastSelection = await loadLastSelection();
+            if (lastSelection) {
+                console.log("Laatste selectie automatisch geladen:", lastSelection.name);
+                // setSelectedOutput wordt niet nog eens aangeroepen omdat loadLastSelection de store al bijwerkt
+                toast.success(`Laatste selectie "${lastSelection.name}" geladen`);
+            }
         } catch (error) {
             console.error("Fout bij laden van opgeslagen subsidiecriteria:", error);
             toast.error("Kon opgeslagen subsidiecriteria niet laden");
@@ -191,6 +200,42 @@
         clearSavedOutputs();
         toast.info('Opgeslagen resultaten gewist.');
     }
+
+    async function handleSaveSelection() {
+        if ($subsidyStore.selectedOutput) {
+            try {
+                // Controleer eerst of deze selectie al is opgeslagen
+                const existingItem = $subsidyStore.savedOutputs.find(item => 
+                    item.savedId === $subsidyStore.selectedOutput?.savedId);
+                
+                if (existingItem) {
+                    toast.info("Deze selectie is al opgeslagen");
+                    return;
+                }
+                
+                const name = prompt("Geef een naam voor deze selectie:", 
+                    $subsidyStore.selectedOutput.name || `Selectie ${new Date().toLocaleTimeString()}`);
+                
+                if (name === null) {
+                    toast.info("Opslaan van selectie geannuleerd");
+                    return;
+                }
+                
+                const savedSelection = await saveSelection({
+                    ...$subsidyStore.selectedOutput,
+                    name: name.trim() || $subsidyStore.selectedOutput.name
+                });
+                
+                toast.success(`Selectie "${name || 'Naamloos'}" opgeslagen in backend`);
+                console.log("Opgeslagen selectie:", savedSelection);
+            } catch (error) {
+                console.error("Fout bij opslaan selectie:", error);
+                toast.error(`Kon selectie niet opslaan: ${error.message}`);
+            }
+        } else {
+            toast.error("Er is geen selectie om op te slaan");
+        }
+    }
 </script>
 
 <div class="max-w-7xl mx-auto mt-6 space-y-6 px-4">
@@ -291,11 +336,15 @@
             <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
                 <h3 class="text-xl font-bold text-gray-800 dark:text-white mb-4">Opgeslagen Resultaten ({$subsidyStore.savedOutputs.length})</h3>
                 <ul class="space-y-3 max-h-[calc(100vh-20rem)] overflow-y-auto pr-2">
-                    {#each $subsidyStore.savedOutputs as savedOutput (savedOutput.savedId)}
+                    {#each $subsidyStore.savedOutputs.filter(output => 
+                        output.criteria && 
+                        output.criteria.length > 0 && 
+                        (!output.name.includes("Naamloos") || output.criteria.length > 0)
+                    ) as savedOutput (savedOutput.savedId)}
                         <li class="border border-gray-200 dark:border-gray-700 rounded p-3 flex justify-between items-center {$subsidyStore.selectedOutput?.savedId === savedOutput.savedId ? 'bg-blue-100 dark:bg-blue-900/50 ring-2 ring-blue-500' : 'bg-gray-50 dark:bg-gray-700/50'}">
                             <div>
                                 <p class="font-semibold text-gray-800 dark:text-gray-200">
-                                    {savedOutput.name || 'Naamloos Resultaat'}
+                                    {savedOutput.name || 'Resultaat'}
                                 </p>
                                 <p class="text-sm text-gray-500 dark:text-gray-400">
                                     Opgeslagen: {savedOutput.timestamp?.toLocaleString() ?? 'Onbekend'}
@@ -379,6 +428,34 @@
                 <p class="text-sm text-blue-700 dark:text-blue-300 mb-2"><strong>Samenvatting:</strong> {$subsidyStore.selectedOutput.summary}</p>
             {/if}
             <p class="text-sm text-blue-700 dark:text-blue-300"><strong>Aantal criteria:</strong> {$subsidyStore.selectedOutput.criteria.length}</p>
+        
+            <!-- Nieuwe knop om selectie op te slaan naar backend -->
+            <div class="mt-4 flex justify-end">
+                <button
+                    type="button"
+                    on:click={() => {
+                        // Ga direct naar deel 2
+                        window.location.href = '/app-launcher/subsidies2';
+                    }}
+                    class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline flex items-center gap-2 mr-2"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                    </svg>
+                    Ga naar beoordelingstool
+                </button>
+                
+                <button
+                    type="button"
+                    on:click={handleSaveSelection}
+                    class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline flex items-center gap-2"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                    </svg>
+                    Maak kopie van selectie
+                </button>
+            </div>
         </div>
     {/if}
 </div>

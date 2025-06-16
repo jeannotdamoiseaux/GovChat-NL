@@ -1,7 +1,7 @@
 <script lang="ts">
     import { WEBUI_BASE_URL } from '$lib/constants';
     import { models, settings } from '$lib/stores';
-    import { subsidyStore } from '$lib/stores/subsidyStore';
+    import { subsidyStore, fetchSavedOutputs, loadLastSelection } from '$lib/stores/subsidyStore';
     import type { SubsidyResponse } from '$lib/stores/subsidyStore';
     import { onMount } from 'svelte';
     import { toast } from 'svelte-sonner';
@@ -54,6 +54,30 @@
 
         // Cleanup de subscription wanneer het component unmount
         return () => unsubscribe();
+    });
+
+    onMount(async () => {
+        try {
+            // Haal eerst alle opgeslagen criteria op
+            await fetchSavedOutputs();
+            
+            // Probeer dan de laatst geselecteerde criteria te laden
+            const lastSelection = await loadLastSelection();
+            if (lastSelection) {
+                console.log("Laatste selectie automatisch geladen:", lastSelection.name);
+                toast.success(`Laatste selectie "${lastSelection.name}" geladen`);
+                
+                // Update de lokale state met de geselecteerde data
+                selectedDataFromPart1 = lastSelection;
+            }
+            
+            // Je kunt hier optioneel filteren op alleen selecties als je dat wilt
+            const selections = $subsidyStore.savedOutputs.filter(item => item.isSelection);
+            console.log("Beschikbare selecties:", selections);
+        } catch (error) {
+            console.error("Fout bij laden van opgeslagen subsidiecriteria:", error);
+            toast.error("Kon opgeslagen subsidiecriteria niet laden");
+        }
     });
 
     async function handleAssessmentSubmit() {

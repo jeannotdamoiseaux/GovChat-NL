@@ -169,9 +169,32 @@ async def save_subsidy_data(
 ):
     """Sla subsidiecriteria op in een bestand"""
     print(f"save_subsidy_data aangeroepen voor gebruiker {user.id}")
-    print(f"Te bewaren data: {data}")
     
     try:
+        # Controleer op duplicaten, behalve als het expliciet een selectie is
+        is_selection = getattr(data, 'isSelection', False)
+        
+        if not is_selection and data.criteria and len(data.criteria) > 0:
+            existing_items = subsidy_storage.list_criteria_for_user(user_id=user.id)
+            
+            # Maak een eenvoudige hash van de criteria teksten
+            criteria_texts = sorted([c.text for c in data.criteria])
+            current_hash = hashlib.md5("|".join(criteria_texts).encode('utf-8')).hexdigest()
+            
+            # Controleer op duplicaten tenzij het een selectie is
+            for item in existing_items:
+                if "criteria" in item and len(item["criteria"]) > 0:
+                    item_texts = sorted([c.get("text", "") for c in item["criteria"]])
+                    item_hash = hashlib.md5("|".join(item_texts).encode('utf-8')).hexdigest()
+                    
+                    if item_hash == current_hash:
+                        print(f"Duplicaat gedetecteerd, item bestaat al met ID: {item['id']}")
+                        return {
+                            "success": True,
+                            "id": item["id"],
+                            "message": "Item reeds opgeslagen (duplicaat gedetecteerd)"
+                        }
+        
         # Wanneer criteria in Pydantic model zitten, eerst naar dict converteren
         criteria_list = []
         if data.criteria:
@@ -189,16 +212,20 @@ async def save_subsidy_data(
         # Bereid criteria voor voor opslag
         criteria_data = {
             "criteria": criteria_list,
-            "summary": data.summary
+            "summary": data.summary,
+            "is_selection": is_selection  # Sla op of dit een selectie is
         }
         
-        print(f"Criteria data geformatteerd voor opslag: {criteria_data}")
+        # Als het een selectie is, geef het een speciale naam
+        name = data.name
+        if is_selection and not name.startswith("Selectie:"):
+            name = f"Selectie: {name or datetime.now().strftime('%Y-%m-%d %H:%M')}"
         
         # Sla op met de helper
         subsidy_id = subsidy_storage.save_criteria(
             user_id=user.id, 
             criteria=criteria_data,
-            name=data.name
+            name=name
         )
         
         print(f"Succesvol opgeslagen met ID: {subsidy_id}")
@@ -832,4 +859,116 @@ async def test_write_access(
             "success": False,
             "error": str(e),
             "traceback": traceback.format_exc()
+        }
+
+# Voeg deze nieuwe endpoints toe
+
+@router.post("/select/{subsidy_id}", response_model=Dict[str, Any])
+async def select_subsidy_data(
+    request: Request,
+    subsidy_id: str,
+    user = Depends(get_current_user)
+):
+    """Stel een bepaalde set subsidiecriteria in als geselecteerd voor een gebruiker"""
+    try:
+        # Controleer of de subsidie bestaat
+        subsidy_data = subsidy_storage.get_criteria_by_id(subsidy_id, user.id)
+        
+        if not subsidy_data:
+            raise HTTPException(status_code=404, detail="Subsidiecriteria niet gevonden")
+        
+        # Sla de selectie op voor deze gebruiker
+        user_settings = {
+            "user_id": user.id,
+            "last_selection_id": subsidy_id,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        # Gebruik een speciale bestandsnaam voor gebruikersinstellingen
+        filename = f"user_settings_{user.id}.json"
+        filepath = os.path.join(subsidy_storage.base_dir, filename)
+        
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(user_settings, f, ensure_ascii=False, indent=2)
+        
+        return {
+            "success": True,
+            "message": "Subsidie selectie ingesteld",
+            "selection_id": subsidy_id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error bij instellen subsidie selectie: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Kon selectie niet instellen: {str(e)}")
+
+@router.get("/selection", response_model=Dict[str, Any])
+async def get_current_selection(
+    request: Request,
+    user = Depends(get_current_user)
+):
+    """Haal de huidige selectie op voor een gebruiker"""
+    try:
+        # Zoek de gebruikersinstellingen
+        filename = f"user_settings_{user.id}.json"
+        filepath = os.path.join(subsidy_storage.base_dir, filename)
+        
+        if not os.path.exists(filepath):
+            return {
+                "success": True,
+                "has_selection": False,
+                "message": "Geen huidige selectie gevonden"
+            }
+        
+        with open(filepath, 'r', encoding='utf-8') as f:
+            user_settings = json.load(f)
+        
+        selection_id = user_settings.get("last_selection_id")
+        if not selection_id:
+            return {
+                "success": True,
+                "has_selection": False,
+                "message": "Geen huidige selectie gevonden"
+            }
+            
+        # Haal de geselecteerde subsidie op
+        subsidy_data = subsidy_storage.get_criteria_by_id(selection_id, user.id)
+        
+        if not subsidy_data:
+            return {
+                "success": True,
+                "has_selection": False,
+                "message": "Geselecteerde subsidie niet meer gevonden"
+            }
+        
+        # Converteer de data naar het juiste formaat
+        criteria = []
+        for c in subsidy_data.get("criteria", []):
+            if isinstance(c, dict) and "id" in c and "text" in c:
+                criteria.append({"id": c["id"], "text": c["text"]})
+        
+        selection = {
+            "criteria": criteria,
+            "summary": subsidy_data.get("summary"),
+            "name": subsidy_data.get("name"),
+            "savedId": subsidy_data.get("id"),
+            "timestamp": subsidy_data.get("timestamp"),
+            "isSelection": True
+        }
+        
+        return {
+            "success": True,
+            "has_selection": True,
+            "selection": selection
+        }
+        
+    except Exception as e:
+        print(f"Error bij ophalen subsidie selectie: {e}")
+        traceback.print_exc()
+        return {
+            "success": False,
+            "has_selection": False,
+            "message": f"Kon selectie niet ophalen: {str(e)}"
         }
