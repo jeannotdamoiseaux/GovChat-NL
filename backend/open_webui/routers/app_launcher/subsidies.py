@@ -92,18 +92,18 @@ Het is belangrijk om geen aannames te maken en alleen uit te gaan van de informa
 
 {
     "1": {
-        "Criterium": "Volledige tekst van het eerste criterium",
-        "Score": "Uw score (0-10 of 'Onzeker')",
-        "Toelichting": "Uw beknopte toelichting voor dit criterium."
+        "Criterium": "",
+        "Score": "",
+        "Toelichting": ""
     },
     "2": {
-        "Criterium": "Volledige tekst van het tweede criterium",
-        "Score": "Uw score (0-10 of 'Onzeker')",
-        "Toelichting": "Uw beknopte toelichting voor dit criterium."
+        "Criterium": "",
+        "Score": "",
+        "Toelichting": ""
     }
 }
 
-Zorg ervoor dat je altijd nested accolades ({}) gebruikt om de structuur van je output weer te geven. Wees volledig en neem altijd alle criteria mee in je evaluatie. Geef ALLEEN het JSON-object terug zonder extra tekst."""
+Zorg ervoor dat je altijd nested accolades ({}) gebruikt om de structuur van je output weer te geven. Wees volledig en neem altijd alle artikelen mee in je evaluatie. Geef ALLEEN het JSON-object terug zonder extra tekst."""
 
 # --- System Prompt voor samenvatting subsidieaanvraag ---
 SUMMARY_SYSTEM_PROMPT = """Je taak is om een korte samenvatting te maken van een subsidieaanvraag, waarbij je uitsluitend gebruikmaakt van het aanvraagformulier als bron van gegevens. De gewenste outputstructuur is een geneste JSON-indeling, waarbij je de volgende structuur volgt:
