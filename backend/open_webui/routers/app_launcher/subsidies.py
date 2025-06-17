@@ -1053,13 +1053,15 @@ async def get_global_selection(
         
         selection = {
             "criteria": criteria,
-            "summary": subsidy_data.get("summary"),
-            "name": subsidy_data.get("name"),
-            "savedId": subsidy_data.get("id"),
-            "timestamp": subsidy_data.get("timestamp"),
+            "summary": subsidy_data.get("summary", ""),
+            "name": subsidy_data.get("name", "Globale standaard selectie"),
+            "savedId": subsidy_data.get("id", ""),
+            "timestamp": subsidy_data.get("timestamp", datetime.now().isoformat()),
             "isSelection": True,
             "isGlobalSelection": True
         }
+        
+        print(f"Returning global selection with {len(criteria)} criteria")
         
         return {
             "success": True,

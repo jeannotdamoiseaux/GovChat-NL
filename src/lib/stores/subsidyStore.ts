@@ -48,7 +48,7 @@ export async function fetchSavedOutputs() {
     subsidyStore.update(state => ({ ...state, isLoading: true }));
     try {
         // Gebruik ALTIJD expliciete backend URL
-        const backendUrl = 'http://localhost:8080';
+        const backendUrl = WEBUI_BASE_URL || 'http://localhost:8080';
         console.log("Ophalen van opgeslagen subsidiecriteria van:", backendUrl);
         
         const response = await fetch(`${backendUrl}/api/subsidies/list`, {
@@ -98,7 +98,7 @@ export async function addSavedOutput(output: SubsidyResponse) {
         console.log("Opslaan subsidiecriterium:", outputToAdd.name);
 
         // Opslaan in backend
-        const backendUrl = 'http://localhost:8080';
+        const backendUrl = WEBUI_BASE_URL || 'http://localhost:8080';
         const saveUrl = `${backendUrl}/api/subsidies/save`; 
         
         console.log("API call naar:", saveUrl);
@@ -143,7 +143,7 @@ export async function addSavedOutput(output: SubsidyResponse) {
 export async function deleteOutput(id: string) {
     try {
         // Verwijderen van de backend
-        const backendUrl = 'http://localhost:8080';
+        const backendUrl = WEBUI_BASE_URL || 'http://localhost:8080';
         const response = await fetch(`${backendUrl}/api/subsidies/${id}`, {
             method: 'DELETE',
             headers: {
@@ -179,7 +179,7 @@ export async function clearSavedOutputs() {
     try {
         // Verwijder elk item op de backend
         const currentStore = get(subsidyStore);
-        const backendUrl = 'http://localhost:8080';
+        const backendUrl = WEBUI_BASE_URL || 'http://localhost:8080';
         
         for (const output of currentStore.savedOutputs) {
             if (output.savedId) {
@@ -213,7 +213,7 @@ export async function persistSelection(selection: SubsidyResponse | null): Promi
     }
     
     try {
-        const backendUrl = 'http://localhost:8080';
+        const backendUrl = WEBUI_BASE_URL || 'http://localhost:8080';
         const response = await fetch(`${backendUrl}/api/subsidies/select/${selection.savedId}`, {
             method: 'POST',
             headers: {
@@ -238,7 +238,7 @@ export async function persistSelection(selection: SubsidyResponse | null): Promi
 
 export async function loadLastSelection(): Promise<SubsidyResponse | null> {
     try {
-        const backendUrl = 'http://localhost:8080';
+        const backendUrl = WEBUI_BASE_URL || 'http://localhost:8080';
         const response = await fetch(`${backendUrl}/api/subsidies/selection`, {
             method: 'GET',
             headers: {
@@ -275,14 +275,14 @@ export async function loadLastSelection(): Promise<SubsidyResponse | null> {
 
 // Update de setSelectedOutput functie om selecties ook persistent te maken
 // VERWIJDER DE OUDE functie definitie van setSelectedOutput en gebruik alleen deze
-export function setSelectedOutput(output: SubsidyResponse | null) {
+export function setSelectedOutput(output: SubsidyResponse | null, makePersistent: boolean = false) {
     subsidyStore.update(store => ({
         ...store,
         selectedOutput: output
     }));
     
-    // Maak de selectie meteen persistent
-    if (output && output.savedId) {
+    // Alleen persistent maken als dat expliciet gevraagd wordt
+    if (makePersistent && output && output.savedId) {
         persistSelection(output).catch(error => {
             console.error("Fout bij persistent maken van selectie:", error);
         });
@@ -304,7 +304,7 @@ export async function saveSelection(selection: SubsidyResponse | null): Promise<
         console.log("Opslaan van selectie naar backend:", selectionToSave.name);
         
         // Opslaan in backend via de bestaande API route
-        const backendUrl = 'http://localhost:8080';
+        const backendUrl = WEBUI_BASE_URL || 'http://localhost:8080';
         const saveUrl = `${backendUrl}/api/subsidies/save`;
         
         const response = await fetch(saveUrl, {
@@ -348,7 +348,7 @@ export async function saveSelection(selection: SubsidyResponse | null): Promise<
 
 export async function loadGlobalSelection(): Promise<SubsidyResponse | null> {
     try {
-        const backendUrl = 'http://localhost:8080';
+        const backendUrl = WEBUI_BASE_URL || 'http://localhost:8080';
         const response = await fetch(`${backendUrl}/api/subsidies/global`, {
             method: 'GET',
             headers: {
@@ -390,7 +390,7 @@ export async function setGlobalSelection(selection: SubsidyResponse | null): Pro
     }
     
     try {
-        const backendUrl = 'http://localhost:8080';
+        const backendUrl = WEBUI_BASE_URL || 'http://localhost:8080';
         const response = await fetch(`${backendUrl}/api/subsidies/global/set/${selection.savedId}`, {
             method: 'POST',
             headers: {

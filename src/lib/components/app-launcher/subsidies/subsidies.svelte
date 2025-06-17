@@ -199,8 +199,9 @@
     }
 
     function selectOutput(output: SubsidyResponse) {
-        setSelectedOutput(output);
-        toast.success(`"${output.name}" geselecteerd.`);
+        // Selecteer zonder persistent te maken
+        setSelectedOutput(output, false);
+        toast.success(`"${output.name}" geselecteerd voor deze sessie.`);
         console.log("Geselecteerde output (Store):", $subsidyStore.selectedOutput);
     }
 

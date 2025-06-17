@@ -65,11 +65,16 @@
             const globalSelection = await loadGlobalSelection();
             
             if (globalSelection) {
-                console.log("Globale standaard selectie geladen:", globalSelection.name);
+                console.log("Globale standaard selectie geladen:", globalSelection);
                 toast.success(`Standaard criteria "${globalSelection.name}" geladen`);
                 
                 // Update de lokale state met de geselecteerde data
                 selectedDataFromPart1 = globalSelection;
+                // IMPORTANT: Also update the store to ensure consistency
+                subsidyStore.update(store => ({
+                    ...store,
+                    selectedOutput: globalSelection
+                }));
                 return; // Stop hier als er een globale selectie is
             }
             
@@ -322,6 +327,11 @@
         if (numScore >= 3) return 'text-yellow-600 dark:text-yellow-400';
         return 'text-red-600 dark:text-red-400';
     }
+
+    $: {
+        console.log("selectedDataFromPart1:", selectedDataFromPart1);
+        console.log("Store selected output:", $subsidyStore.selectedOutput);
+    }
 </script>
 
 <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
@@ -344,7 +354,7 @@
 
             <div class="border border-gray-300 rounded-md p-3 bg-gray-50 dark:bg-gray-700">
                  <h4 class="font-medium mb-1">Criteria (uit Deel 1):</h4>
-                 {#if selectedDataFromPart1.criteria.length > 0}
+                 {#if selectedDataFromPart1?.criteria?.length > 0}
                     <div class="max-h-40 overflow-y-auto">
                         <ul class="list-disc list-inside space-y-1 text-sm text-gray-600 dark:text-gray-300">
                             {#each selectedDataFromPart1.criteria as criterion (criterion.id)}
@@ -353,7 +363,9 @@
                         </ul>
                     </div>
                  {:else}
-                    <p class="text-sm text-gray-500 dark:text-gray-400">Geen criteria gevonden in deel 1.</p>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">
+                        Geen criteria gevonden. (Lengte: {selectedDataFromPart1?.criteria?.length || 0})
+                    </p>
                  {/if}
             </div>
 
@@ -595,6 +607,24 @@
             <a href="/app-launcher/subsidies" class="text-blue-600 hover:underline mt-2 inline-block">Ga naar Deel 1</a>
         </div>
     {/if}
+
+    <!-- Nieuwe knop om standaard criteria te verversen -->
+    <div class="mt-6">
+        <button
+            type="button"
+            on:click={async () => {
+                const globalSelection = await loadGlobalSelection();
+                if (globalSelection) {
+                    toast.success(`Nieuwe standaard criteria "${globalSelection.name}" geladen`);
+                } else {
+                    toast.info("Er zijn geen standaard criteria ingesteld");
+                }
+            }}
+            class="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded"
+        >
+            Ververs standaard criteria
+        </button>
+    </div>
 </div>
 
 <style>
