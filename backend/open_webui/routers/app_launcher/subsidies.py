@@ -54,16 +54,32 @@ class SubsidyAssessmentOutput(BaseModel):
     assessment: Dict[str, SubsidyAssessmentItem]  # {"1": {...}, "2": {...}, ...}
 
 # --- Aangepaste System Prompt voor JSON Output ---
-SYSTEM_PROMPT = """Je bent een expert op het gebied van Nederlandse subsidies. Analyseer de volgende subsidieregeling die door de gebruiker wordt verstrekt. Identificeer alle relevante criteria waaraan een aanvrager moet voldoen. Geef je antwoord ALLEEN als een geldig JSON-object terug. Het JSON-object moet de volgende structuur hebben:
+SYSTEM_PROMPT = """Je bent een expert op het gebied van Nederlandse subsidies. Analyseer de volgende subsidieregeling die door de gebruiker wordt verstrekt.
+
+Identificeer alle criteria die in de regeling worden genoemd, inclusief de nuances uit de toelichting die onderaan het document wordt vermeld. Zorg voor een volledig overzicht waarbij elk criterium wordt genummerd volgens de oorspronkelijke regeling. Zorg ervoor dat de resulterende opsomming juistheid, consistentie en volledigheid vertoont.
+
+BELANGRIJK: Zorg ervoor dat je ALLE artikelen van de regeling opneemt in je set van criteria. Bij twijfel moet je het artikel met onderliggende criteria altijd toevoegen om te voorkomen dat je iets mist.
+
+Geef je antwoord ALLEEN als een geldig JSON-object terug. Het JSON-object moet de volgende structuur hebben:
 {
   "criteria": [
-    { "id": 1, "text": "Criterium 1 beschrijving..." },
-    { "id": 2, "text": "Criterium 2 beschrijving..." },
+    { "id": 1, "text": "Artikel X.Y: Volledige tekst van criterium inclusief nuances..." },
+    { "id": 2, "text": "Artikel X.Z: Volledige tekst van criterium inclusief nuances..." },
     // ... meer criteria
   ],
-  "summary": "Een korte samenvatting van de belangrijkste criteria of de regeling (optioneel)."
+  "summary": "Een korte samenvatting van de regeling met vermelding van de belangrijkste doelstellingen en voorwaarden."
 }
-Zorg ervoor dat de 'text' van elk criterium duidelijk en volledig is. Nummer de criteria opeenvolgend in het 'id' veld. Als er geen criteria gevonden worden, geef dan een lege lijst terug: { "criteria": [], "summary": "Geen specifieke criteria gevonden." }. Geef GEEN andere tekst terug buiten het JSON-object."""
+
+Zorg ervoor dat:
+1. De 'text' van elk criterium duidelijk, volledig en nauwkeurig is
+2. Elk criterium verwijst naar het bijbehorende artikel uit de regeling
+3. Alle artikelen en onderdelen van de regeling worden opgenomen
+4. De nummering in het 'id' veld opeenvolgend is
+5. Het veld 'summary' een beknopt maar volledig overzicht van de regeling bevat
+
+Als er geen criteria gevonden worden, geef dan een lege lijst terug: { "criteria": [], "summary": "Geen specifieke criteria gevonden." }. 
+
+Geef GEEN andere tekst terug buiten het JSON-object."""
 
 # --- System Prompt voor beoordeling subsidieaanvraag ---
 ASSESSMENT_SYSTEM_PROMPT = """Je bent verantwoordelijk voor het beoordelen van een subsidieaanvraag aan de hand van een subsidieregeling. Deze regeling ontvang je als een geneste JSON-indeling, waarbij elk artikel en daaronder de bijbehorende criteria worden weergegeven. Het is jouw taak om voor elk criterium in de ontvangen JSON een score tussen 0 en 10, en een beknopte toelichting die de redenering achter de gegeven score beschrijft, toe te voegen.
