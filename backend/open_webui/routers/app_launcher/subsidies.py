@@ -171,29 +171,7 @@ async def save_subsidy_data(
     print(f"save_subsidy_data aangeroepen voor gebruiker {user.id}")
     
     try:
-        # Controleer op duplicaten, behalve als het expliciet een selectie is
-        is_selection = getattr(data, 'isSelection', False)
-        
-        if not is_selection and data.criteria and len(data.criteria) > 0:
-            existing_items = subsidy_storage.list_criteria_for_user(user_id=user.id)
-            
-            # Maak een eenvoudige hash van de criteria teksten
-            criteria_texts = sorted([c.text for c in data.criteria])
-            current_hash = hashlib.md5("|".join(criteria_texts).encode('utf-8')).hexdigest()
-            
-            # Controleer op duplicaten tenzij het een selectie is
-            for item in existing_items:
-                if "criteria" in item and len(item["criteria"]) > 0:
-                    item_texts = sorted([c.get("text", "") for c in item["criteria"]])
-                    item_hash = hashlib.md5("|".join(item_texts).encode('utf-8')).hexdigest()
-                    
-                    if item_hash == current_hash:
-                        print(f"Duplicaat gedetecteerd, item bestaat al met ID: {item['id']}")
-                        return {
-                            "success": True,
-                            "id": item["id"],
-                            "message": "Item reeds opgeslagen (duplicaat gedetecteerd)"
-                        }
+        # Removed deduplication check
         
         # Wanneer criteria in Pydantic model zitten, eerst naar dict converteren
         criteria_list = []
@@ -213,12 +191,12 @@ async def save_subsidy_data(
         criteria_data = {
             "criteria": criteria_list,
             "summary": data.summary,
-            "is_selection": is_selection  # Sla op of dit een selectie is
+            "is_selection": getattr(data, 'isSelection', False)  # Behoud is_selection flag
         }
         
         # Als het een selectie is, geef het een speciale naam
         name = data.name
-        if is_selection and not name.startswith("Selectie:"):
+        if getattr(data, 'isSelection', False) and not name.startswith("Selectie:"):
             name = f"Selectie: {name or datetime.now().strftime('%Y-%m-%d %H:%M')}"
         
         # Sla op met de helper
@@ -328,21 +306,8 @@ async def handle_subsidy_query(
     if not query_input.user_input:
         raise HTTPException(status_code=400, detail="Input mag niet leeg zijn.")
 
-    # Check of deze input al eerder is verwerkt (deduplicatie)
-    input_hash = hashlib.md5(query_input.user_input.encode('utf-8')).hexdigest()
-    existing_data = subsidy_storage.find_by_content_hash(input_hash, user.id)
+    # Removed deduplication check using input_hash
     
-    if existing_data:
-        # Hergebruik de bestaande criteria
-        try:
-            return SubsidyQueryOutput(
-                criteria=[SubsidyCriterion(**c) for c in existing_data.get("criteria", [])],
-                summary=existing_data.get("summary")
-            )
-        except Exception:
-            # Bij problemen, genereer opnieuw
-            pass
-
     # --- Model Selectie ---
     DEFAULT_MODEL_FALLBACK = "openai/gpt-4o" # Pas aan indien nodig
     model_to_use = query_input.model or DEFAULT_MODEL_FALLBACK
