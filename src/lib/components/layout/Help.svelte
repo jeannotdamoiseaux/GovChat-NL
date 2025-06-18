@@ -187,7 +187,7 @@
         </div>
         <div class="flex flex-1 h-0 pt-4 overflow-hidden">
             <!-- Sidebar navigation -->
-            <nav aria-label="Help navigatie" class="hidden md:block md:w-64 h-full pr-4 pl-6 flex-shrink-0">
+            <nav aria-label="Help navigatie" class="hidden md:block md:w-64 h-full pr-4 pl-6 flex-shrink-0 overflow-y-auto max-h-[75vh]">
                 <ul class="space-y-1">
                     {#each sections as sec}
                         <li class="select-none">
