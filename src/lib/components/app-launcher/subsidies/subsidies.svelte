@@ -1,6 +1,7 @@
 <script lang="ts">
     import { WEBUI_BASE_URL } from '$lib/constants';
     import { models, settings, user } from '$lib/stores';
+    import { filteredModels, currentAppContext, getFirstAvailableAppModel } from '$lib/stores/appModels';
     import { toast } from 'svelte-sonner';
     import { fade } from 'svelte/transition';
     import { onMount } from 'svelte';
@@ -17,6 +18,14 @@
     let isFlashing = false;
     let fileProcessingProgress = 0;
     let fileProcessingInterval: ReturnType<typeof setInterval> | null = null;
+
+    // Use filtered models from store instead of manual filtering
+    $: subsidieAccessibleModels = $filteredModels;
+
+    // Function to get the first available subsidie model
+    function getFirstSubsidieModel() {
+        return subsidieAccessibleModels.length > 0 ? subsidieAccessibleModels[0].id : null;
+    }
 
     onMount(async () => {
         // Initialiseer expliciet bij het laden
@@ -53,9 +62,24 @@
             toast.error(error);
             return;
         }
-        const currentModelId = $settings?.models?.[0];
+        
+        let currentModelId = $settings?.models?.[0];
+        
+        // Check if current model has subsidie access, if not use first available subsidie model
+        if (currentModelId) {
+            const modelHasSubsidieAccess = subsidieAccessibleModels.some(m => m.id === currentModelId);
+            if (!modelHasSubsidieAccess) {
+                currentModelId = getFirstSubsidieModel();
+                if (currentModelId) {
+                    toast.warn(`Het geselecteerde model heeft geen toegang tot de subsidie app. Gebruikt alternatief model.`);
+                }
+            }
+        } else {
+            currentModelId = getFirstSubsidieModel();
+        }
+        
         if (!currentModelId) {
-            error = 'Selecteer alstublieft een model in de navigatiebalk.';
+            error = 'Er zijn geen modellen beschikbaar voor de subsidie app. Neem contact op met de administrator.';
             toast.error(error);
             return;
         }

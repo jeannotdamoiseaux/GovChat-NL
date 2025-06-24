@@ -1,6 +1,7 @@
 <script>
   import { onMount, getContext } from 'svelte'; 
   import { models, settings } from '$lib/stores';
+  import { filteredModels, currentAppContext, getFirstAvailableAppModel } from '$lib/stores/appModels';
   import { WEBUI_BASE_URL } from '$lib/constants';
   import { fade } from 'svelte/transition';
   import { toast } from 'svelte-sonner';
@@ -47,14 +48,17 @@
   // Reactive statement for preservedWords based on user words and default toggle
   $: preservedWords = useDefaultWords ? [...new Set([...userWords, ...activeDefaultWords])] : [...new Set(userWords)]; // Use Set to ensure uniqueness
 
-  // Model selection logic
+  // Model selection logic - now uses filtered models from store
   let selectedModels = ['']; 
   $: availableModels = $models || [];
+  
+  // Use the filtered models for B1 app
+  $: b1AccessibleModels = $filteredModels;
 
   // Reactive statement to auto-select model when available
-  $: if (availableModels && availableModels.length > 0 && (!selectedModels[0] || selectedModels[0] === '')) {
-    selectedModels = [availableModels[0].id];
-    console.log('Auto-selected first available model:', selectedModels);
+  $: if (b1AccessibleModels && b1AccessibleModels.length > 0 && (!selectedModels[0] || selectedModels[0] === '')) {
+    selectedModels = [b1AccessibleModels[0].id];
+    console.log('Auto-selected first available B1-accessible model:', selectedModels);
   }
 
   onMount(async () => {
@@ -102,12 +106,12 @@
         console.log('Model loaded from settings:', selectedModels);
       }
       
-      // Ensure the model is valid (exists in availableModels)
-      if (selectedModels[0] && availableModels.length > 0) {
-        const modelExists = availableModels.some(m => m.id === selectedModels[0]);
+      // Ensure the model is valid (exists in b1AccessibleModels)
+      if (selectedModels[0] && b1AccessibleModels.length > 0) {
+        const modelExists = b1AccessibleModels.some(m => m.id === selectedModels[0]);
         if (!modelExists) {
-          selectedModels = [availableModels[0].id];
-          console.log('Selected model not available, using first available:', selectedModels);
+          selectedModels = [b1AccessibleModels[0].id];
+          console.log('Selected model not available for B1 app, using first B1-accessible:', selectedModels);
         }
       }
     } catch (err) {
@@ -205,6 +209,16 @@
     const currentModel = selectedModels[0]; // Get the currently selected model
     if (!currentModel) {
       error = "Selecteer eerst een model";
+      toast.error(error);
+      isLoading = false;
+      showOutput = false;
+      return;
+    }
+    
+    // Additional validation: ensure the selected model has B1 app access
+    const modelHasB1Access = b1AccessibleModels.some(m => m.id === currentModel);
+    if (!modelHasB1Access) {
+      error = "Het geselecteerde model heeft geen toegang tot de B1 Taalniveau app. Neem contact op met de administrator.";
       toast.error(error);
       isLoading = false;
       showOutput = false;

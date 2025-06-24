@@ -16,6 +16,8 @@
 	} from '$lib/stores';
 
 	import { slide } from 'svelte/transition';
+	// Govchat
+	import { currentAppContext } from '$lib/stores/appModels';
 	import ShareChatModal from '../chat/ShareChatModal.svelte';
 	import ModelSelector from '../chat/ModelSelector.svelte';
 	import Tooltip from '../common/Tooltip.svelte';
@@ -76,8 +78,13 @@
 			{$showSidebar ? 'ml-1' : ''}
 			"
 			>
+			<!--Govchat-->
 				{#if showModelSelector}
-					<ModelSelector bind:selectedModels showSetDefault={!shareEnabled} />
+					<ModelSelector 
+						bind:selectedModels 
+						showSetDefault={!shareEnabled} 
+						useAppFilter={$currentAppContext !== 'general'}
+					/>
 				{/if}
 			</div>
 

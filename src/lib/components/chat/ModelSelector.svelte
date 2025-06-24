@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { models, showSettings, settings, user, mobile, config } from '$lib/stores';
+	// Govchat
+	import { filteredModels, currentAppContext } from '$lib/stores/appModels';
 	import { onMount, tick, getContext } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import Selector from './ModelSelector/Selector.svelte';
@@ -10,8 +12,18 @@
 
 	export let selectedModels = [''];
 	export let disabled = false;
-
 	export let showSetDefault = true;
+	// Govchat
+	export let useAppFilter = false; // New prop to enable app-specific filtering
+
+	// Use either filtered models or all models based on useAppFilter prop
+	$: availableModels = useAppFilter ? $filteredModels : $models;
+
+	// Show warning if app filter is enabled but no models are available
+	$: if (useAppFilter && $filteredModels.length === 0 && $models.length > 0) {
+		const appType = $currentAppContext === 'b1' ? 'B1 Taalniveau' : 'Subsidie';
+		toast.warning(`Geen modellen beschikbaar voor ${appType} app. Neem contact op met de administrator.`);
+	}
 
 	const saveDefaultModel = async () => {
 		const hasEmptyModel = selectedModels.filter((it) => it === '');
@@ -25,9 +37,9 @@
 		toast.success($i18n.t('Default model updated'));
 	};
 
-	$: if (selectedModels.length > 0 && $models.length > 0) {
+	$: if (selectedModels.length > 0 && availableModels.length > 0) {
 		selectedModels = selectedModels.map((model) =>
-			$models.map((m) => m.id).includes(model) ? model : ''
+			availableModels.map((m) => m.id).includes(model) ? model : ''
 		);
 	}
 </script>
@@ -40,7 +52,7 @@
 					<Selector
 						id={`${selectedModelIdx}`}
 						placeholder={$i18n.t('Select a model')}
-						items={$models.map((model) => ({
+						items={availableModels.map((model) => ({
 							value: model.id,
 							label: model.name,
 							model: model

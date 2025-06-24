@@ -1,6 +1,7 @@
 <script lang="ts">
     import { WEBUI_BASE_URL } from '$lib/constants';
     import { models, settings } from '$lib/stores';
+    import { filteredModels, currentAppContext, getFirstAvailableAppModel } from '$lib/stores/appModels';
     import { subsidyStore, fetchSavedOutputs, loadLastSelection, loadGlobalSelection } from '$lib/stores/subsidyStore';
     import type { SubsidyResponse } from '$lib/stores/subsidyStore';
     import { onMount } from 'svelte';
@@ -43,6 +44,30 @@
     // Status voor rapport
     let isLoadingReport: boolean = false;
     let reportError: string | null = null;
+
+    // Use filtered models from store instead of manual filtering
+    $: subsidieAccessibleModels = $filteredModels;
+
+    // Function to get the first available subsidie model or fallback
+    function getValidSubsidieModel() {
+        let currentModelId = $settings?.models?.[0];
+        
+        // Check if current model has subsidie access
+        if (currentModelId) {
+            const modelHasSubsidieAccess = subsidieAccessibleModels.some(m => m.id === currentModelId);
+            if (modelHasSubsidieAccess) {
+                return currentModelId;
+            }
+        }
+        
+        // Use first available subsidie model
+        if (subsidieAccessibleModels.length > 0) {
+            return subsidieAccessibleModels[0].id;
+        }
+        
+        // Fallback to hardcoded model if no subsidie models available
+        return "openai/gpt-4o";
+    }
 
     const unsubscribe = subsidyStore.subscribe(store => {
         selectedDataFromPart1 = store.selectedOutput;
@@ -107,14 +132,14 @@
             return;
         }
         
-        // Zorg voor een geldig model
-        // Probeer eerst de modelnaam uit de store te halen
-        let currentModelId = $settings?.models?.[0];
+        // Zorg voor een geldig model met subsidie app access
+        let currentModelId = getValidSubsidieModel();
         
-        // Als fallback, gebruik een hardgecodeerd model dat zeker beschikbaar is
-        if (!currentModelId) {
-            toast.warn("Geen model geselecteerd, gebruiken standaard model");
-            currentModelId = "openai/gpt-4o"; // Standaard model dat waarschijnlijk beschikbaar is
+        // Warn if using fallback
+        if (subsidieAccessibleModels.length === 0) {
+            toast.warn("Geen subsidie-toegankelijke modellen beschikbaar, gebruikt fallback model");
+        } else if (!$settings?.models?.[0] || !subsidieAccessibleModels.some(m => m.id === $settings?.models?.[0])) {
+            toast.warn("Huidig geselecteerd model heeft geen subsidie toegang, gebruikt alternatief model");
         }
         
         isLoading = true;
@@ -162,9 +187,13 @@
             return;
         }
         
-        const currentModelId = $settings?.models?.[0];
-        if (!currentModelId) {
-            toast.warn("Geen model geselecteerd, standaard model wordt gebruikt");
+        const currentModelId = getValidSubsidieModel();
+        
+        // Provide appropriate warning
+        if (subsidieAccessibleModels.length === 0) {
+            toast.warn("Geen subsidie-toegankelijke modellen beschikbaar, gebruikt fallback model");
+        } else if (!$settings?.models?.[0] || !subsidieAccessibleModels.some(m => m.id === $settings?.models?.[0])) {
+            toast.warn("Huidig geselecteerd model heeft geen subsidie toegang, gebruikt alternatief model");
         }
         
         isLoadingSummary = true;
