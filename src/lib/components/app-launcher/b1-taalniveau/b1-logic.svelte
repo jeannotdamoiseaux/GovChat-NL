@@ -1,6 +1,7 @@
 <script>
   import { onMount, getContext } from 'svelte'; 
   import { models, settings } from '$lib/stores';
+  import { filteredModels, currentAppContext, getFirstAvailableAppModel } from '$lib/stores/appModels';
   import { WEBUI_BASE_URL } from '$lib/constants';
   import { fade } from 'svelte/transition';
   import { toast } from 'svelte-sonner';
@@ -37,7 +38,7 @@
     'Bodembeleid', 'Burgerparticipatie', 'Ecologie', 'Ecologisch', 'Groenbeleid',
     'Natuur- en landschapsbeheerorganisaties', 'Informerend stuk', 'Onderwerp', 'Samenvatting', 
     'Kennisnemen van', 'Aanleiding en bestuurlijke context', 'Bevoegdheid', 'Communicatie', 'Vervolg', 
-    'Bijlage(n)', 'Sonderend stuk', 'Vraag aan PS', 'Context', 'Voorstel', 'Statenvoorstel', 'Argumenten', 'Geachte'
+    'Bijlage(n)', 'Sonderend stuk', 'Vraag aan PS', 'Context', 'Voorstel', 'Statenvoorstel', 'Geachte', 'Argumenten'
   ];
 
   let activeDefaultWords = [...originalDefaultWords];
@@ -45,17 +46,16 @@
   let initialLoadComplete = false; // Vlag om initiële lading bij te houden
 
   // Reactive statement for preservedWords based on user words and default toggle
-  $: preservedWords = useDefaultWords ? [...new Set([...userWords, ...activeDefaultWords])] : [...new Set(userWords)]; 
+  $: preservedWords = useDefaultWords ? [...new Set([...userWords, ...activeDefaultWords])] : [...new Set(userWords)]; // Use Set to ensure uniqueness
 
-  // Model selection logic
+  // Model selection logic - now uses filtered models from store
   let selectedModels = ['']; 
   $: availableModels = $models || [];
+  
+  // Use the filtered models for B1 app
+  $: b1AccessibleModels = $filteredModels;
 
-  // Reactive statement to auto-select model when available
-  $: if (availableModels && availableModels.length > 0 && (!selectedModels[0] || selectedModels[0] === '')) {
-    selectedModels = [availableModels[0].id];
-    console.log('Auto-selected first available model:', selectedModels);
-  }
+  // Note: Automatic model selection is now handled by ModelSelector component
 
   onMount(async () => {
     if (browser) {
@@ -102,14 +102,8 @@
         console.log('Model loaded from settings:', selectedModels);
       }
       
-      // Ensure the model is valid (exists in availableModels)
-      if (selectedModels[0] && availableModels.length > 0) {
-        const modelExists = availableModels.some(m => m.id === selectedModels[0]);
-        if (!modelExists) {
-          selectedModels = [availableModels[0].id];
-          console.log('Selected model not available, using first available:', selectedModels);
-        }
-      }
+      // Note: Model validation is now handled automatically by ModelSelector
+      // when using app-filtered models
     } catch (err) {
       console.error('Error loading model:', err);
     }
@@ -187,7 +181,7 @@
 
     // --- Input Validations ---
     if (!inputText.trim()) {
-      error = "Voer tekst in om te vereenvoudigen";
+      error = "Voer tekst in om te versimpelen";
       toast.error(error);
       isLoading = false;
       showOutput = false;
@@ -205,6 +199,16 @@
     const currentModel = selectedModels[0]; // Get the currently selected model
     if (!currentModel) {
       error = "Selecteer eerst een model";
+      toast.error(error);
+      isLoading = false;
+      showOutput = false;
+      return;
+    }
+    
+    // Additional validation: ensure the selected model has B1 app access
+    const modelHasB1Access = b1AccessibleModels.some(m => m.id === currentModel);
+    if (!modelHasB1Access) {
+      error = "Het geselecteerde model heeft geen toegang tot de B1 Taalniveau app. Neem contact op met de administrator.";
       toast.error(error);
       isLoading = false;
       showOutput = false;
@@ -453,10 +457,8 @@
   // Helper function to convert markdown **bold** to HTML <strong> for display
   function processText(text) {
     if (!text) return '';
-    // Tekst wordt nu direct geretourneerd.
-    // De backend is verantwoordelijk voor het correct formatteren van kopjes met <strong> tags.
-    // De {@html outputText} directive in de template zal deze tags renderen.
-    return text;
+    // Replace **text** with <strong>text</strong>, handle spaces around **
+    return text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
   }
 
   // Reactive calculation for progress display text
@@ -468,7 +470,7 @@
     <div class="flex justify-between items-center mb-6">
       <div class="flex items-center gap-2">
         <h1 class="text-2xl font-bold text-gray-800 dark:text-white">
-          {languageLevel}-Versimpelaar
+          {languageLevel}-Taalniveau Vereenvoudiger
         </h1>
         <!-- Add info button next to the title -->
         <button
@@ -507,7 +509,7 @@
     <div class="mb-4">
       <!-- Removed the flex justify-between and the button -->
       <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-        Kies woorden die niet vereenvoudigd mogen worden:
+        Woorden die je wil behouden:
       </h3>
       
       <!-- Preview of preserved words (first 5 with count) -->
@@ -561,7 +563,7 @@
             rows="12"
             draggable="false"
             class="w-full h-[400px] flex-grow px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white min-h-[250px] md:min-h-[400px] overflow-y-auto font-[system-ui] {isFlashing ? 'flash-animation' : ''}"
-            placeholder="Voer hier de tekst in die je wilt vereenvoudigen naar {languageLevel}-taalniveau."
+            placeholder="Voer hier de tekst in die je wilt versimpelen naar {languageLevel}-taalniveau."
             disabled={isLoading}
             spellcheck="false"
             on:dragover|preventDefault
@@ -648,7 +650,7 @@
           on:click={simplifyText}
           disabled={isLoading || !selectedModels[0]}
           class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-full focus:outline-none focus:shadow-outline disabled:opacity-50 h-12 w-12 flex items-center justify-center"
-          title="Vereenvoudig naar {languageLevel}-taalniveau"
+          title="Versimpel naar {languageLevel}-taalniveau"
         >
           {#if isLoading}
             <svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -680,7 +682,7 @@
             </div>
           {:else if !isLoading}
             <div class="w-full h-[400px] flex-grow px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 min-h-[250px] md:min-h-[400px] flex items-center justify-center">
-              <p>Hier verschijnt de vereenvoudigde tekst na verwerking</p>
+              <p>Hier verschijnt de versimpelde tekst na verwerking</p>
             </div>
           {/if}
 
@@ -742,7 +744,7 @@
   <div class="p-6">
     <div class="flex justify-between items-center mb-4">
       <h2 class="text-xl font-bold text-gray-800 dark:text-white">
-        Kies woorden die niet vereenvoudigd worden
+        Vul woorden in die je wilt behouden
       </h2>
       <button
         on:click={() => showPreservedWordsModal = false}
@@ -787,7 +789,7 @@
         </button>
       </div>
       <span class="text-sm text-gray-700 dark:text-gray-300">
-        Standaard niet te veranderen woorden (Bodembeleid, Subsidie, etc.)
+        Standaard te behouden woorden (Bodembeleid, Subsidie, etc.)
       </span>
     </div>
 
@@ -876,7 +878,7 @@
   <div class="p-6">
     <div class="flex justify-between items-center mb-4">
       <h2 class="text-xl font-bold text-gray-800 dark:text-white">
-        Over de B1-taalniveau Vereenvoudiger
+        Over de B1-taalniveau Versimpelaar
       </h2>
       <button
         on:click={() => showInfoModal = false}
@@ -890,7 +892,7 @@
     
     <div class="space-y-4 text-gray-700 dark:text-gray-300">
       <p>
-        De B1-taalniveau Vereenvoudiger helpt je om complexe teksten naar eenvoudigere taal om te zetten, zodat ze beter te begrijpen zijn voor een breder publiek.
+        DuoLimbo helpt je om complexe teksten naar eenvoudigere taal om te zetten, zodat ze beter te begrijpen zijn voor een breder publiek.
       </p>
       <h3 class="text-lg font-medium text-gray-800 dark:text-white mt-4">Wat is B1-taalniveau?</h3>
       <p>
