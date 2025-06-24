@@ -55,11 +55,7 @@
   // Use the filtered models for B1 app
   $: b1AccessibleModels = $filteredModels;
 
-  // Reactive statement to auto-select model when available
-  $: if (b1AccessibleModels && b1AccessibleModels.length > 0 && (!selectedModels[0] || selectedModels[0] === '')) {
-    selectedModels = [b1AccessibleModels[0].id];
-    console.log('Auto-selected first available B1-accessible model:', selectedModels);
-  }
+  // Note: Automatic model selection is now handled by ModelSelector component
 
   onMount(async () => {
     if (browser) {
@@ -106,14 +102,8 @@
         console.log('Model loaded from settings:', selectedModels);
       }
       
-      // Ensure the model is valid (exists in b1AccessibleModels)
-      if (selectedModels[0] && b1AccessibleModels.length > 0) {
-        const modelExists = b1AccessibleModels.some(m => m.id === selectedModels[0]);
-        if (!modelExists) {
-          selectedModels = [b1AccessibleModels[0].id];
-          console.log('Selected model not available for B1 app, using first B1-accessible:', selectedModels);
-        }
-      }
+      // Note: Model validation is now handled automatically by ModelSelector
+      // when using app-filtered models
     } catch (err) {
       console.error('Error loading model:', err);
     }
