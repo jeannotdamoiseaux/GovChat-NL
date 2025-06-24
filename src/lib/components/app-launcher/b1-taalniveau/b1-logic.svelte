@@ -181,7 +181,7 @@
 
     // --- Input Validations ---
     if (!inputText.trim()) {
-      error = "Voer tekst in om te vereenvoudigen";
+      error = "Voer tekst in om te versimpelen";
       toast.error(error);
       isLoading = false;
       showOutput = false;
@@ -563,7 +563,7 @@
             rows="12"
             draggable="false"
             class="w-full h-[400px] flex-grow px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white min-h-[250px] md:min-h-[400px] overflow-y-auto font-[system-ui] {isFlashing ? 'flash-animation' : ''}"
-            placeholder="Voer hier de tekst in die je wilt vereenvoudigen naar {languageLevel}-taalniveau."
+            placeholder="Voer hier de tekst in die je wilt versimpelen naar {languageLevel}-taalniveau."
             disabled={isLoading}
             spellcheck="false"
             on:dragover|preventDefault
@@ -650,7 +650,7 @@
           on:click={simplifyText}
           disabled={isLoading || !selectedModels[0]}
           class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-full focus:outline-none focus:shadow-outline disabled:opacity-50 h-12 w-12 flex items-center justify-center"
-          title="Vereenvoudig naar {languageLevel}-taalniveau"
+          title="Versimpel naar {languageLevel}-taalniveau"
         >
           {#if isLoading}
             <svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -682,7 +682,7 @@
             </div>
           {:else if !isLoading}
             <div class="w-full h-[400px] flex-grow px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 min-h-[250px] md:min-h-[400px] flex items-center justify-center">
-              <p>Hier verschijnt de vereenvoudigde tekst na verwerking</p>
+              <p>Hier verschijnt de versimpelde tekst na verwerking</p>
             </div>
           {/if}
 
@@ -878,7 +878,7 @@
   <div class="p-6">
     <div class="flex justify-between items-center mb-4">
       <h2 class="text-xl font-bold text-gray-800 dark:text-white">
-        Over de B1-taalniveau Vereenvoudiger
+        Over de B1-taalniveau Versimpelaar
       </h2>
       <button
         on:click={() => showInfoModal = false}
@@ -892,7 +892,7 @@
     
     <div class="space-y-4 text-gray-700 dark:text-gray-300">
       <p>
-        De B1-taalniveau Vereenvoudiger helpt je om complexe teksten naar eenvoudigere taal om te zetten, zodat ze beter te begrijpen zijn voor een breder publiek.
+        DuoLimbo helpt je om complexe teksten naar eenvoudigere taal om te zetten, zodat ze beter te begrijpen zijn voor een breder publiek.
       </p>
       <h3 class="text-lg font-medium text-gray-800 dark:text-white mt-4">Wat is B1-taalniveau?</h3>
       <p>
