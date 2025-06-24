@@ -1,6 +1,7 @@
 <script>
   import { onMount, getContext } from 'svelte'; 
   import { models, settings } from '$lib/stores';
+  import { filteredModels, currentAppContext, getFirstAvailableAppModel } from '$lib/stores/appModels';
   import { WEBUI_BASE_URL } from '$lib/constants';
   import { fade } from 'svelte/transition';
   import { toast } from 'svelte-sonner';
@@ -37,7 +38,7 @@
     'Bodembeleid', 'Burgerparticipatie', 'Ecologie', 'Ecologisch', 'Groenbeleid',
     'Natuur- en landschapsbeheerorganisaties', 'Informerend stuk', 'Onderwerp', 'Samenvatting', 
     'Kennisnemen van', 'Aanleiding en bestuurlijke context', 'Bevoegdheid', 'Communicatie', 'Vervolg', 
-    'Bijlage(n)', 'Sonderend stuk', 'Vraag aan PS', 'Context', 'Voorstel', 'Statenvoorstel', 'Argumenten', 'Geachte'
+    'Bijlage(n)', 'Sonderend stuk', 'Vraag aan PS', 'Context', 'Voorstel', 'Statenvoorstel', 'Geachte', 'Argumenten'
   ];
 
   let activeDefaultWords = [...originalDefaultWords];
@@ -45,17 +46,16 @@
   let initialLoadComplete = false; // Vlag om initiële lading bij te houden
 
   // Reactive statement for preservedWords based on user words and default toggle
-  $: preservedWords = useDefaultWords ? [...new Set([...userWords, ...activeDefaultWords])] : [...new Set(userWords)]; 
+  $: preservedWords = useDefaultWords ? [...new Set([...userWords, ...activeDefaultWords])] : [...new Set(userWords)]; // Use Set to ensure uniqueness
 
-  // Model selection logic
+  // Model selection logic - now uses filtered models from store
   let selectedModels = ['']; 
   $: availableModels = $models || [];
+  
+  // Use the filtered models for B1 app
+  $: b1AccessibleModels = $filteredModels;
 
-  // Reactive statement to auto-select model when available
-  $: if (availableModels && availableModels.length > 0 && (!selectedModels[0] || selectedModels[0] === '')) {
-    selectedModels = [availableModels[0].id];
-    console.log('Auto-selected first available model:', selectedModels);
-  }
+  // Note: Automatic model selection is now handled by ModelSelector component
 
   onMount(async () => {
     if (browser) {
@@ -102,14 +102,8 @@
         console.log('Model loaded from settings:', selectedModels);
       }
       
-      // Ensure the model is valid (exists in availableModels)
-      if (selectedModels[0] && availableModels.length > 0) {
-        const modelExists = availableModels.some(m => m.id === selectedModels[0]);
-        if (!modelExists) {
-          selectedModels = [availableModels[0].id];
-          console.log('Selected model not available, using first available:', selectedModels);
-        }
-      }
+      // Note: Model validation is now handled automatically by ModelSelector
+      // when using app-filtered models
     } catch (err) {
       console.error('Error loading model:', err);
     }
@@ -205,6 +199,16 @@
     const currentModel = selectedModels[0]; // Get the currently selected model
     if (!currentModel) {
       error = "Selecteer eerst een model";
+      toast.error(error);
+      isLoading = false;
+      showOutput = false;
+      return;
+    }
+    
+    // Additional validation: ensure the selected model has B1 app access
+    const modelHasB1Access = b1AccessibleModels.some(m => m.id === currentModel);
+    if (!modelHasB1Access) {
+      error = "Het geselecteerde model heeft geen toegang tot de B1 Taalniveau app. Neem contact op met de administrator.";
       toast.error(error);
       isLoading = false;
       showOutput = false;
@@ -453,10 +457,8 @@
   // Helper function to convert markdown **bold** to HTML <strong> for display
   function processText(text) {
     if (!text) return '';
-    // Tekst wordt nu direct geretourneerd.
-    // De backend is verantwoordelijk voor het correct formatteren van kopjes met <strong> tags.
-    // De {@html outputText} directive in de template zal deze tags renderen.
-    return text;
+    // Replace **text** with <strong>text</strong>, handle spaces around **
+    return text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
   }
 
   // Reactive calculation for progress display text
@@ -468,7 +470,7 @@
     <div class="flex justify-between items-center mb-6">
       <div class="flex items-center gap-2">
         <h1 class="text-2xl font-bold text-gray-800 dark:text-white">
-          {languageLevel}-Versimpelaar
+          {languageLevel}-Taalniveau Vereenvoudiger
         </h1>
         <!-- Add info button next to the title -->
         <button
@@ -507,7 +509,7 @@
     <div class="mb-4">
       <!-- Removed the flex justify-between and the button -->
       <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-        Kies woorden die niet vereenvoudigd mogen worden:
+        Woorden die je wil behouden:
       </h3>
       
       <!-- Preview of preserved words (first 5 with count) -->
@@ -742,7 +744,7 @@
   <div class="p-6">
     <div class="flex justify-between items-center mb-4">
       <h2 class="text-xl font-bold text-gray-800 dark:text-white">
-        Kies woorden die niet vereenvoudigd worden
+        Vul woorden in die je wilt behouden
       </h2>
       <button
         on:click={() => showPreservedWordsModal = false}
@@ -787,7 +789,7 @@
         </button>
       </div>
       <span class="text-sm text-gray-700 dark:text-gray-300">
-        Standaard niet te veranderen woorden (Bodembeleid, Subsidie, etc.)
+        Standaard te behouden woorden (Bodembeleid, Subsidie, etc.)
       </span>
     </div>
 
