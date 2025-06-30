@@ -13,11 +13,12 @@
 		showControls,
 		showSidebar,
 		temporaryChatEnabled,
-		user
+		user,
 	} from '$lib/stores';
 
 	import { slide } from 'svelte/transition';
 	import { page } from '$app/stores';
+	import { currentAppContext } from '$lib/stores/appModels';
 
 	import ShareChatModal from '../chat/ShareChatModal.svelte';
 	import ModelSelector from '../chat/ModelSelector.svelte';
@@ -47,8 +48,8 @@
 
 <ShareChatModal bind:show={showShareChatModal} chatId={$chatId} />
 
-<nav class="sticky top-0 z-30 w-full py-1 -mb-8 flex flex-col items-center drag-region">
-	<div class="flex items-center w-full pl-1.5 pr-1">
+<nav class="sticky top-0 z-30 w-full py-1.5 -mb-8 flex flex-col items-center drag-region">
+	<div class="flex items-center w-full px-1.5">
 		<div
 			class=" bg-linear-to-b via-50% from-white via-white to-transparent dark:from-gray-900 dark:via-gray-900 dark:to-transparent pointer-events-none absolute inset-0 -bottom-7 z-[-1]"
 		></div>
@@ -79,8 +80,13 @@
 			{$showSidebar ? 'ml-1' : ''}
 			"
 				>
+				<!-- Govchat -->
 					{#if showModelSelector}
-						<ModelSelector bind:selectedModels showSetDefault={!shareEnabled} />
+						<ModelSelector 
+							bind:selectedModels 
+							showSetDefault={!shareEnabled} 
+							useAppFilter={$currentAppContext !== 'general'}
+						/>
 					{/if}
 				</div>
 
@@ -156,9 +162,8 @@
 
 					{#if $user !== undefined && $user !== null}
 						<UserMenu
-							className="max-w-[240px]"
+							className="max-w-[200px]"
 							role={$user?.role}
-							help={true}
 							on:show={(e) => {
 								if (e.detail === 'archived-chat') {
 									showArchivedChats.set(true);

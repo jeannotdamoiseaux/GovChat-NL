@@ -3,6 +3,7 @@
     import Lechat from '$lib/components/chat/lechat.svelte';
     import { onMount, onDestroy } from 'svelte';
     import { config, settings } from '$lib/stores';
+    import { currentAppContext } from '$lib/stores/appModels';
     import B1InfoModal from './B1InfoModal.svelte';
     import type { Unsubscriber } from 'svelte/store';
 
@@ -33,6 +34,9 @@
     }
 
     onMount(() => {
+        // Set app context for B1 app
+        currentAppContext.set('b1');
+        
         // Initial check with current values (might be null if stores are not ready)
         checkModalVisibility($config, $settings);
 
@@ -47,6 +51,9 @@
     });
 
     onDestroy(() => {
+        // Reset app context when leaving B1 app
+        currentAppContext.set('general');
+        
         // Unsubscribe to prevent memory leaks
         if (configUnsubscribe) {
             configUnsubscribe();
