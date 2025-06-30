@@ -48,14 +48,10 @@
   // Reactive statement for preservedWords based on user words and default toggle
   $: preservedWords = useDefaultWords ? [...new Set([...userWords, ...activeDefaultWords])] : [...new Set(userWords)]; // Use Set to ensure uniqueness
 
-  // Model selection logic - now uses filtered models from store
-  let selectedModels = ['']; 
-  $: availableModels = $models || [];
-  
-  // Use the filtered models for B1 app
-  $: b1AccessibleModels = $filteredModels;
+  // Model selection logic - ModelSelector handles B1 app filtering automatically
+  let selectedModels = [''];
 
-  // Note: Automatic model selection is now handled by ModelSelector component
+  // Note: Model filtering and auto-selection is handled by ModelSelector component
 
   onMount(async () => {
     if (browser) {
@@ -102,7 +98,7 @@
         console.log('Model loaded from settings:', selectedModels);
       }
       
-      // Note: Model validation is now handled automatically by ModelSelector
+      // Note: Model filtering is handled by ModelSelector component
       // when using app-filtered models
     } catch (err) {
       console.error('Error loading model:', err);
@@ -181,7 +177,7 @@
 
     // --- Input Validations ---
     if (!inputText.trim()) {
-      error = "Voer tekst in om te versimpelen";
+      error = "Voer tekst in om te vereenvoudigen";
       toast.error(error);
       isLoading = false;
       showOutput = false;
@@ -199,16 +195,6 @@
     const currentModel = selectedModels[0]; // Get the currently selected model
     if (!currentModel) {
       error = "Selecteer eerst een model";
-      toast.error(error);
-      isLoading = false;
-      showOutput = false;
-      return;
-    }
-    
-    // Additional validation: ensure the selected model has B1 app access
-    const modelHasB1Access = b1AccessibleModels.some(m => m.id === currentModel);
-    if (!modelHasB1Access) {
-      error = "Het geselecteerde model heeft geen toegang tot de B1 Taalniveau app. Neem contact op met de administrator.";
       toast.error(error);
       isLoading = false;
       showOutput = false;
@@ -563,7 +549,7 @@
             rows="12"
             draggable="false"
             class="w-full h-[400px] flex-grow px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white min-h-[250px] md:min-h-[400px] overflow-y-auto font-[system-ui] {isFlashing ? 'flash-animation' : ''}"
-            placeholder="Voer hier de tekst in die je wilt versimpelen naar {languageLevel}-taalniveau."
+            placeholder="Voer hier de tekst in die je wilt vereenvoudigen naar {languageLevel}-taalniveau."
             disabled={isLoading}
             spellcheck="false"
             on:dragover|preventDefault
@@ -650,7 +636,7 @@
           on:click={simplifyText}
           disabled={isLoading || !selectedModels[0]}
           class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-full focus:outline-none focus:shadow-outline disabled:opacity-50 h-12 w-12 flex items-center justify-center"
-          title="Versimpel naar {languageLevel}-taalniveau"
+          title="Vereenvoudig naar {languageLevel}-taalniveau"
         >
           {#if isLoading}
             <svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -682,7 +668,7 @@
             </div>
           {:else if !isLoading}
             <div class="w-full h-[400px] flex-grow px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 min-h-[250px] md:min-h-[400px] flex items-center justify-center">
-              <p>Hier verschijnt de versimpelde tekst na verwerking</p>
+              <p>Hier verschijnt de vereenvoudigde tekst na verwerking</p>
             </div>
           {/if}
 
@@ -878,7 +864,7 @@
   <div class="p-6">
     <div class="flex justify-between items-center mb-4">
       <h2 class="text-xl font-bold text-gray-800 dark:text-white">
-        Over de B1-taalniveau Versimpelaar
+        Over de B1-taalniveau Vereenvoudiger
       </h2>
       <button
         on:click={() => showInfoModal = false}
@@ -892,7 +878,7 @@
     
     <div class="space-y-4 text-gray-700 dark:text-gray-300">
       <p>
-        DuoLimbo helpt je om complexe teksten naar eenvoudigere taal om te zetten, zodat ze beter te begrijpen zijn voor een breder publiek.
+        De B1-taalniveau Vereenvoudiger helpt je om complexe teksten naar eenvoudigere taal om te zetten, zodat ze beter te begrijpen zijn voor een breder publiek.
       </p>
       <h3 class="text-lg font-medium text-gray-800 dark:text-white mt-4">Wat is B1-taalniveau?</h3>
       <p>

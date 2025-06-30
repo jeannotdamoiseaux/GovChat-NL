@@ -23,9 +23,17 @@
 	$: availableModels = useAppFilter ? $filteredModels : $models;
 
 	// Show warning if app filter is enabled but no models are available
-	$: if (useAppFilter && $filteredModels.length === 0 && $models.length > 0) {
-		const appType = $currentAppContext === 'b1' ? 'B1 Taalniveau' : 'Subsidie';
-		toast.warning(`Geen modellen beschikbaar voor ${appType} app. Neem contact op met de administrator.`);
+	// Only show warning after initial load to prevent showing on page load
+	let initialLoadDone = false;
+	$: if (useAppFilter && $models && $models.length > 0) {
+		if ($filteredModels.length === 0) {
+			if (initialLoadDone) {
+				const appType = $currentAppContext === 'b1' ? 'B1 Taalniveau' : 'Subsidie';
+				toast.warning(`Geen modellen beschikbaar voor ${appType} app. Neem contact op met de administrator.`);
+			}
+		} else {
+			initialLoadDone = true;
+		}
 	}
 
 	// Auto-select first available model when app context changes or when models become available
@@ -37,11 +45,11 @@
 		if (!isCurrentModelValid) {
 			autoSelectionInProgress = true;
 			selectedModels = [$filteredModels[0].id];
-			console.log(`Auto-selected model for ${$currentAppContext} app:`, $filteredModels[0].name);
-			// Reset flag after a brief delay to allow for the change to propagate
+			console.log(`[ModelSelector] Auto-selected model for ${$currentAppContext} app:`, $filteredModels[0].name, 'ID:', $filteredModels[0].id);
+			// Reset flag after a shorter delay to improve responsiveness
 			setTimeout(() => {
 				autoSelectionInProgress = false;
-			}, 100);
+			}, 50);
 		}
 	}
 

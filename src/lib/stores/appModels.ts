@@ -35,6 +35,7 @@ export const filteredModels = derived(
     [models, currentAppContext],
     ([$models, $currentAppContext]) => {
         if (!$models || $models.length === 0) {
+            console.log('[appModels] No models available');
             return [];
         }
 
@@ -42,15 +43,28 @@ export const filteredModels = derived(
 
         switch ($currentAppContext) {
             case 'b1':
-                return typedModels.filter(model => 
+                const b1Models = typedModels.filter(model => 
                     model.info?.meta?.capabilities?.b1_app_access === true
                 );
+                console.log('[appModels] B1 app context - Available models:', {
+                    total: typedModels.length,
+                    b1Accessible: b1Models.length,
+                    b1ModelIds: b1Models.map(m => m.id)
+                });
+                return b1Models;
             case 'subsidie':
-                return typedModels.filter(model => 
+                const subsidieModels = typedModels.filter(model => 
                     model.info?.meta?.capabilities?.subsidie_app_access === true
                 );
+                console.log('[appModels] Subsidie app context - Available models:', {
+                    total: typedModels.length,
+                    subsidieAccessible: subsidieModels.length,
+                    subsidieModelIds: subsidieModels.map(m => m.id)
+                });
+                return subsidieModels;
             case 'general':
             default:
+                console.log('[appModels] General context - All models available:', typedModels.length);
                 return typedModels;
         }
     }
