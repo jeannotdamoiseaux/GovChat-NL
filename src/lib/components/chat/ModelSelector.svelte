@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { models, showSettings, settings, user, mobile, config } from '$lib/stores';
+	// Govchat
+	import { filteredModels, currentAppContext } from '$lib/stores/appModels';
 	import { onMount, tick, getContext } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import Selector from './ModelSelector/Selector.svelte';
@@ -10,8 +12,38 @@
 
 	export let selectedModels = [''];
 	export let disabled = false;
-
 	export let showSetDefault = true;
+	// Govchat
+	export let useAppFilter = false; // New prop to enable app-specific filtering
+
+	// Prevent multiple rapid auto-selections
+	let autoSelectionInProgress = false;
+
+	// Use either filtered models or all models based on useAppFilter prop
+	$: availableModels = useAppFilter ? $filteredModels : $models;
+
+	// Show warning if app filter is enabled but no models are available
+	$: if (useAppFilter && $filteredModels.length === 0 && $models.length > 0) {
+		const appType = $currentAppContext === 'b1' ? 'B1 Taalniveau' : 'Subsidie';
+		toast.warning(`Geen modellen beschikbaar voor ${appType} app. Neem contact op met de administrator.`);
+	}
+
+	// Auto-select first available model when app context changes or when models become available
+	$: if (useAppFilter && $filteredModels && $filteredModels.length > 0 && !autoSelectionInProgress) {
+		// If using app filter and current selection is not available in filtered models
+		const currentModel = selectedModels[0];
+		const isCurrentModelValid = currentModel && $filteredModels.some(m => m.id === currentModel);
+		
+		if (!isCurrentModelValid) {
+			autoSelectionInProgress = true;
+			selectedModels = [$filteredModels[0].id];
+			console.log(`Auto-selected model for ${$currentAppContext} app:`, $filteredModels[0].name);
+			// Reset flag after a brief delay to allow for the change to propagate
+			setTimeout(() => {
+				autoSelectionInProgress = false;
+			}, 100);
+		}
+	}
 
 	const saveDefaultModel = async () => {
 		const hasEmptyModel = selectedModels.filter((it) => it === '');
@@ -25,10 +57,42 @@
 		toast.success($i18n.t('Default model updated'));
 	};
 
-	$: if (selectedModels.length > 0 && $models.length > 0) {
+	$: if (selectedModels.length > 0 && availableModels.length > 0) {
 		selectedModels = selectedModels.map((model) =>
-			$models.map((m) => m.id).includes(model) ? model : ''
+			availableModels.map((m) => m.id).includes(model) ? model : ''
 		);
+	}
+
+	// Auto-select first available model if no valid model is selected
+	$: if (availableModels && availableModels.length > 0 && !autoSelectionInProgress) {
+		// Check if any selected model is empty or invalid
+		const hasEmptyOrInvalidModel = selectedModels.some(model => 
+			!model || !availableModels.some(m => m.id === model)
+		);
+		
+		// If we have empty/invalid models, replace them with the first available model
+		if (hasEmptyOrInvalidModel) {
+			autoSelectionInProgress = true;
+			selectedModels = selectedModels.map(model => {
+				if (!model || !availableModels.some(m => m.id === model)) {
+					return availableModels[0].id;
+				}
+				return model;
+			});
+			// Reset flag after a brief delay
+			setTimeout(() => {
+				autoSelectionInProgress = false;
+			}, 100);
+		}
+		
+		// If selectedModels is empty or has only empty strings, add first available model
+		if (selectedModels.length === 0 || selectedModels.every(model => !model)) {
+			autoSelectionInProgress = true;
+			selectedModels = [availableModels[0].id];
+			setTimeout(() => {
+				autoSelectionInProgress = false;
+			}, 100);
+		}
 	}
 </script>
 
@@ -40,7 +104,7 @@
 					<Selector
 						id={`${selectedModelIdx}`}
 						placeholder={$i18n.t('Select a model')}
-						items={$models.map((model) => ({
+						items={availableModels.map((model) => ({
 							value: model.id,
 							label: model.name,
 							model: model
@@ -113,10 +177,10 @@
 	{/each}
 </div>
 
-{#if showSetDefault}
-	<div
-		class="absolute text-left mt-[1px] ml-1 text-[0.7rem] text-gray-600 dark:text-gray-400 font-primary"
-	>
-		<button on:click={saveDefaultModel}> {$i18n.t('Set as default')}</button>
-	</div>
+{#if $config?.customization?.enable_multiple_models}
+	{#if showSetDefault}
+		<div class=" absolute text-left mt-[1px] ml-1 text-[0.7rem] text-gray-500 font-primary">
+			<button on:click={saveDefaultModel}> {$i18n.t('Set as default')}</button>
+		</div>
+	{/if}
 {/if}

@@ -36,6 +36,14 @@
 		citations: {
 			label: $i18n.t('Citations'),
 			description: $i18n.t('Displays citations in the response')
+		},
+		b1_app_access: {
+			label: 'B1 Taalniveau',
+			description: 'Model is beschikbaar voor de B1 Taalniveau vereenvoudigings-app'
+		},
+		subsidie_app_access: {
+			label: 'Subsidie App',
+			description: 'Model is beschikbaar voor de subsidie beoordeling en analyse app'
 		}
 	};
 
@@ -47,6 +55,8 @@
 		code_interpreter?: boolean;
 		usage?: boolean;
 		citations?: boolean;
+		b1_app_access?: boolean;
+		subsidie_app_access?: boolean;
 	} = {};
 </script>
 
@@ -55,7 +65,7 @@
 		<div class=" self-center text-sm font-semibold">{$i18n.t('Capabilities')}</div>
 	</div>
 	<div class="flex items-center mt-2 flex-wrap">
-		{#each Object.keys(capabilityLabels) as capability}
+		{#each Object.keys(capabilityLabels).filter(cap => !cap.endsWith('_app_access')) as capability}
 			<div class=" flex items-center gap-2 mr-3">
 				<Checkbox
 					state={capabilities[capability] ? 'checked' : 'unchecked'}
@@ -67,6 +77,29 @@
 				<div class=" py-0.5 text-sm capitalize">
 					<Tooltip content={marked.parse(capabilityLabels[capability].description)}>
 						{$i18n.t(capabilityLabels[capability].label)}
+					</Tooltip>
+				</div>
+			</div>
+		{/each}
+	</div>
+
+	<!-- App Access Section -->
+	<div class="flex w-full justify-between mb-1 mt-4">
+		<div class=" self-center text-sm font-semibold">App Toegang</div>
+	</div>
+	<div class="flex items-center mt-2 flex-wrap">
+		{#each Object.keys(capabilityLabels).filter(cap => cap.endsWith('_app_access')) as capability}
+			<div class=" flex items-center gap-2 mr-3">
+				<Checkbox
+					state={capabilities[capability] ? 'checked' : 'unchecked'}
+					on:change={(e) => {
+						capabilities[capability] = e.detail === 'checked';
+					}}
+				/>
+
+				<div class=" py-0.5 text-sm capitalize">
+					<Tooltip content={marked.parse(capabilityLabels[capability].description)}>
+						{capabilityLabels[capability].label}
 					</Tooltip>
 				</div>
 			</div>
