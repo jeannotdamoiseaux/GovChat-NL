@@ -5,4 +5,9 @@ model_list:
       api_base: os.environ/AZURE_API_BASE # runs os.getenv("AZURE_API_BASE"), change in your environment (.env file) after "cp -RPp .env.example .env"
       api_key: os.environ/AZURE_API_KEY # runs os.getenv("AZURE_API_KEY")
       api_version: os.environ/AZURE_API_VERSION # runs os.getenv("AZURE_API_VERSION"
-  
+  - model_name: azure-gpt-4.1
+    litellm_params:
+      model:  azure_ai/gpt-4.1
+      api_base: os.environ/AZURE_API_BASE # runs os.getenv("AZURE_API_BASE")
+      api_key: os.environ/AZURE_API_KEY # runs os.getenv("AZURE_API_KEY")
+      api_version: os.environ/AZURE_API_VERSION # runs os.getenv("AZURE_API_VERSION")

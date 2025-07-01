@@ -3,6 +3,7 @@
 	// Govchat
 	import { filteredModels, currentAppContext } from '$lib/stores/appModels';
 	import { onMount, tick, getContext } from 'svelte';
+	import { page } from '$app/stores';
 	import { toast } from 'svelte-sonner';
 	import Selector from './ModelSelector/Selector.svelte';
 	import Tooltip from '../common/Tooltip.svelte';
@@ -22,27 +23,14 @@
 	// Use either filtered models or all models based on useAppFilter prop
 	$: availableModels = useAppFilter ? $filteredModels : $models;
 
-	// Show warning if app filter is enabled but no models are available
-	$: if (useAppFilter && $filteredModels.length === 0 && $models.length > 0) {
-		const appType = $currentAppContext === 'b1' ? 'B1 Taalniveau' : 'Subsidie';
-		toast.warning(`Geen modellen beschikbaar voor ${appType} app. Neem contact op met de administrator.`);
-	}
-
-	// Auto-select first available model when app context changes or when models become available
-	$: if (useAppFilter && $filteredModels && $filteredModels.length > 0 && !autoSelectionInProgress) {
-		// If using app filter and current selection is not available in filtered models
-		const currentModel = selectedModels[0];
-		const isCurrentModelValid = currentModel && $filteredModels.some(m => m.id === currentModel);
-		
-		if (!isCurrentModelValid) {
-			autoSelectionInProgress = true;
-			selectedModels = [$filteredModels[0].id];
-			console.log(`Auto-selected model for ${$currentAppContext} app:`, $filteredModels[0].name);
-			// Reset flag after a brief delay to allow for the change to propagate
-			setTimeout(() => {
-				autoSelectionInProgress = false;
-			}, 100);
-		}
+	// Auto-select first available model if none selected and we have filtered models
+	$: if (useAppFilter && availableModels && availableModels.length > 0 && selectedModels && selectedModels[0] === '' && !autoSelectionInProgress) {
+		autoSelectionInProgress = true;
+		selectedModels = [availableModels[0].id];
+		console.log('[ModelSelector] Auto-selected model for app context:', availableModels[0].id);
+		setTimeout(() => {
+			autoSelectionInProgress = false;
+		}, 100);
 	}
 
 	const saveDefaultModel = async () => {
@@ -57,43 +45,8 @@
 		toast.success($i18n.t('Default model updated'));
 	};
 
-	$: if (selectedModels.length > 0 && availableModels.length > 0) {
-		selectedModels = selectedModels.map((model) =>
-			availableModels.map((m) => m.id).includes(model) ? model : ''
-		);
-	}
-
-	// Auto-select first available model if no valid model is selected
-	$: if (availableModels && availableModels.length > 0 && !autoSelectionInProgress) {
-		// Check if any selected model is empty or invalid
-		const hasEmptyOrInvalidModel = selectedModels.some(model => 
-			!model || !availableModels.some(m => m.id === model)
-		);
-		
-		// If we have empty/invalid models, replace them with the first available model
-		if (hasEmptyOrInvalidModel) {
-			autoSelectionInProgress = true;
-			selectedModels = selectedModels.map(model => {
-				if (!model || !availableModels.some(m => m.id === model)) {
-					return availableModels[0].id;
-				}
-				return model;
-			});
-			// Reset flag after a brief delay
-			setTimeout(() => {
-				autoSelectionInProgress = false;
-			}, 100);
-		}
-		
-		// If selectedModels is empty or has only empty strings, add first available model
-		if (selectedModels.length === 0 || selectedModels.every(model => !model)) {
-			autoSelectionInProgress = true;
-			selectedModels = [availableModels[0].id];
-			setTimeout(() => {
-				autoSelectionInProgress = false;
-			}, 100);
-		}
-	}
+	// DISABLED FOR DEBUGGING - was preventing manual model selection
+	// TODO: Re-enable with proper conditions once basic selection works
 </script>
 
 <div class="flex flex-col w-full items-start">
