@@ -11,6 +11,139 @@ import re
 
 router = APIRouter()
 
+# --- START: Language Level Specific Prompt Data ---
+LEVEL_SPECIFIC_PROMPTS = {
+    "B1": {
+        "examples_intro": "Hier zijn enkele voorbeelden van woorden op C1-niveau en hun eenvoudigere B1-equivalenten:",
+        "examples_list": [
+            "- Betreffende -> Over",
+            "- Creëren -> Ontwerpen, vormen, vormgeven, maken",
+            "- Prioriteit -> Voorrang, voorkeur",
+            "- Relevant -> Belangrijk",
+            "- Verstrekken -> Geven"
+        ],
+        "level_description": "Het B1-niveau kenmerkt zich door duidelijk en eenvoudig taalgebruik, geschikt voor een breed publiek met basisvaardigheden in de taal.",
+        "selection_example": {
+            "input": (
+                "Originele paragraaf:\n"
+                "**Algemene Inleiding**\n"
+                "Dit is een **zeer** complexe zin die **onmiddellijk** aandacht behoeft.\n"
+                "Variant 1 (vereenvoudigd):\n"
+                "**Algemene Inleiding**\n"
+                "Deze zin is erg moeilijk en heeft meteen aandacht nodig.\n"
+                "Variant 2 (vereenvoudigd):\n"
+                "**Algemene Inleiding**\n"
+                "Dit is een ingewikkelde zin die nu aandacht moet krijgen."
+            ),
+            "output": (
+                "<<< <strong>Algemene Inleiding</strong>\n"
+                "Dit is een moeilijke zin die nu aandacht nodig heeft.>>>"
+            )
+        }
+    },
+    "B2": {
+        "examples_intro": "Hier zijn enkele voorbeelden van woorden op C2-niveau en hun eenvoudigere B2-equivalenten:",
+        "examples_list": [
+            "- Faciliteren -> Mogelijk maken",
+            "- Implementatie -> Uitvoering",
+            "- Effectueren -> Realiseren",
+            "- Complexiteit -> Moeilijkheidsgraad",
+            "- Desalniettemin -> Toch"
+        ],
+        "level_description": "Het B2-niveau kenmerkt zich door helder en gedetailleerd taalgebruik, geschikt voor een publiek met gevorderde taalvaardigheden. De tekst moet toegankelijk zijn zonder overmatig gebruik van complexe termen, gericht op lezers die bekend zijn met de basisprincipes van de taal en in staat zijn om zowel praktische als theoretische onderwerpen te begrijpen.",
+        "selection_example": {
+            "input": (
+                "Originele paragraaf:\n"
+                "**Beleidscontext**\n"
+                "Binnen de huidige context is de **implementatie** van aanvullende maatregelen van cruciaal belang.\n"
+                "Variant 1 (vereenvoudigd):\n"
+                "**Beleidscontext**\n"
+                "In deze situatie is het belangrijk extra maatregelen uit te voeren.\n"
+                "Variant 2 (vereenvoudigd):\n"
+                "**Beleidscontext**\n"
+                "Het is nu nodig om meer maatregelen mogelijk te maken."
+            ),
+            "output": (
+                "<<< <strong>Beleidscontext</strong>\n"
+                "In deze situatie is het belangrijk dat extra maatregelen uitgevoerd worden.>>>"
+            )
+        }
+    }
+    # Voeg eventueel andere niveaus toe (C1, C2) volgens bovenstaand patroon.
+}
+
+def get_language_specific_text(language_level: str, key: str, default_level="B1"):
+    """Haalt specifieke tekst op voor een taalniveau, met een fallback."""
+    level_data = LEVEL_SPECIFIC_PROMPTS.get(language_level, LEVEL_SPECIFIC_PROMPTS.get(default_level))
+    return level_data.get(key, "")
+
+def build_generation_prompt(language_level, preserved_words_text):
+    level_description = get_language_specific_text(language_level, "level_description")
+    examples_intro = get_language_specific_text(language_level, "examples_intro")
+    examples = "\n".join(get_language_specific_text(language_level, "examples_list"))
+    prompt = f"""Je taak is om de onderstaande tekst te herschrijven, zodat deze geschikt is voor taalniveau {language_level}.
+    {level_description}
+
+    Richtlijnen:
+    - Breng de informatie zo letterlijk mogelijk over; behoud de structuur.
+    - Gebruik korte, duidelijke zinnen.
+    - Vervang moeilijke woorden door eenvoudige alternatieven.
+    - Licht technische termen of jargon toe in eenvoudige bewoordingen.
+    - Gebruik zoveel mogelijk de actieve vorm (vermijd de passieve vorm).
+    - Vermijd ingewikkelde grammatica.
+    - Geef concrete voorbeelden als dat helpt om abstracte concepten duidelijk te maken.
+    - Zorg dat de hoofdboodschap en de inhoud van de tekst volledig behouden blijven.
+
+    {examples_intro}
+    {examples}
+
+    Let op:
+    - Bepaalde termen moeten ongewijzigd blijven: {preserved_words_text}.
+    - Dikgedrukte tekst (gemarkeerd met '**...**'):
+        1. Als dit een kopje is (aparte regel): vereenvoudig waar nodig, gebruik <strong>Kopje</strong>.
+        2. Anders: vereenvoudig, maar geef weer als gewone tekst zónder dikgedrukte opmaak of '**'.
+
+    Plaats de volledige output tussen '<<<' en '>>>'.
+    """
+    return "\n".join(line.strip() for line in prompt.splitlines() if line.strip())  # Verwijdert overtollige whitespaces
+
+def build_selection_prompt(language_level, preserved_words_text):
+    level_description = get_language_specific_text(language_level, "level_description")
+    selection_example = get_language_specific_text(language_level, "selection_example", default_level="B1")
+    prompt = f"""Je taak is om uit de volgende aangeleverde varianten (en het origineel) de beste {language_level}-versie samen te stellen. Je mag hiervoor onderdelen combineren, zolang:
+    - De hoofdboodschap en informatie van het origineel zo goed mogelijk behouden worden;
+    - De tekst volledig voldoet aan {language_level}-taalniveau.
+
+    {level_description}
+
+    Richtlijnen:
+    - Gebruik korte, duidelijke zinnen. Vermijd lange of complexe zinsconstructies.
+    - Vervang moeilijke woorden door meer gangbare alternatieven.
+    - Leg technische termen en (vak)jargon uit in eenvoudige bewoordingen.
+    - Gebruik de actieve vorm waar mogelijk.
+    - Vermijd passieve zinnen en ingewikkelde grammatica.
+    - Maak gebruik van concrete voorbeelden indien nuttig.
+    - Behoud de logische structuur en samenhang.
+
+    Let op:
+    - Bepaalde woorden moeten worden behouden: {preserved_words_text}.
+    - Vetgedrukte tekst (met '**...**'):
+        1. Als het een kopje/titel is (aparte regel): vereenvoudig en gebruik <strong>Kopje</strong>.
+        2. Anders: vereenvoudig, maar geen vetgedrukte opmaak of '**'.
+
+    Output:
+    - Plaats uitsluitend de samengestelde, definitieve versie tussen \"<<<\" en \">>>\", zonder extra uitleg.
+
+    Voorbeeld:
+    Input:
+    {selection_example.get('input', '')}
+
+    Output:
+    {selection_example.get('output', '')}
+    """
+    return "\n".join(line.strip() for line in prompt.splitlines() if line.strip())  # Verwijdert overtollige whitespaces
+# --- END: Language Level Specific Prompt Data ---
+
 def split_into_chunks(text: str, max_tokens: int = 2500) -> List[str]:
     """Split text into chunks of approximately max_tokens"""
     encoding = tiktoken.get_encoding("cl100k_base")
@@ -93,46 +226,9 @@ async def generate_version(request: Request, chunk: str, model: str, preserved_w
     if not chunk or chunk.isspace():
         return {"index": index, "temperature": temperature, "text": chunk, "error": None}
 
-    preserved_words_text = ", ".join(f"'{word}'" for word in preserved_words) if preserved_words else "geen"
+    preserved_words_text = "; ".join(f"'{word}'" for word in preserved_words) if preserved_words else "Geen"
     
-    generation_system_prompt = f"""Je taak is om de volgende tekst te analyseren en te herschrijven naar een versie die voldoet aan het {language_level}-taalniveau.
-Behoud de structuur zoveel mogelijk.
-
-Richtlijnen {language_level}-niveau:
-- Korte zinnen.
-- Eenvoudige, alledaagse woorden.
-- Leg jargon uit.
-- Actieve zinsconstructies.
-- Concrete voorbeelden.
-
-Voorbeelden C1 -> {language_level}:
-- Betreffende -> Over
-- Creëren -> Maken, ontwerpen, vormen
-- Prioriteit -> Voorrang, voorkeur
-- Relevant -> Belangrijk
-- Verstrekken -> Geven
-
-BELANGRIJK - Te behouden woorden: De volgende woorden/termen moeten exact behouden blijven en mogen NIET vereenvoudigd worden: {preserved_words_text}.
-
-BELANGRIJK - Omgaan met **dikgedrukte** tekst (gemarkeerd met dubbele asterisken):
-1.  Als de tekst binnen **...** een KOPJE is (bijvoorbeeld: het staat op een eigen regel, is kort en introduceert een nieuwe sectie):
-    a. Vereenvoudig de inhoud van het kopje naar {language_level}-niveau.
-    b. Formatteer het vereenvoudigde kopje in de output als `<strong>Vereenvoudigd Kopje</strong>`.
-    c. Als een 'te behouden woord' deel is van het kopje, blijft dat woord ongewijzigd binnen de `<strong>` tags.
-2.  Als de tekst binnen **...** GEEN kopje is (maar een ander benadrukt woord of zinsdeel):
-    a. Vereenvoudig de inhoud naar {language_level}-niveau.
-    b. Geef deze vereenvoudigde inhoud weer als normale tekst, ZONDER `<strong>` tags of andere vetgedrukte opmaak. Verwijder de `**` markeringen.
-
-Zorg dat de hoofdboodschap van de tekst behouden blijft en dat de vereenvoudigde versie een accurate weergave is van de oorspronkelijke inhoud.
-Plaats de volledige, verbeterde paragraaf tussen "<<<" en ">>>" tekens.
-Voorbeeld input:
-"**Algemene Inleiding**
-Dit is een **zeer** complexe zin die **onmiddellijk** aandacht behoeft."
-Mogelijke output (als "Algemene Inleiding" een kopje is en "zeer" en "onmiddellijk" niet):
-"<<< <strong>Inleiding</strong>
-Dit is een moeilijke zin die nu aandacht nodig heeft. >>>"
-Als de tekst te kort is om te verbeteren (bijv. alleen een kopje dat al B1 is, of een 'te behouden woord' als kopje), neem de tekst dan over met de juiste formattering. Bijvoorbeeld, input: "**Artikel 3.2**", output (als "Artikel 3.2" een te behouden woord is en als kopje wordt gezien): "<<< <strong>Artikel 3.2</strong> >>>".
-"""
+    generation_system_prompt = build_generation_prompt(language_level, preserved_words_text)
 
     form_data = {
         "model": model,
@@ -183,49 +279,25 @@ async def select_best_version(request: Request, original_chunk: str, generated_v
 
     preserved_words_text = ", ".join(f"'{word}'" for word in preserved_words) if preserved_words else "geen"
     
-    selection_system_prompt = f"""Je taak is het selecteren en eventueel combineren van de beste {language_level}-versie uit de aangeleverde varianten van een originele paragraaf. De definitieve tekst moet voldoen aan {language_level}-taalniveau.
+    selection_system_prompt = build_selection_prompt(language_level, preserved_words_text)
 
-Richtlijnen {language_level}-niveau:
-- Korte zinnen, eenvoudige woorden.
-- Jargon uitleggen.
-- Actieve zinnen, concreet.
-
-BELANGRIJK - Te behouden woorden: De volgende woorden/termen moeten exact behouden blijven en mogen NIET vereenvoudigd worden: {preserved_words_text}.
-
-BELANGRIJK - Definitieve formattering van **dikgedrukte** tekst (oorspronkelijk gemarkeerd met dubbele asterisken `**...**`):
-1.  Identificeer KOPJES in de originele tekst (vaak op een eigen regel, kort, introducerend een sectie).
-    a. Zorg dat de inhoud van deze kopjes vereenvoudigd is naar {language_level}-niveau in de gekozen/gecombineerde variant.
-    b. Formatteer deze vereenvoudigde kopjes in de output als `<strong>Vereenvoudigd Kopje</strong>`.
-    c. 'Te behouden woorden' binnen kopjes blijven ongewijzigd binnen de `<strong>` tags.
-2.  Voor andere tekst die oorspronkelijk **dikgedrukt** was (maar GEEN kopje):
-    a. Zorg dat de inhoud vereenvoudigd is naar {language_level}-niveau.
-    b. Geef deze vereenvoudigde inhoud weer als normale tekst, ZONDER `<strong>` tags of andere vetgedrukte opmaak. Verwijder eventuele overgebleven `**` markeringen.
-
-De input varianten kunnen nog `<<<` en `>>>` tekens bevatten en mogelijk `<strong>` tags of `**` markup van de vorige stap.
-Jouw taak is om tot één definitieve, schone {language_level}-versie te komen.
-
-Plaats de definitieve, verbeterde paragraaf tussen "<<<" en ">>>" tekens. Zorg ervoor dat alleen de geïdentificeerde en vereenvoudigde kopjes `<strong>` HTML-tags gebruiken in de uiteindelijke output binnen de `<<<` en `>>>`. Alle andere `**` markeringen moeten verwijderd zijn.
-"""
-
+    # Prepare the text of each successful version for the selection prompt
     variants_text = ""
     for i, version_data in enumerate(successful_versions):
         variant_text = version_data.get('text', '')
-        variants_text += f"Variant {i+1} (gegenereerd met temperature={version_data['temperature']}):\n{variant_text}\n---\n"
+        variants_text += f"Variant {i+1}:\n{variant_text}\n---\n"
 
-    selection_user_content = f"""Originele Paragraaf:
----
-{original_chunk}
----
+    selection_user_content = f"""
+        Originele Paragraaf:
+        ---
+        {original_chunk}
+        ---
 
-Gegenereerde {language_level} Varianten (kunnen '<<<', '>>>', '**', of '<strong>' bevatten):
----
-{variants_text}
----
-Selecteer/combineer tot de beste {language_level}-versie.
-Pas de formatteringsregels voor KOPJES (`<strong>Kopje</strong>`) en andere **dikgedrukte** tekst (verwijder `**`, normale tekst) correct toe.
-Behoud de 'te behouden woorden': {preserved_words_text}.
-Plaats de definitieve tekst tussen `<<<` en `>>>`.
-"""
+        Vereenvoudigde Varianten:
+        ---
+        {variants_text}
+        ---
+    """
 
     form_data = {
         "model": model,

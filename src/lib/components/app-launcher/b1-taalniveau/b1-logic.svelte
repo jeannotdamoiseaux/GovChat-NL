@@ -48,14 +48,9 @@
   // Reactive statement for preservedWords based on user words and default toggle
   $: preservedWords = useDefaultWords ? [...new Set([...userWords, ...activeDefaultWords])] : [...new Set(userWords)]; // Use Set to ensure uniqueness
 
-  // Model selection logic - now uses filtered models from store
-  let selectedModels = ['']; 
-  $: availableModels = $models || [];
-  
-  // Use the filtered models for B1 app
-  $: b1AccessibleModels = $filteredModels;
-
-  // Note: Automatic model selection is now handled by ModelSelector component
+  // Model selection logic - ModelSelector handles B1 app filtering automatically
+  // Note: Model filtering and auto-selection is handled by ModelSelector component
+  let selectedModels = [''];
 
   onMount(async () => {
     if (browser) {
@@ -102,7 +97,7 @@
         console.log('Model loaded from settings:', selectedModels);
       }
       
-      // Note: Model validation is now handled automatically by ModelSelector
+      // Note: Model filtering is handled by ModelSelector component
       // when using app-filtered models
     } catch (err) {
       console.error('Error loading model:', err);
@@ -181,7 +176,7 @@
 
     // --- Input Validations ---
     if (!inputText.trim()) {
-      error = "Voer tekst in om te versimpelen";
+      error = "Voer tekst in om te vereenvoudigen";
       toast.error(error);
       isLoading = false;
       showOutput = false;
@@ -468,21 +463,25 @@
 <div class="max-w-7xl mx-auto mt-6">
   <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
     <div class="flex justify-between items-center mb-6">
-      <div class="flex items-center gap-2">
-        <h1 class="text-2xl font-bold text-gray-800 dark:text-white">
-          {languageLevel}-Taalniveau Vereenvoudiger
-        </h1>
-        <!-- Add info button next to the title -->
-        <button
-          on:click={() => showInfoModal = true}
-          class="bg-blue-100 hover:bg-blue-200 dark:bg-blue-700 dark:hover:bg-blue-600 text-blue-700 dark:text-blue-200 font-medium py-1.5 px-3 rounded-md focus:outline-none focus:shadow-outline flex items-center gap-1.5"
-          aria-label="Uitleg over de B1-taalniveau vereenvoudiger"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <span>Uitleg</span>
-        </button>
+      <div class="flex items-start gap-2">
+        <div>
+          <h1 class="text-2xl font-bold text-gray-800 dark:text-white">
+            Versimpelaar
+          </h1>
+          <p class="text-lg text-gray-600 dark:text-gray-300">
+            Kies een tekst en breng die eenvoudig naar B1- of B2-niveau.
+          </p>
+          <button
+            on:click={() => showInfoModal = true}
+            class="bg-blue-100 hover:bg-blue-200 dark:bg-blue-700 dark:hover:bg-blue-600 text-blue-700 dark:text-blue-200 font-medium py-1.5 px-3 rounded-md focus:outline-none focus:shadow-outline flex items-center gap-1.5 mb-1"
+            aria-label="Uitleg over de Versimpelaar"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>Wat doet de Versimpelaar?</span>
+          </button>
+        </div>
       </div>
       
       <!-- Taalniveau dropdown -->
@@ -499,6 +498,7 @@
       </div>
     </div>
     
+    
     {#if error}
       <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4" transition:fade>
         {error}
@@ -509,7 +509,7 @@
     <div class="mb-4">
       <!-- Removed the flex justify-between and the button -->
       <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-        Woorden die je wil behouden:
+        Begrippen die je wilt behouden:
       </h3>
       
       <!-- Preview of preserved words (first 5 with count) -->
@@ -532,7 +532,7 @@
                 on:click={() => showPreservedWordsModal = true}
                 role="button"
               >
-                +{preservedWords.length - 5} meer...
+                +{preservedWords.length - 5} extra begrippen...
               </span>
             {/if}
           </div>
@@ -553,7 +553,7 @@
       <!-- Linker kolom: Input -->
       <div class="flex-1 flex flex-col">
         <label for="input" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          Originele tekst
+          Oorspronkelijke tekst
         </label>
         <div class="relative flex flex-col h-full flex-grow">
           <!-- Textarea with consistent height -->
@@ -563,7 +563,7 @@
             rows="12"
             draggable="false"
             class="w-full h-[400px] flex-grow px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white min-h-[250px] md:min-h-[400px] overflow-y-auto font-[system-ui] {isFlashing ? 'flash-animation' : ''}"
-            placeholder="Voer hier de tekst in die je wilt versimpelen naar {languageLevel}-taalniveau."
+            placeholder="Plak of typ hier de tekst die je wilt vereenvoudigen."
             disabled={isLoading}
             spellcheck="false"
             on:dragover|preventDefault
@@ -633,7 +633,7 @@
                   </svg>
                   <span>Bestand verwerkt</span>
                 {:else}
-                  <span>Upload document</span>
+                  <span>Document uploaden</span>
                 {/if}
               </button>
               
@@ -668,7 +668,7 @@
       <!-- Rechter kolom: Output - IDENTICAL dimensions to left column -->
       <div class="flex-1 flex flex-col">
         <label for="output" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          {languageLevel}-taalniveau tekst
+          Vereenvoudigde tekst
         </label>
         <div class="relative flex flex-col h-full flex-grow">
           <!-- Output with EXACT same height as input -->
@@ -682,7 +682,7 @@
             </div>
           {:else if !isLoading}
             <div class="w-full h-[400px] flex-grow px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 min-h-[250px] md:min-h-[400px] flex items-center justify-center">
-              <p>Hier verschijnt de versimpelde tekst na verwerking</p>
+              <p>Hier zie je straks de vereenvoudigde tekst.</p>
             </div>
           {/if}
 
@@ -720,12 +720,12 @@
               <button
                 on:click={() => {
                   navigator.clipboard.writeText(outputText);
-                  toast.success('Tekst gekopieerd naar klembord!');
+                  toast.success('Tekst gekopieerd!');
                 }}
                 disabled={!outputText}
                 class="bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-white font-medium py-1 px-3 rounded focus:outline-none focus:shadow-outline disabled:opacity-50 min-w-[140px] flex items-center justify-center"
               >
-                Kopieer naar klembord
+                Kopieer tekst
               </button>
             </div>
           </div>
@@ -744,7 +744,7 @@
   <div class="p-6">
     <div class="flex justify-between items-center mb-4">
       <h2 class="text-xl font-bold text-gray-800 dark:text-white">
-        Vul woorden in die je wilt behouden
+        Geef aan welke woorden je niet wilt vereenvoudigen.
       </h2>
       <button
         on:click={() => showPreservedWordsModal = false}
@@ -878,7 +878,7 @@
   <div class="p-6">
     <div class="flex justify-between items-center mb-4">
       <h2 class="text-xl font-bold text-gray-800 dark:text-white">
-        Over de B1-taalniveau Versimpelaar
+        Over de Versimpelaar
       </h2>
       <button
         on:click={() => showInfoModal = false}
@@ -892,31 +892,46 @@
     
     <div class="space-y-4 text-gray-700 dark:text-gray-300">
       <p>
-        DuoLimbo helpt je om complexe teksten naar eenvoudigere taal om te zetten, zodat ze beter te begrijpen zijn voor een breder publiek.
+        De Versimpelaar ondersteunt je bij het omzetten van complexe teksten naar eenvoudige taal op B1- of B2-niveau. Hierdoor worden teksten beter leesbaar en begrijpelijk voor een groter publiek.
       </p>
       <h3 class="text-lg font-medium text-gray-800 dark:text-white mt-4">Wat is B1-taalniveau?</h3>
       <p>
-        B1-taalniveau is een taalvaardigheidsniveau volgens het Europees Referentiekader (ERK). Teksten op B1-niveau:
+        B1 is een niveau binnen het Europees Referentiekader (ERK) voor talen. Teksten op B1-niveau:
       </p>
       <ul class="list-disc pl-5 space-y-1">
-        <li>Gebruiken eenvoudige, alledaagse woorden</li>
-        <li>Hebben kortere zinnen (15-20 woorden per zin)</li>
-        <li>Vermijden moeilijke zinsconstructies en jargon</li>
-        <li>Zijn concreet en direct</li>
+        <li>Gebruiken eenvoudige en veelvoorkomende woorden;</li>
+        <li>Bevatten korte zinnen (doorgaans 15 tot 20 woorden per zin);</li>
+        <li>Vermijden ingewikkelde zinsconstructies en vakjargon;</li>
+        <li>Zijn concreet, duidelijk en direct geformuleerd.</li>
+      <p>
+        B1-niveau is geschikt voor de meeste volwassenen in Nederland, ook voor mensen met een lagere taalvaardigheid.
+      </p>
       </ul>
-      <h3 class="text-lg font-medium text-gray-800 dark:text-white mt-4">Hoe werkt het?</h3>
+      <h3 class="text-lg font-medium text-gray-800 dark:text-white mt-4">
+      Hoe gebruik je de Versimpelaar?
+      </h3>
       <ol class="list-decimal pl-5 space-y-1">
-        <li>Voer je tekst in of upload een document (Word, PDF, TXT of RTF)</li>
-        <li>Kies welke woorden niet vereenvoudigd mogen worden (optioneel)</li>
-        <li>Klik op de "Vereenvoudig" knop</li>
-        <li>De AI zal je tekst omzetten naar B1-taalniveau</li>
+        <li>
+          <strong>Voer een tekst in</strong><br>
+          Plak de tekst die je wilt vereenvoudigen in het linkervak. Je kunt ook een document (Word, PDF, TXT, RTF) uploaden of rechtstreeks in het vak slepen.
+        </li>
+        <li>
+          <strong>Kies termen om te behouden (optioneel)</strong><br>
+          Selecteer specifieke woorden of termen die niet vereenvoudigd mogen worden. Er is standaard een lijst toegevoegd met veelgebruikte provinciale begrippen. Je kunt deze lijst aanvullen of aanpassen.
+        </li>
+        <li>
+          <strong>Start de verwerking</strong><br>
+          Klik op de pijl tussen het linker- en rechtervak om de tekst om te zetten.
+        </li>
+        <li>
+          <strong>Bekijk en gebruik de vereenvoudigde tekst</strong><br>
+          De Versimpelaar toont de vereenvoudigde tekst in het rechtervak. Je kunt deze vervolgens kopiëren en verder gebruiken.
+        </li>
       </ol>
-      <h3 class="text-lg font-medium text-gray-800 dark:text-white mt-4">Tips voor betere resultaten</h3>
-      <ul class="list-disc pl-5 space-y-1">
-        <li>Voeg vaktermen en organisatienamen toe aan "Woorden die niet vereenvoudigd worden"</li>
-        <li>Controleer de vereenvoudigde tekst altijd op juistheid</li>
-        <li>Voor langere teksten kun je beter stukken apart invoeren</li>
-      </ul>
+      <p class="mt-3 text-sm text-orange-700 dark:text-orange-300 font-semibold">
+        <strong>Let op:</strong><br>
+        De Versimpelaar is een hulpmiddel. Controleer altijd zelf de uitkomst en pas deze waar nodig aan.
+      </p>
     </div>
     <div class="mt-6 flex justify-end">
       <button
