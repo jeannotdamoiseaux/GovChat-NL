@@ -49,10 +49,15 @@
   $: preservedWords = useDefaultWords ? [...new Set([...userWords, ...activeDefaultWords])] : [...new Set(userWords)]; // Use Set to ensure uniqueness
 
   // Model selection logic - ModelSelector handles B1 app filtering automatically
-  // Note: Model filtering and auto-selection is handled by ModelSelector component
   let selectedModels = [''];
 
+  // Note: Model filtering and auto-selection is handled by ModelSelector component
+
   onMount(async () => {
+    // Set app context to B1 to ensure proper model filtering
+    currentAppContext.set('b1');
+    console.log('[B1 Logic] onMount: Set app context to B1');
+    
     if (browser) {
       console.log('[B1 Logic] onMount: Attempting to load userWords from localStorage.');
       const storedUserWords = localStorage.getItem('b1UserPreservedWords');
@@ -118,6 +123,38 @@
     console.log('[B1 Logic] Reactive save: Attempting to save userWords to localStorage. Current userWords:', JSON.parse(JSON.stringify(userWords)));
     localStorage.setItem('b1UserPreservedWords', JSON.stringify(userWords));
     console.log('[B1 Logic] Reactive save: userWords successfully saved to localStorage.');
+  }
+
+  // Reactive statement to ensure a valid model is selected when models are loaded
+  $: if (browser && $models && $models.length > 0 && selectedModels && selectedModels.length > 0) {
+    const currentModel = selectedModels[0];
+    
+    // Check if current model is valid
+    const allModelIds = $models.map(m => m.id);
+    if (currentModel && !allModelIds.includes(currentModel)) {
+      console.warn(`[B1 Logic] Reactive: Invalid model '${currentModel}' detected in selectedModels`);
+      console.log(`[B1 Logic] Reactive: Available models:`, allModelIds);
+      
+      // Try to find a valid model
+      let validModel = null;
+      
+      // First try B1-filtered models
+      if ($filteredModels && $filteredModels.length > 0) {
+        validModel = $filteredModels[0].id;
+        console.log(`[B1 Logic] Reactive: Using B1-filtered model: '${validModel}'`);
+      } 
+      // Otherwise use any available model
+      else if (allModelIds.length > 0) {
+        validModel = allModelIds[0];
+        console.log(`[B1 Logic] Reactive: Using first available model: '${validModel}'`);
+      }
+      
+      if (validModel) {
+        selectedModels = [validModel];
+        sessionStorage.setItem('selectedModels', JSON.stringify([validModel]));
+        console.log(`[B1 Logic] Reactive: Updated selectedModels to: '${validModel}'`);
+      }
+    }
   }
 
   // Improved mechanism to detect model updates
@@ -199,15 +236,44 @@
       showOutput = false;
       return;
     }
+
+    // Check if the selected model is available in the filtered models for B1 app
+    let modelToUse = currentModel;
     
-    // Additional validation: ensure the selected model has B1 app access
-    const modelHasB1Access = b1AccessibleModels.some(m => m.id === currentModel);
-    if (!modelHasB1Access) {
-      error = "Het geselecteerde model heeft geen toegang tot de B1 Taalniveau app. Neem contact op met de administrator.";
-      toast.error(error);
-      isLoading = false;
-      showOutput = false;
-      return;
+    console.log(`[B1 Logic] Checking model availability:`);
+    console.log(`[B1 Logic] - Selected model: '${currentModel}'`);
+    console.log(`[B1 Logic] - Filtered models (B1):`, $filteredModels);
+    console.log(`[B1 Logic] - All models:`, $models);
+    
+    if ($filteredModels && $filteredModels.length > 0) {
+      const availableModelIds = $filteredModels.map(m => m.id);
+      console.log(`[B1 Logic] - B1 available model IDs:`, availableModelIds);
+      if (!availableModelIds.includes(currentModel)) {
+        console.warn(`[B1 Logic] Selected model '${currentModel}' not available in B1 app. Available models:`, availableModelIds);
+        modelToUse = availableModelIds[0]; // Use first available model as fallback
+        console.log(`[B1 Logic] Using fallback model: '${modelToUse}'`);
+      }
+    } else if ($models && $models.length > 0) {
+      // If no B1-filtered models are available, fall back to any available model
+      const allAvailableIds = $models.map(m => m.id);
+      console.log(`[B1 Logic] - All available model IDs:`, allAvailableIds);
+      if (!allAvailableIds.includes(currentModel)) {
+        console.warn(`[B1 Logic] Selected model '${currentModel}' not available anywhere. All available models:`, allAvailableIds);
+        modelToUse = allAvailableIds[0]; // Use first available model as fallback
+        console.log(`[B1 Logic] Using fallback model from all models: '${modelToUse}'`);
+      } else {
+        console.log(`[B1 Logic] Selected model '${currentModel}' is available in all models`);
+        modelToUse = currentModel;
+      }
+    } else {
+      console.error(`[B1 Logic] No models available at all!`);
+    }
+    
+    // Update sessionStorage if we're using a different model than what was selected
+    if (modelToUse !== currentModel && browser) {
+      console.log(`[B1 Logic] Updating sessionStorage with fallback model: '${modelToUse}'`);
+      selectedModels = [modelToUse];
+      sessionStorage.setItem('selectedModels', JSON.stringify([modelToUse]));
     }
     // --- End Validations ---
 
@@ -221,7 +287,7 @@
         },
         body: JSON.stringify({
           text: inputText,
-          model: currentModel, // Using the validated model
+          model: modelToUse, // Using the validated model (original or fallback)
           preserved_words: preservedWords, 
           language_level: languageLevel
         })
@@ -497,7 +563,6 @@
         </select>
       </div>
     </div>
-    
     
     {#if error}
       <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4" transition:fade>

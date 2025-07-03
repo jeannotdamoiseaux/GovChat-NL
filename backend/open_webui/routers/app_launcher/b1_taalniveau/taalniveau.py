@@ -264,7 +264,7 @@ async def generate_version(request: Request, chunk: str, model: str, preserved_w
         return {"index": index, "temperature": temperature, "text": simplified_text, "error": None} # Return the full (cleaned) output
     except Exception as e:
         # Log the error for debugging purposes
-        print(f"Error processing chunk {index} with model {model} at temperature {e}")
+        print(f"Error processing chunk {index} with model {model} at temperature {temperature}: {e}")
         # Return the original chunk in case of an error to avoid data loss, include temperature and error info
         return {"index": index, "temperature": temperature, "text": chunk, "error": str(e)}
 
@@ -342,6 +342,8 @@ class SimplifyTextRequest(BaseModel):
 @router.post("/translate")
 async def simplify_text_endpoint(request: Request, data: SimplifyTextRequest, user = Depends(get_current_user)):
     """Endpoint to simplify text to B1/B2 level. Generates 3 versions per chunk, then selects the best."""
+
+    print(f"Using model: {data.model}")
 
     # --- START: Automatically detect and add law articles to preserved_words ---
     # Regex to find common law article mentions (e.g., Artikel 1, art. 2.3, Artikel 3:16)
