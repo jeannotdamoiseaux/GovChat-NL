@@ -8,6 +8,8 @@
     import type { Unsubscriber } from 'svelte/store';
 
     let showB1InfoModal = false;
+    let lechatComponent;
+    let selectedModels = [''];
 
     let configUnsubscribe: Unsubscriber | undefined;
     let settingsUnsubscribe: Unsubscriber | undefined;
@@ -68,8 +70,8 @@
     <B1InfoModal bind:show={showB1InfoModal} />
 {/if}
 
-<Lechat>
+<Lechat bind:this={lechatComponent} bind:selectedModels>
     <div slot="content" class="pt-6">
-        <B1Logic />
+        <B1Logic {selectedModels} />
     </div>
 </Lechat>

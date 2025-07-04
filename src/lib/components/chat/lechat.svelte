@@ -46,7 +46,7 @@
 	let navbarElement;
 	let chatIdUnsubscriber: Unsubscriber | undefined;
 
-	let selectedModels = [''];
+	export let selectedModels = [''];
 	let chat = null;
 	let history = {
 		messages: {},

@@ -18,6 +18,20 @@
 
 	// Prevent multiple rapid auto-selections
 	let autoSelectionInProgress = false;
+	
+	// Track previous context to detect actual context switches
+	let previousAppContext = '';
+
+	// TEMPORARILY DISABLED - Reset selected models only when switching TO B1 context
+	// $: if ($currentAppContext === 'b1' && useAppFilter && previousAppContext !== 'b1' && selectedModels.length > 0 && selectedModels[0] !== '') {
+	// 	selectedModels = [''];
+	// 	console.log('[ModelSelector] Reset models for B1 app - forcing manual selection');
+	// }
+	
+	// Update previous context tracker
+	$: if ($currentAppContext !== previousAppContext) {
+		previousAppContext = $currentAppContext;
+	}
 
 	// Use either filtered models or all models based on useAppFilter prop
 	$: availableModels = useAppFilter ? $filteredModels : $models;
@@ -36,7 +50,8 @@
 	}
 
 	// Auto-select first available model when app context changes or when models become available
-	$: if (useAppFilter && $filteredModels && $filteredModels.length > 0 && !autoSelectionInProgress) {
+	// EXCEPTION: Do NOT auto-select for B1 app - force manual selection
+	$: if (useAppFilter && $filteredModels && $filteredModels.length > 0 && !autoSelectionInProgress && $currentAppContext !== 'b1') {
 		// If using app filter and current selection is not available in filtered models
 		const currentModel = selectedModels[0];
 		const isCurrentModelValid = currentModel && $filteredModels.some(m => m.id === currentModel);
@@ -71,7 +86,8 @@
 	}
 
 	// Auto-select first available model if no valid model is selected
-	$: if (availableModels && availableModels.length > 0 && !autoSelectionInProgress) {
+	// EXCEPTION: Do NOT auto-select for B1 app - force manual selection
+	$: if (availableModels && availableModels.length > 0 && !autoSelectionInProgress && $currentAppContext !== 'b1') {
 		// Check if any selected model is empty or invalid
 		const hasEmptyOrInvalidModel = selectedModels.some(model => 
 			!model || !availableModels.some(m => m.id === model)
