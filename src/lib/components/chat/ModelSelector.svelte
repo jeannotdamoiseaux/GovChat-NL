@@ -36,19 +36,6 @@
 	// Use either filtered models or all models based on useAppFilter prop
 	$: availableModels = useAppFilter ? $filteredModels : $models;
 
-	// Only show warning after initial load to prevent showing on page load
-	let initialLoadDone = false;
-	$: if (useAppFilter && $models && $models.length > 0) {
-		if ($filteredModels.length === 0) {
-			if (initialLoadDone) {
-				const appType = $currentAppContext === 'b1' ? 'B1 Taalniveau' : 'Subsidie';
-				toast.warning(`Geen modellen beschikbaar voor ${appType} app. Neem contact op met de beheerder.`);
-			}
-		} else {
-			initialLoadDone = true;
-		}
-	}
-
 	// Auto-select first available model when app context changes or when models become available
 	// EXCEPTION: Do NOT auto-select for B1 app - force manual selection
 	$: if (useAppFilter && $filteredModels && $filteredModels.length > 0 && !autoSelectionInProgress && $currentAppContext !== 'b1') {
