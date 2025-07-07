@@ -52,16 +52,7 @@ export const filteredModels = derived(
                     b1ModelIds: b1Models.map(m => m.id)
                 });
                 return b1Models;
-            case 'subsidie':
-                const subsidieModels = typedModels.filter(model => 
-                    model.info?.meta?.capabilities?.subsidie_app_access === true
-                );
-                console.log('[appModels] Subsidie app context - Available models:', {
-                    total: typedModels.length,
-                    subsidieAccessible: subsidieModels.length,
-                    subsidieModelIds: subsidieModels.map(m => m.id)
-                });
-                return subsidieModels;
+                
             case 'general':
             default:
                 console.log('[appModels] General context - All models available:', typedModels.length);
@@ -72,36 +63,15 @@ export const filteredModels = derived(
 
 // Utility function to set app context based on route
 export function setAppContextFromRoute(route: string) {
+    console.log('[appModels] Setting app context for route:', route);
     if (route.includes('/app-launcher/b1-taalniveau')) {
+        console.log('[appModels] Setting context to b1');
         currentAppContext.set('b1');
     } else if (route.includes('/app-launcher/subsidies')) {
+        console.log('[appModels] Setting context to subsidie');
         currentAppContext.set('subsidie');
     } else {
+        console.log('[appModels] Setting context to general');
         currentAppContext.set('general');
-    }
-}
-
-// Utility function to get first available model for current app context
-export function getFirstAvailableAppModel(models: Model[], appContext: 'b1' | 'subsidie' | 'general'): string | null {
-    if (!models || models.length === 0) {
-        return null;
-    }
-
-    const typedModels = models as Model[];
-
-    switch (appContext) {
-        case 'b1':
-            const b1Models = typedModels.filter(model => 
-                model.info?.meta?.capabilities?.b1_app_access === true
-            );
-            return b1Models.length > 0 ? b1Models[0].id : null;
-        case 'subsidie':
-            const subsidieModels = typedModels.filter(model => 
-                model.info?.meta?.capabilities?.subsidie_app_access === true
-            );
-            return subsidieModels.length > 0 ? subsidieModels[0].id : null;
-        case 'general':
-        default:
-            return typedModels.length > 0 ? typedModels[0].id : null;
     }
 }
