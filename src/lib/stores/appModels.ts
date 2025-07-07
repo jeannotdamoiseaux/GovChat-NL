@@ -71,28 +71,3 @@ export function setAppContextFromRoute(route: string) {
         currentAppContext.set('general');
     }
 }
-
-// Utility function to get first available model for current app context
-export function getFirstAvailableAppModel(models: Model[], appContext: 'b1' | 'subsidie' | 'general'): string | null {
-    if (!models || models.length === 0) {
-        return null;
-    }
-
-    const typedModels = models as Model[];
-
-    switch (appContext) {
-        case 'b1':
-            const b1Models = typedModels.filter(model => 
-                model.info?.meta?.capabilities?.b1_app_access === true
-            );
-            return b1Models.length > 0 ? b1Models[0].id : null;
-        case 'subsidie':
-            const subsidieModels = typedModels.filter(model => 
-                model.info?.meta?.capabilities?.subsidie_app_access === true
-            );
-            return subsidieModels.length > 0 ? subsidieModels[0].id : null;
-        case 'general':
-        default:
-            return typedModels.length > 0 ? typedModels[0].id : null;
-    }
-}

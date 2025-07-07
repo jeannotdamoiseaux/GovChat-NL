@@ -87,9 +87,6 @@
     localStorage.setItem('b1UserPreservedWords', JSON.stringify(userWords));
   }
 
-  // DO NOT automatically select models - force manual selection
-  // Removed reactive statement that auto-selected models
-
   // Word counting and progress variables
   let wordCountPercentage = 0;
   let inputWordCount = 0;
@@ -111,6 +108,9 @@
 
   // Main function to trigger text simplification
   async function simplifyText() {
+    // Debug logging
+    console.log('[B1Logic] simplifyText called - selectedModels:', selectedModels, 'selectedModelId:', selectedModelId);
+    
     // Reset errors and state
     error = null;
     isLoading = true;
@@ -139,17 +139,21 @@
       return;
     }
 
-    const currentModel = selectedModelId;
-    if (!currentModel) {
+    // Enhanced model validation
+    console.log('[B1Logic] Model validation - selectedModelId:', selectedModelId, 'selectedModels:', selectedModels);
+    
+    if (!selectedModelId || selectedModelId === '') {
       error = "Selecteer eerst een model via de modelselectie bovenaan de pagina";
       toast.error(error);
+      console.error('[B1Logic] No model selected - selectedModelId:', selectedModelId, 'selectedModels:', selectedModels);
       isLoading = false;
       showOutput = false;
       return;
     }
 
     // Use the selected model directly - no fallback
-    const modelToUse = currentModel;
+    const modelToUse = selectedModelId;
+    console.log('[B1Logic] Using model:', modelToUse);
     
     // --- End Validations ---
 
@@ -407,6 +411,18 @@
 </script>
 <div class="max-w-7xl mx-auto mt-6">
   <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
+    <!-- Debug info voor model selectie -->
+    {#if !selectedModelId}
+      <div class="bg-yellow-100 dark:bg-yellow-900 border border-yellow-400 text-yellow-800 dark:text-yellow-200 px-4 py-3 rounded mb-4">
+        <strong>⚠️ Let op:</strong> Geen model geselecteerd. Selecteer eerst een model via de modelselectie bovenaan de pagina.
+        <br><small>Debug: selectedModels = {JSON.stringify(selectedModels)}, selectedModelId = {selectedModelId}</small>
+      </div>
+    {:else}
+      <div class="bg-green-100 dark:bg-green-900 border border-green-400 text-green-800 dark:text-green-200 px-4 py-3 rounded mb-4">
+        <strong>✅ Model geselecteerd:</strong> {selectedModelId}
+      </div>
+    {/if}
+    
     <div class="flex justify-between items-center mb-6">
       <div class="flex items-start gap-2">
         <div>

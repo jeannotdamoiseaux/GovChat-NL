@@ -11,6 +11,20 @@ services:
   #   ports:
   #     - "5432:5432"
 
+  open-webui:
+    image: ghcr.io/marwinaerden/govchat-nl:sjeng5
+    restart: always
+    ports:
+      - "18462:8080"
+    environment:
+      - "OPENAI_API_BASE_URL=http://litellm:4000"
+    volumes:
+      - ./open-webui:/app/backend/data
+    depends_on:
+      - litellm
+    extra_hosts:
+      - host.docker.internal:host-gateway
+
   litellm:
     image: ghcr.io/berriai/litellm:main-latest
     restart: always
