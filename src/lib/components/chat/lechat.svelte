@@ -204,7 +204,7 @@
             shareEnabled={!!history.currentId}
             {initNewChat}
         />
-        <slot name="content"></slot>
+        <slot name="content" {selectedModels}></slot>
 
     {:else if loading}
         <div class="flex items-center justify-center h-full w-full">

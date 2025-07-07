@@ -142,6 +142,7 @@
     const currentModel = selectedModelId;
     if (!currentModel) {
       error = "Selecteer eerst een model via de modelselectie bovenaan de pagina";
+      toast.error(error);
       isLoading = false;
       showOutput = false;
       return;
@@ -278,6 +279,7 @@
   function handleFileDrop(event) {
     // Block if no model is selected
     if (!selectedModelId) {
+      toast.error('Selecteer eerst een AI-model via de modelselectie bovenaan de pagina');
       return;
     }
 
@@ -374,6 +376,7 @@
   async function handleFileUpload(event) {
     // Block if no model is selected
     if (!selectedModelId) {
+      toast.error('Geen model geselecteerd - selecteer eerst een AI-model via de modelselectie bovenaan de pagina');
       return;
     }
 
