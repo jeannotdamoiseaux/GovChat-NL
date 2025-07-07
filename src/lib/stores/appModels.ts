@@ -63,11 +63,15 @@ export const filteredModels = derived(
 
 // Utility function to set app context based on route
 export function setAppContextFromRoute(route: string) {
+    console.log('[appModels] Setting app context for route:', route);
     if (route.includes('/app-launcher/b1-taalniveau')) {
+        console.log('[appModels] Setting context to b1');
         currentAppContext.set('b1');
     } else if (route.includes('/app-launcher/subsidies')) {
+        console.log('[appModels] Setting context to subsidie');
         currentAppContext.set('subsidie');
     } else {
+        console.log('[appModels] Setting context to general');
         currentAppContext.set('general');
     }
 }
