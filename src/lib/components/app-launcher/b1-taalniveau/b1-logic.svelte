@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte'; 
-  import { models, settings } from '$lib/stores';
+  import { models, settings, config } from '$lib/stores';
   import { filteredModels, currentAppContext } from '$lib/stores/appModels';
   import { WEBUI_BASE_URL } from '$lib/constants';
   import { fade } from 'svelte/transition';
@@ -26,24 +26,8 @@
 
   let useDefaultWords = true;
 
-  const originalDefaultWords = [
-    'Provinciale Staten', 'Gedeputeerde Staten', 'Directieteam', 'Regulier overleg (RO)',
-    'Fracties', 'Statenleden', 'Statenlid', 'Gedeputeerde', 'Commissaris van de Koning (CdK)',
-    'Subsidie', 'Begroting', 'Interprovinciaal overleg (IPO)', 'Ruimtelijke ordening',
-    'Regionaal beleid', 'Provinciefonds', 'Omgevingsvisie', 'Provinciale verordening',
-    'Regionaal samenwerkingsverband', 'Gebiedscommissie', 'Waterplan', 'Milieubeleidsplan',
-    'Inpassingsplan', 'Ruimtelijk Economisch Programma', 'Uitvoeringsprogramma Bereikbaarheid',
-    'Adaptatieplan Klimaat', 'Erfgoedprogramma', 'Interprovinciaal Coördinatie Overleg (IPCO)',
-    'Regionaal Beleidsplan Verkeersveiligheid (RBV)', 'Regionaal economisch beleid',
-    'Ontwikkelingsfonds', 'Veiligheids- en Crisismanagementplan (RVCP)', 'Natuurbeheer',
-    'Waterbeheer', 'Milieubeleid', 'Mobiliteitsbeleid', 'Plattelandsontwikkeling',
-    'Provinciale infrastructuur', 'Omgevingsverordening', 'Energietransitie', 'Waterkwaliteit',
-    'Duurzaamheidsagenda', 'Natuurbeheerplan', 'Mobiliteitsvisie', 'Sociale agenda',
-    'Bodembeleid', 'Burgerparticipatie', 'Ecologie', 'Ecologisch', 'Groenbeleid',
-    'Natuur- en landschapsbeheerorganisaties', 'Informerend stuk', 'Onderwerp', 'Samenvatting', 
-    'Kennisnemen van', 'Aanleiding en bestuurlijke context', 'Bevoegdheid', 'Communicatie', 'Vervolg', 
-    'Bijlage(n)', 'Sonderend stuk', 'Vraag aan PS', 'Context', 'Voorstel', 'Statenvoorstel', 'Geachte', 'Argumenten'
-  ];
+  // Remove hardcoded words - will be loaded from API
+  let originalDefaultWords = [];
 
   let activeDefaultWords = [...originalDefaultWords];
   let userWords = [];
@@ -54,6 +38,27 @@
 
   // Reactive statement for preservedWords based on user words and default toggle
   $: preservedWords = useDefaultWords ? [...new Set([...userWords, ...activeDefaultWords])] : [...new Set(userWords)];
+
+  // Load default words from config store
+  $: {
+    if ($config?.customization?.b1_default_preserved_words) {
+      try {
+        const configWords = $config.customization.b1_default_preserved_words;
+        if (typeof configWords === 'string') {
+          originalDefaultWords = JSON.parse(configWords);
+        } else if (Array.isArray(configWords)) {
+          originalDefaultWords = configWords;
+        } else {
+          originalDefaultWords = [];
+        }
+        activeDefaultWords = [...originalDefaultWords];
+      } catch (error) {
+        console.error('Error parsing B1 default words from config:', error);
+        originalDefaultWords = [];
+        activeDefaultWords = [];
+      }
+    }
+  }
 
   onMount(async () => {
     // Set app context to B1 to ensure proper model filtering
