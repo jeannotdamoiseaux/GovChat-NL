@@ -144,7 +144,7 @@ def build_selection_prompt(language_level, preserved_words_text):
     return "\n".join(line.strip() for line in prompt.splitlines() if line.strip())  # Verwijdert overtollige whitespaces
 # --- END: Language Level Specific Prompt Data ---
 
-def split_into_chunks(text: str, max_tokens: int = 2500) -> List[str]:
+def split_into_chunks(text: str, max_tokens: int = 1500) -> List[str]:
     """Split text into chunks of approximately max_tokens"""
     encoding = tiktoken.get_encoding("cl100k_base")
     paragraphs = text.split('\n')
