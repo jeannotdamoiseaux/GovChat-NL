@@ -46,7 +46,7 @@
 	let navbarElement;
 	let chatIdUnsubscriber: Unsubscriber | undefined;
 
-	let selectedModels = [''];
+	export let selectedModels = [''];
 	let chat = null;
 	let history = {
 		messages: {},
@@ -115,8 +115,6 @@
 	};
 
 	onMount(async () => {
-		console.log('mounted');
-		
 		if (!$chatId) {
 			chatIdUnsubscriber = chatId.subscribe(async (value) => {
 				if (!value) {
@@ -144,10 +142,38 @@
 		chatIdUnsubscriber?.();
 	});
 
+	const convertMessagesToHistory = (messages) => {
+		const messagesArray = Array.isArray(messages) ? messages : [];
+		const history = { messages: {}, currentId: null };
+		
+		messagesArray.forEach((message, index) => {
+			const messageId = message.id || `msg_${index}`;
+			history.messages[messageId] = message;
+			if (index === messagesArray.length - 1) {
+				history.currentId = messageId;
+			}
+		});
+		
+		return history;
+	};
+
 	const initNewChat = async () => {
-		// Simplified initialization
-		if ($models.length > 0) {
+		// Check if we're in any app launcher context (including main app launcher page)
+		const isAppLauncherContext = $page.route.id?.includes('/app-launcher');
+		
+		console.log('[Lechat DEBUG] Route check:', {
+			routeId: $page.route.id,
+			isAppLauncherContext,
+			selectedModels
+		});
+		
+		// FORCE empty models for app launcher contexts - no exceptions
+		if (isAppLauncherContext) {
+			selectedModels = [''];
+			console.log('[Lechat] FORCED reset for app launcher context');
+		} else if ($models.length > 0) {
 			selectedModels = [$models[0].id];
+			console.log('[Lechat] Auto-selected model for regular chat:', $models[0].id);
 		}
 
 		history = {
@@ -204,7 +230,7 @@
             shareEnabled={!!history.currentId}
             {initNewChat}
         />
-        <slot name="content"></slot>
+        <slot name="content" {selectedModels}></slot>
 
     {:else if loading}
         <div class="flex items-center justify-center h-full w-full">

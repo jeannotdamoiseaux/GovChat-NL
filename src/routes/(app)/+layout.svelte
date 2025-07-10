@@ -22,6 +22,9 @@
 	import { WEBUI_VERSION } from '$lib/constants';
 	import { compareVersion } from '$lib/utils';
 
+	// Govchat - import app models store for context management
+	import { setAppContextFromRoute } from '$lib/stores/appModels';
+
 	import {
 		config,
 		user,
@@ -55,6 +58,11 @@
 	let localDBChats = [];
 
 	let version;
+
+	// Govchat - Reactive statement to update app context when route changes
+	$: if ($page?.route?.id) {
+		setAppContextFromRoute($page.route.id);
+	}
 
 	onMount(async () => {
 		if ($user === undefined || $user === null) {

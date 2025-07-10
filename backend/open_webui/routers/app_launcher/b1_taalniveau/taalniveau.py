@@ -406,27 +406,26 @@ async def simplify_text_endpoint(request: Request, data: SimplifyTextRequest, us
                     # del chunk_results[idx] # Be careful if original_chunk is needed elsewhere
 
             except Exception as e:
-                 # Handle errors during the await future itself (less likely if generate_version catches errors)
-                 print(f"Error awaiting generation task result: {e}")
-                 # Consider how to handle this failure downstream. Maybe skip selection for this chunk?
-                 # For now, it might prevent the selection task from being scheduled if an error occurs here.
-                 pass # Continue processing other tasks
+                # Handle errors during the await future itself (less likely if generate_version catches errors)
+                print(f"Error awaiting generation task result: {e}")
+                # Continue processing other tasks
+                pass
 
         # Process selection results as they complete and yield them
         for future in asyncio.as_completed(selection_tasks):
-             try:
-                 final_result = await future
-                 # --- DOUBLE CHECK and REMOVE DELIMITERS ---
-                 if 'text' in final_result and isinstance(final_result['text'], str):
-                     # Remove <<< and >>> just in case they slipped through selection/parsing
-                     final_result['text'] = final_result['text'].replace('<<<', '').replace('>>>', '').strip()
-                 # --- END DOUBLE CHECK ---
-                 yield json.dumps(final_result) + "\n"
-             except Exception as e:
-                 print(f"Error awaiting or processing selection task result: {e}")
-                 # Decide how to inform the client about selection failure
-                 # Example: yield json.dumps({"index": final_result.get('index', -1), "error": f"Processing failed after selection: {e}"}) + "\n"
-                 # Current select_best_version tries to return fallback text with error info.
+            try:
+                final_result = await future
+                # --- DOUBLE CHECK and REMOVE DELIMITERS ---
+                if 'text' in final_result and isinstance(final_result['text'], str):
+                    # Remove <<< and >>> just in case they slipped through selection/parsing
+                    final_result['text'] = final_result['text'].replace('<<<', '').replace('>>>', '').strip()
+                # --- END DOUBLE CHECK ---
+                yield json.dumps(final_result) + "\n"
+            except Exception as e:
+                print(f"Error awaiting or processing selection task result: {e}")
+                # Yield error result for this chunk
+                error_result = {"index": -1, "error": f"Processing failed after selection: {e}"}
+                yield json.dumps(error_result) + "\n"
 
 
     return StreamingResponse(stream_results(), media_type="application/x-ndjson")
