@@ -40,7 +40,7 @@ Via de App Launcher zijn momenteel de volgende AI-applicaties (of plannen daarvo
 
 | **App**            | **Beschrijving**                                      | **Status**       | **Initiatiefnemer**       | **Meer informatie**         |
 |---------------------|------------------------------------------------------|------------------|---------------------------|-----------------------------|
-| **Versimpelaar**   | Vereenvoudigt teksten naar B1- of B2 taalniveau.            | Beschikbaar | Provincie Limburg       | [Meer informatie](docs/app-launcher/b1-taalniveau.md) |
+| **Versimpelaar**   | Vereenvoudigt teksten naar B1- of B2 taalniveau.            | Beschikbaar | Provincie Limburg       | [Meer informatie](docs/app-launcher/versimpelaar.md) |
 | **ToeKenner**       | Beoordeelt subsidieaanvragen en genereert rapportages.| In ontwikkeling | Provincie Limburg      | [Meer informatie](docs/app-launcher/subsidies.md)     |
 | **WooAssist**    | Helpt bij het doorzoeken van je mails en bestanden bij een woo-verzoek.               | Backlog          | Provincie Limburg                         | Beschikbaar binnenkort     |
 

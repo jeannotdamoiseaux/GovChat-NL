@@ -25,18 +25,14 @@
   const originalDefaultWords = [
     'Provinciale Staten', 'Gedeputeerde Staten', 'Directieteam', 'Regulier overleg (RO)',
     'Fracties', 'Statenleden', 'Statenlid', 'Gedeputeerde', 'Commissaris van de Koning (CdK)',
-    'Subsidie', 'Begroting', 'Interprovinciaal overleg (IPO)', 'Ruimtelijke ordening',
-    'Regionaal beleid', 'Provinciefonds', 'Omgevingsvisie', 'Provinciale verordening',
-    'Regionaal samenwerkingsverband', 'Gebiedscommissie', 'Waterplan', 'Milieubeleidsplan',
-    'Inpassingsplan', 'Ruimtelijk Economisch Programma', 'Uitvoeringsprogramma Bereikbaarheid',
-    'Adaptatieplan Klimaat', 'Erfgoedprogramma', 'Interprovinciaal Coördinatie Overleg (IPCO)',
-    'Regionaal Beleidsplan Verkeersveiligheid (RBV)', 'Regionaal economisch beleid',
-    'Ontwikkelingsfonds', 'Veiligheids- en Crisismanagementplan (RVCP)', 'Natuurbeheer',
+    'Gouverneur', 'Subsidie', 'Begroting', 'Interprovinciaal overleg (IPO)', 'Ruimtelijke ordening',
+    'Provinciefonds', 'Omgevingsvisie', 'Verordening', 'Samenwerkingsverband',
+    'Economisch', 'Beleid', 'Fonds', 'Natuurbeheer',
     'Waterbeheer', 'Milieubeleid', 'Mobiliteitsbeleid', 'Plattelandsontwikkeling',
     'Provinciale infrastructuur', 'Omgevingsverordening', 'Energietransitie', 'Waterkwaliteit',
-    'Duurzaamheidsagenda', 'Natuurbeheerplan', 'Mobiliteitsvisie', 'Sociale agenda',
-    'Bodembeleid', 'Burgerparticipatie', 'Ecologie', 'Ecologisch', 'Groenbeleid',
-    'Natuur- en landschapsbeheerorganisaties', 'Informerend stuk', 'Onderwerp', 'Samenvatting', 
+    'Natuurbeheerplan', 'Sociale agenda',
+    'Bodembeleid', 'Burgerparticipatie', 'Groenbeleid',
+    'Informerend stuk', 'Onderwerp', 'Samenvatting', 
     'Kennisnemen van', 'Aanleiding en bestuurlijke context', 'Bevoegdheid', 'Communicatie', 'Vervolg', 
     'Bijlage(n)', 'Sonderend stuk', 'Vraag aan PS', 'Context', 'Voorstel', 'Statenvoorstel', 'Geachte', 'Argumenten'
   ];
@@ -116,6 +112,14 @@
         localStorage.setItem('b1TutorialShown', 'true');
       }
     }
+
+    // Print meteen bij laden
+    console.log('[DEBUG] isLoading:', isLoading, '| selectedModels[0]:', selectedModels[0], '| disabled:', isLoading || !selectedModels[0]);
+    
+    // Print elke 3 seconden (3000 ms)
+    setInterval(() => {
+      console.log('[DEBUG] isLoading:', isLoading, '| selectedModels[0]:', selectedModels[0], '| disabled:', isLoading || !selectedModels[0]);
+    }, 3000)
   });
 
   // Reactive statement to save userWords to localStorage whenever it changes
@@ -961,17 +965,30 @@
       </p>
       <h3 class="text-lg font-medium text-gray-800 dark:text-white mt-4">Wat is B1-taalniveau?</h3>
       <p>
-        B1 is een niveau binnen het Europees Referentiekader (ERK) voor talen. Teksten op B1-niveau:
+      B1 is een niveau binnen het Europees Referentiekader (ERK) voor talen. Teksten op B1-niveau:
       </p>
       <ul class="list-disc pl-5 space-y-1">
         <li>Gebruiken eenvoudige en veelvoorkomende woorden;</li>
         <li>Bevatten korte zinnen (doorgaans 15 tot 20 woorden per zin);</li>
         <li>Vermijden ingewikkelde zinsconstructies en vakjargon;</li>
         <li>Zijn concreet, duidelijk en direct geformuleerd.</li>
-      <p>
-        B1-niveau is geschikt voor de meeste volwassenen in Nederland, ook voor mensen met een lagere taalvaardigheid.
-      </p>
       </ul>
+      <p>
+        B1-niveau is geschikt voor het overgrote deel van de volwassen bevolking in Nederland, ook voor mensen met een lagere taalvaardigheid.
+      </p>
+      <h3 class="text-lg font-medium text-gray-800 dark:text-white mt-4">Wat is B2-taalniveau?</h3>
+      <p>
+        B2 is eveneens onderdeel van het Europees Referentiekader (ERK) voor talen. Teksten op B2-niveau:
+      </p>
+      <ul class="list-disc pl-5 space-y-1">
+        <li>Gebruiken wat complexere en minder alledaagse woorden en begrippen;</li>
+        <li>Hebben meer variatie in zinslengte (meestal tot 25 woorden per zin);</li>
+        <li>Bevatten meer verbindingswoorden (zoals ‘hoewel’, ‘desondanks’);</li>
+        <li>Kunnen enigszins complexere zinsconstructies bevatten, maar blijven helder en logisch opgebouwd.</li>
+      </ul>
+      <p>
+        B2-niveau is bedoeld voor mensen die zelfstandig en vlot complexere teksten kunnen begrijpen, bijvoorbeeld mensen met een goede beheersing van het Nederlands of met een hogere opleiding. B2 is toegevoegd als optie omdat B1 soms te eenvoudig is, waardoor nuance of details verloren kunnen gaan. Met B2 blijft de tekst toegankelijk, maar is er meer ruimte voor nuance.
+      </p>
       <h3 class="text-lg font-medium text-gray-800 dark:text-white mt-4">
       Hoe gebruik je de Versimpelaar?
       </h3>
