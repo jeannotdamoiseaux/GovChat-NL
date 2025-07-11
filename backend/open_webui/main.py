@@ -372,6 +372,7 @@ from open_webui.config import (
     # Customization for GovChat-NL
     EMPTY_CHAT_WELCOME_MESSAGE,
     LOGIN_SCREEN_SUBTITLE,
+    B1_DEFAULT_PRESERVED_WORDS,
     ENABLE_CONTROLS_BUTTON,
     SHOW_CHANGE_PASSWORD,
     ALLOW_USERNAME_EDIT,
@@ -1070,7 +1071,7 @@ async def inspect_websocket(request: Request, call_next):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"], #Dit veranderen naar "http://localhost:5173", standaard is dit CORS_ALLOW_ORIGIN
+    allow_origins=CORS_ALLOW_ORIGIN, #Dit veranderen naar ["http://localhost:5173"], standaard is dit CORS_ALLOW_ORIGIN
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -1426,6 +1427,7 @@ async def get_app_config(request: Request):
         "customization": {
             "empty_chat_welcome_message": EMPTY_CHAT_WELCOME_MESSAGE.value,
             "login_screen_subtitle": LOGIN_SCREEN_SUBTITLE.value,
+            "b1_default_preserved_words": B1_DEFAULT_PRESERVED_WORDS.value,
             "enable_controls_button": ENABLE_CONTROLS_BUTTON.value,
             "show_change_password": SHOW_CHANGE_PASSWORD.value,
             "allow_username_edit": ALLOW_USERNAME_EDIT.value,
