@@ -132,11 +132,19 @@ class FeaturesPermissions(BaseModel):
     notes: bool = True
 
 
+# GovChat-NL
+class AppLauncherPermissions(BaseModel):
+    b1_taalniveau: bool = False
+    subsidies: bool = False
+    transcriptie: bool = False
+
+
 class UserPermissions(BaseModel):
     workspace: WorkspacePermissions
     sharing: SharingPermissions
     chat: ChatPermissions
     features: FeaturesPermissions
+    appLauncher: AppLauncherPermissions
 
 
 @router.get("/default/permissions", response_model=UserPermissions)
@@ -153,6 +161,9 @@ async def get_default_user_permissions(request: Request, user=Depends(get_admin_
         ),
         "features": FeaturesPermissions(
             **request.app.state.config.USER_PERMISSIONS.get("features", {})
+        ),
+        "appLauncher": AppLauncherPermissions( # GovChat-NL
+            **request.app.state.config.USER_PERMISSIONS.get("appLauncher", {})
         ),
     }
 

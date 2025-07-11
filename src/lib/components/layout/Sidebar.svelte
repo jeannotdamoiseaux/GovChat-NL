@@ -520,7 +520,7 @@
 		</div>
 
 		<!-- App Launcher (GovChat-NL) -->
-		{#if $user?.role === 'admin' || Object.values($user.permissions.appLauncher).some(permission => permission)}
+		{#if $user?.role === 'admin' || Object.values($user?.permissions?.appLauncher || {}).some(permission => permission)}
 			<div class="px-1.5 flex justify-center text-gray-800 dark:text-gray-200">
 				<a
 					class="flex-grow flex space-x-3 rounded-lg px-2 py-[7px] hover:bg-gray-100 dark:hover:bg-gray-900 transition"

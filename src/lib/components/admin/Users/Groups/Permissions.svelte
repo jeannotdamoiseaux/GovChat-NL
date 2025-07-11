@@ -39,7 +39,13 @@
 			image_generation: true,
 			code_interpreter: true,
 			notes: true
-		}
+		},
+		// GovChat-NL
+		appLauncher: {
+			b1_taalniveau: false,
+			subsidies: false,
+			transcriptie: false
+    	}
 	};
 
 	export let permissions = {};
@@ -56,7 +62,8 @@
 			workspace: { ...defaults.workspace, ...obj.workspace },
 			sharing: { ...defaults.sharing, ...obj.sharing },
 			chat: { ...defaults.chat, ...obj.chat },
-			features: { ...defaults.features, ...obj.features }
+			features: { ...defaults.features, ...obj.features },
+			appLauncher: { ...defaults.appLauncher, ...obj.appLauncher }
 		};
 	}
 
@@ -388,6 +395,36 @@
 			</div>
 
 			<Switch bind:state={permissions.features.notes} />
+		</div>
+	</div>
+
+	<hr class=" border-gray-100 dark:border-gray-850 my-2" />
+
+	<div>
+		<div class=" mb-2 text-sm font-medium">App Toegang</div>
+
+		<div class="  flex w-full justify-between my-2 pr-2">
+			<div class=" self-center text-xs font-medium">
+				B1 Taalniveau
+			</div>
+
+			<Switch bind:state={permissions.appLauncher.b1_taalniveau} />
+		</div>
+
+		<div class="  flex w-full justify-between my-2 pr-2">
+			<div class=" self-center text-xs font-medium">
+				Subsidies
+			</div>
+
+			<Switch bind:state={permissions.appLauncher.subsidies} />
+		</div>
+
+		<div class="  flex w-full justify-between my-2 pr-2">
+			<div class=" self-center text-xs font-medium">
+				Transcriptie
+			</div>
+
+			<Switch bind:state={permissions.appLauncher.transcriptie} />
 		</div>
 	</div>
 </div>
