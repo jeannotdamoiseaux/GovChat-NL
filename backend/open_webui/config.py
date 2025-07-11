@@ -1130,6 +1130,28 @@ USER_PERMISSIONS_FEATURES_NOTES = (
     os.environ.get("USER_PERMISSIONS_FEATURES_NOTES", "True").lower() == "true"
 )
 
+####################################
+# AppLauncher Permissies GovChat-NL
+####################################
+
+USER_PERMISSIONS_APP_LAUNCHER_B1_TAALNIVEAU = PersistentConfig(
+    "USER_PERMISSIONS_APP_LAUNCHER_B1_TAALNIVEAU",
+    "user.permissions.appLauncher.b1_taalniveau",
+    os.environ.get("USER_PERMISSIONS_APP_LAUNCHER_B1_TAALNIVEAU", "False").lower() == "true",
+)
+
+USER_PERMISSIONS_APP_LAUNCHER_SUBSIDIES = PersistentConfig(
+    "USER_PERMISSIONS_APP_LAUNCHER_SUBSIDIES",
+    "user.permissions.appLauncher.subsidies",
+    os.environ.get("USER_PERMISSIONS_APP_LAUNCHER_SUBSIDIES", "False").lower() == "true",
+)
+
+USER_PERMISSIONS_APP_LAUNCHER_TRANSCRIPTIE = PersistentConfig(
+    "USER_PERMISSIONS_APP_LAUNCHER_TRANSCRIPTIE",
+    "user.permissions.appLauncher.transcriptie",
+    os.environ.get("USER_PERMISSIONS_APP_LAUNCHER_TRANSCRIPTIE", "False").lower() == "true",
+)
+
 
 DEFAULT_USER_PERMISSIONS = {
     "workspace": {
@@ -1164,6 +1186,12 @@ DEFAULT_USER_PERMISSIONS = {
         "image_generation": USER_PERMISSIONS_FEATURES_IMAGE_GENERATION,
         "code_interpreter": USER_PERMISSIONS_FEATURES_CODE_INTERPRETER,
         "notes": USER_PERMISSIONS_FEATURES_NOTES,
+    },
+    # GovChat-NL
+    "appLauncher": {
+        "b1_taalniveau": USER_PERMISSIONS_APP_LAUNCHER_B1_TAALNIVEAU.value,
+        "subsidies": USER_PERMISSIONS_APP_LAUNCHER_SUBSIDIES.value,
+        "transcriptie": USER_PERMISSIONS_APP_LAUNCHER_TRANSCRIPTIE.value,
     },
 }
 
