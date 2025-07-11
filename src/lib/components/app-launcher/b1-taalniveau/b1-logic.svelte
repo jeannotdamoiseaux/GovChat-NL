@@ -1,16 +1,20 @@
 <script>
-  import { onMount, getContext } from 'svelte'; 
-  import { models, settings } from '$lib/stores';
-  import { filteredModels, currentAppContext, getFirstAvailableAppModel } from '$lib/stores/appModels';
+  import { onMount } from 'svelte'; 
+  import { models, settings, config } from '$lib/stores';
+  import { filteredModels, currentAppContext } from '$lib/stores/appModels';
   import { WEBUI_BASE_URL } from '$lib/constants';
   import { fade } from 'svelte/transition';
   import { toast } from 'svelte-sonner';
   import Modal from '$lib/components/common/Modal.svelte';
-  import { browser } from '$app/environment'; // Import browser for client-side check
+  import { browser } from '$app/environment';
+  import { uploadFile } from '$lib/apis/files';
   
-  // Add modal control variables
+  // Props
+  export let selectedModels = [''];
+  
+  // Modal control variables
   let showPreservedWordsModal = false;
-  let showInfoModal = false; // New variable for info modal
+  let showInfoModal = false;
 
   let inputText = '';
   let outputText = '';
@@ -22,162 +26,72 @@
 
   let useDefaultWords = true;
 
-  const originalDefaultWords = [
-    'Provinciale Staten', 'Gedeputeerde Staten', 'Directieteam', 'Regulier overleg (RO)',
-    'Fracties', 'Statenleden', 'Statenlid', 'Gedeputeerde', 'Commissaris van de Koning (CdK)',
-    'Subsidie', 'Begroting', 'Interprovinciaal overleg (IPO)', 'Ruimtelijke ordening',
-    'Regionaal beleid', 'Provinciefonds', 'Omgevingsvisie', 'Provinciale verordening',
-    'Regionaal samenwerkingsverband', 'Gebiedscommissie', 'Waterplan', 'Milieubeleidsplan',
-    'Inpassingsplan', 'Ruimtelijk Economisch Programma', 'Uitvoeringsprogramma Bereikbaarheid',
-    'Adaptatieplan Klimaat', 'Erfgoedprogramma', 'Interprovinciaal Coördinatie Overleg (IPCO)',
-    'Regionaal Beleidsplan Verkeersveiligheid (RBV)', 'Regionaal economisch beleid',
-    'Ontwikkelingsfonds', 'Veiligheids- en Crisismanagementplan (RVCP)', 'Natuurbeheer',
-    'Waterbeheer', 'Milieubeleid', 'Mobiliteitsbeleid', 'Plattelandsontwikkeling',
-    'Provinciale infrastructuur', 'Omgevingsverordening', 'Energietransitie', 'Waterkwaliteit',
-    'Duurzaamheidsagenda', 'Natuurbeheerplan', 'Mobiliteitsvisie', 'Sociale agenda',
-    'Bodembeleid', 'Burgerparticipatie', 'Ecologie', 'Ecologisch', 'Groenbeleid',
-    'Natuur- en landschapsbeheerorganisaties', 'Informerend stuk', 'Onderwerp', 'Samenvatting', 
-    'Kennisnemen van', 'Aanleiding en bestuurlijke context', 'Bevoegdheid', 'Communicatie', 'Vervolg', 
-    'Bijlage(n)', 'Sonderend stuk', 'Vraag aan PS', 'Context', 'Voorstel', 'Statenvoorstel', 'Geachte', 'Argumenten'
-  ];
+  // Remove hardcoded words - will be loaded from API
+  let originalDefaultWords = [];
 
   let activeDefaultWords = [...originalDefaultWords];
   let userWords = [];
-  let initialLoadComplete = false; // Vlag om initiële lading bij te houden
+  let initialLoadComplete = false;
+  
+  // Get the current selected model from selectedModels prop
+  $: selectedModelId = selectedModels && selectedModels.length > 0 && selectedModels[0] ? selectedModels[0] : '';
 
   // Reactive statement for preservedWords based on user words and default toggle
-  $: preservedWords = useDefaultWords ? [...new Set([...userWords, ...activeDefaultWords])] : [...new Set(userWords)]; // Use Set to ensure uniqueness
+  $: preservedWords = useDefaultWords ? [...new Set([...userWords, ...activeDefaultWords])] : [...new Set(userWords)];
 
-  // Model selection logic - ModelSelector handles B1 app filtering automatically
-  let selectedModels = [''];
-
-  // Note: Model filtering and auto-selection is handled by ModelSelector component
+  // Load default words from config store
+  $: {
+    if ($config?.customization?.b1_default_preserved_words) {
+      try {
+        const configWords = $config.customization.b1_default_preserved_words;
+        if (typeof configWords === 'string') {
+          originalDefaultWords = JSON.parse(configWords);
+        } else if (Array.isArray(configWords)) {
+          originalDefaultWords = configWords;
+        } else {
+          originalDefaultWords = [];
+        }
+        activeDefaultWords = [...originalDefaultWords];
+      } catch (error) {
+        console.error('Error parsing B1 default words from config:', error);
+        originalDefaultWords = [];
+        activeDefaultWords = [];
+      }
+    }
+  }
 
   onMount(async () => {
     // Set app context to B1 to ensure proper model filtering
     currentAppContext.set('b1');
-    console.log('[B1 Logic] onMount: Set app context to B1');
     
     if (browser) {
-      console.log('[B1 Logic] onMount: Attempting to load userWords from localStorage.');
+      // Load user preserved words
       const storedUserWords = localStorage.getItem('b1UserPreservedWords');
-      console.log('[B1 Logic] onMount: storedUserWords string from localStorage:', storedUserWords);
       if (storedUserWords) {
         try {
           const parsedWords = JSON.parse(storedUserWords);
-          console.log('[B1 Logic] onMount: Parsed words:', parsedWords);
           if (Array.isArray(parsedWords)) {
             userWords = parsedWords;
-            console.log('[B1 Logic] onMount: userWords updated from localStorage:', JSON.parse(JSON.stringify(userWords)));
-          } else {
-            console.warn('[B1 Logic] onMount: Parsed data from localStorage is not an array, resetting userWords.');
-            userWords = [];
           }
         } catch (e) {
-          console.error('[B1 Logic] onMount: Error parsing userWords from localStorage:', e);
-          userWords = []; 
+          console.error('Error parsing userWords from localStorage:', e);
         }
-      } else {
-        console.log('[B1 Logic] onMount: No userWords found in localStorage. userWords remains default empty array.');
-      }
-      initialLoadComplete = true; // Zet vlag na het laden
-      console.log('[B1 Logic] onMount: initialLoadComplete set to true.');
-    } else {
-      console.log('[B1 Logic] onMount: Not in browser environment (e.g., during SSR).');
-      initialLoadComplete = true; // Ook true zetten als niet in browser om onnodige blokkade te voorkomen
-    }
-    try {
-      // Check sessionStorage first (like the navbar does)
-      if (browser && sessionStorage.getItem('selectedModels')) {
-        try {
-          selectedModels = JSON.parse(sessionStorage.getItem('selectedModels'));
-          console.log('Model loaded from sessionStorage:', selectedModels);
-        } catch (e) {
-          console.error('Error parsing sessionStorage models:', e);
-        }
-      } 
-      // Fallback to settings
-      else if ($settings?.models?.length > 0) {
-        selectedModels = $settings.models;
-        console.log('Model loaded from settings:', selectedModels);
       }
       
-      // Note: Model filtering is handled by ModelSelector component
-      // when using app-filtered models
-    } catch (err) {
-      console.error('Error loading model:', err);
-    }
-
-    // Show info modal on first visit
-    if (browser) {
-      const tutorialShown = localStorage.getItem('b1TutorialShown');
-      if (!tutorialShown) {
+      // Show info modal on first visit
+      if (!localStorage.getItem('b1TutorialShown')) {
         showInfoModal = true;
         localStorage.setItem('b1TutorialShown', 'true');
       }
+      
+      initialLoadComplete = true;
     }
   });
 
-  // Reactive statement to save userWords to localStorage whenever it changes
-  $: if (browser && initialLoadComplete) { // Controleer de vlag
-    console.log('[B1 Logic] Reactive save: Attempting to save userWords to localStorage. Current userWords:', JSON.parse(JSON.stringify(userWords)));
+  // Save userWords to localStorage whenever it changes
+  $: if (browser && initialLoadComplete) {
     localStorage.setItem('b1UserPreservedWords', JSON.stringify(userWords));
-    console.log('[B1 Logic] Reactive save: userWords successfully saved to localStorage.');
   }
-
-  // Reactive statement to ensure a valid model is selected when models are loaded
-  $: if (browser && $models && $models.length > 0 && selectedModels && selectedModels.length > 0) {
-    const currentModel = selectedModels[0];
-    
-    // Check if current model is valid
-    const allModelIds = $models.map(m => m.id);
-    if (currentModel && !allModelIds.includes(currentModel)) {
-      console.warn(`[B1 Logic] Reactive: Invalid model '${currentModel}' detected in selectedModels`);
-      console.log(`[B1 Logic] Reactive: Available models:`, allModelIds);
-      
-      // Try to find a valid model
-      let validModel = null;
-      
-      // First try B1-filtered models
-      if ($filteredModels && $filteredModels.length > 0) {
-        validModel = $filteredModels[0].id;
-        console.log(`[B1 Logic] Reactive: Using B1-filtered model: '${validModel}'`);
-      } 
-      // Otherwise use any available model
-      else if (allModelIds.length > 0) {
-        validModel = allModelIds[0];
-        console.log(`[B1 Logic] Reactive: Using first available model: '${validModel}'`);
-      }
-      
-      if (validModel) {
-        selectedModels = [validModel];
-        sessionStorage.setItem('selectedModels', JSON.stringify([validModel]));
-        console.log(`[B1 Logic] Reactive: Updated selectedModels to: '${validModel}'`);
-      }
-    }
-  }
-
-  // Improved mechanism to detect model updates
-  // Works within the same tab/window as well
-  let previousModelsCheck;
-
-  setInterval(() => {
-    if (browser) {
-      const currentSelectedModels = sessionStorage.getItem('selectedModels');
-      if (currentSelectedModels !== previousModelsCheck) {
-        previousModelsCheck = currentSelectedModels;
-        try {
-          const parsed = JSON.parse(currentSelectedModels);
-          if (Array.isArray(parsed) && parsed.length > 0 && parsed[0]) {
-            selectedModels = parsed;
-            console.log('Model updated from sessionStorage polling:', selectedModels);
-          }
-        } catch (e) {
-          console.error('Error parsing selectedModels from polling:', e);
-        }
-      }
-    }
-  }, 1000); // Check every second (can be adjusted)
 
   // Word counting and progress variables
   let wordCountPercentage = 0;
@@ -228,60 +142,25 @@
       return;
     }
 
-    const currentModel = selectedModels[0]; // Get the currently selected model
-    if (!currentModel) {
-      error = "Selecteer eerst een model";
-      toast.error(error);
+    // Model validation
+    if (!validateModelSelection()) {
+      console.error('[B1Logic] No model selected - selectedModelId:', selectedModelId, 'selectedModels:', selectedModels);
       isLoading = false;
       showOutput = false;
       return;
     }
 
-    // Check if the selected model is available in the filtered models for B1 app
-    let modelToUse = currentModel;
+    // Use the selected model directly - no fallback
+    const modelToUse = selectedModelId;
     
-    console.log(`[B1 Logic] Checking model availability:`);
-    console.log(`[B1 Logic] - Selected model: '${currentModel}'`);
-    console.log(`[B1 Logic] - Filtered models (B1):`, $filteredModels);
-    console.log(`[B1 Logic] - All models:`, $models);
-    
-    if ($filteredModels && $filteredModels.length > 0) {
-      const availableModelIds = $filteredModels.map(m => m.id);
-      console.log(`[B1 Logic] - B1 available model IDs:`, availableModelIds);
-      if (!availableModelIds.includes(currentModel)) {
-        console.warn(`[B1 Logic] Selected model '${currentModel}' not available in B1 app. Available models:`, availableModelIds);
-        modelToUse = availableModelIds[0]; // Use first available model as fallback
-        console.log(`[B1 Logic] Using fallback model: '${modelToUse}'`);
-      }
-    } else if ($models && $models.length > 0) {
-      // If no B1-filtered models are available, fall back to any available model
-      const allAvailableIds = $models.map(m => m.id);
-      console.log(`[B1 Logic] - All available model IDs:`, allAvailableIds);
-      if (!allAvailableIds.includes(currentModel)) {
-        console.warn(`[B1 Logic] Selected model '${currentModel}' not available anywhere. All available models:`, allAvailableIds);
-        modelToUse = allAvailableIds[0]; // Use first available model as fallback
-        console.log(`[B1 Logic] Using fallback model from all models: '${modelToUse}'`);
-      } else {
-        console.log(`[B1 Logic] Selected model '${currentModel}' is available in all models`);
-        modelToUse = currentModel;
-      }
-    } else {
-      console.error(`[B1 Logic] No models available at all!`);
-    }
-    
-    // Update sessionStorage if we're using a different model than what was selected
-    if (modelToUse !== currentModel && browser) {
-      console.log(`[B1 Logic] Updating sessionStorage with fallback model: '${modelToUse}'`);
-      selectedModels = [modelToUse];
-      sessionStorage.setItem('selectedModels', JSON.stringify([modelToUse]));
-    }
     // --- End Validations ---
 
 
     try {
       const response = await fetch(`${WEBUI_BASE_URL}/api/b1/translate`, {
         method: 'POST',
-        headers: {
+        headers:
+         {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
@@ -352,179 +231,191 @@
 
     } catch (err) {
       console.error('Error simplifying text:', err);
-      error = `Fout: ${err.message}`;
-      toast.error(`Fout bij vereenvoudigen: ${err.message}`);
-      showOutput = false; // Hide output on error
+      const errorMessage = err instanceof Error ? err.message : 'Onbekende fout';
+      error = `Fout: ${errorMessage}`;
+      toast.error(`Fout bij vereenvoudigen: ${errorMessage}`);
+      showOutput = false;
     } finally {
       isLoading = false;
       // Final progress state adjustments
       if (!error && totalChunks > 0) {
           wordCountPercentage = 100;
-          receivedChunks = totalChunks; // Ensure counter matches total
+          receivedChunks = totalChunks;
       } else if (error) {
-          wordCountPercentage = 0; // Reset progress on error
+          wordCountPercentage = 0;
       } else if (totalChunks === 0 && !error) {
-          // Handle case where input resulted in zero chunks (e.g., only whitespace)
           wordCountPercentage = 100;
-          outputText = inputText; // Or keep outputText empty? Decide desired behavior.
+          outputText = inputText;
           outputWordCount = countWords(outputText);
       }
     }
   }
 
-  // Function to add a word to the user's preserved list
   function addPreservedWord() {
     const wordToAdd = newPreservedWord.trim();
     if (wordToAdd) {
-      // Avoid adding duplicates directly to userWords
       if (!userWords.includes(wordToAdd)) {
           userWords = [...userWords, wordToAdd];
       }
-      newPreservedWord = ''; // Clear input field
+      newPreservedWord = '';
     }
   }
 
-  // Function to remove a word from preserved lists
   function removePreservedWord(wordToRemove) {
-    // Remove from user list if present
     userWords = userWords.filter(w => w !== wordToRemove);
-    // Remove from active default list if present (allows temporarily disabling a default word)
     activeDefaultWords = activeDefaultWords.filter(w => w !== wordToRemove);
   }
 
-  // Reactive effect to reset activeDefaultWords when the toggle is turned on
+  // Reset activeDefaultWords when the toggle is turned on
   $: if (useDefaultWords) {
-    // Ensure activeDefaultWords contains all original defaults not explicitly removed by the user
-    // This logic might need refinement depending on desired behavior when toggling off/on
-     activeDefaultWords = [...originalDefaultWords]; // Simple reset for now
-  } else {
-    // Optionally clear activeDefaultWords when toggled off, or leave as is
-    // activeDefaultWords = [];
+    activeDefaultWords = [...originalDefaultWords];
   }
 
   // File handling variables
-  let fileInput; // Reference to the file input element
+  let fileInput;
   let isProcessingFile = false;
-  let isFlashing = false; // For visual feedback on drop/upload
-  let fileProcessingProgress = 0; // State for fake progress
-  let fileProcessingInterval = null; // Interval timer reference
+  let isFlashing = false;
+  let fileProcessingProgress = 0;
+  let fileProcessingInterval = null;
 
-  // Updated file upload handler using /api/v1/files
-  async function handleFileUpload(event) {
-    const file = event.target?.files?.[0]; // Use optional chaining
-    if (!file) return;
-
-    // Validate file type
-    if (!file.name.match(/\.(doc|docx|pdf|txt|rtf)$/i)) {
-      toast.error('Alleen Word, PDF, TXT of RTF bestanden zijn toegestaan');
+  // Handle drag & drop files
+  function handleFileDrop(event) {
+    // Block if no model is selected
+    if (!validateModelSelection()) {
       return;
     }
 
-    // --- Start Fake Progress ---
+    const file = event.dataTransfer?.files?.[0];
+    if (!file) return;
+
+    if (!validateFileType(file)) {
+      return;
+    }
+
+    // Process the dropped file directly
+    processDroppedFile(file);
+  }
+
+  // Process dropped file without going through the file input
+  async function processDroppedFile(file) {
+    // Start progress simulation
     isProcessingFile = true;
-    isFlashing = true; // Start visual feedback
-    fileProcessingProgress = 0; // Reset progress
-    if (fileProcessingInterval) clearInterval(fileProcessingInterval); // Clear previous interval if any
+    isFlashing = true;
+    fileProcessingProgress = 0;
+    if (fileProcessingInterval) clearInterval(fileProcessingInterval);
 
     fileProcessingInterval = setInterval(() => {
       if (fileProcessingProgress < 99) {
-        fileProcessingProgress += 1; // Increment by 2% each time
+        fileProcessingProgress += 1;
         if (fileProcessingProgress > 98) {
-          // Slow down near the end to simulate waiting for processing // Stop at 99%
           fileProcessingProgress = 99;
         }
       } else {
         clearInterval(fileProcessingInterval);
         fileProcessingInterval = null;
       }
-    }, 50); // Update every 50ms for smoother feel (adjust as needed)
-    // --- End Fake Progress Start ---
-
+    }, 50);
 
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      // The 'type' might not be needed depending on the backend /api/v1/files implementation
-      // formData.append('type', 'document');
+      // Use the same uploadFile function as the normal chat interface
+      const uploadedFile = await uploadFile(localStorage.getItem('token'), file);
 
-      // Call the standard file upload endpoint
-      const uploadResponse = await fetch(`${WEBUI_BASE_URL}/api/v1/files`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-          // Content-Type is set automatically by browser for FormData
-        },
-        body: formData
-      });
+      if (uploadedFile) {
+        if (uploadedFile.error) {
+          console.warn('File upload warning:', uploadedFile.error);
+          toast.warning(uploadedFile.error);
+        }
 
-      if (!uploadResponse.ok) {
-        const errorData = await uploadResponse.json().catch(() => ({ detail: 'Fout bij uploaden bestand' }));
-        throw new Error(errorData.detail || 'Fout bij uploaden bestand');
-      }
-
-      const uploadData = await uploadResponse.json();
-
-      // Assuming the upload endpoint returns the extracted text or an ID to fetch it
-      // The previous code fetched content separately, adjust based on actual /api/v1/files response
-      if (uploadData.content) { // If content is directly in response
-         inputText = uploadData.content;
-      } else if (uploadData.id) { // If an ID is returned, fetch content
-          const contentResponse = await fetch(`${WEBUI_BASE_URL}/api/v1/files/${uploadData.id}/data/content`, {
-              method: 'GET',
-              headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        // Extract content from the uploaded file
+        if (uploadedFile.content) {
+          inputText = uploadedFile.content;
+        } else {
+          // If no direct content, try to fetch it
+          const contentResponse = await fetch(`${WEBUI_BASE_URL}/api/v1/files/${uploadedFile.id}/data/content`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
           });
-          if (!contentResponse.ok) {
-              throw new Error('Fout bij ophalen bestandsinhoud na upload');
+          
+          if (contentResponse.ok) {
+            const textData = await contentResponse.json();
+            inputText = textData.content;
+          } else {
+            throw new Error('Fout bij ophalen bestandsinhoud na upload');
           }
-          const textData = await contentResponse.json();
-          inputText = textData.content;
+        }
+
+        // Convert HTML strong tags to markdown for docx files
+        if (file.name.match(/\.(doc|docx)$/i)) {
+          inputText = inputText.replace(/<strong>(.*?)<\/strong>/gi, '**$1**');
+        }
+
+        toast.success('Bestand succesvol verwerkt');
       } else {
-          throw new Error('Onbekend antwoordformaat van upload endpoint');
+        throw new Error('Upload heeft geen resultaat opgeleverd');
       }
-
-
-      // Convert strong tags from potential backend processing back to markdown **
-      // This depends on whether the /api/v1/files endpoint returns HTML or plain text
-      // Assuming it might return HTML with <strong> for bold from docx
-      if (file.name.match(/\.(doc|docx)$/i)) {
-        // Be cautious with replace, ensure it doesn't break intended markdown
-        inputText = inputText.replace(/<strong>(.*?)<\/strong>/gi, '**$1**');
-      }
-
-      toast.success('Bestand succesvol verwerkt');
 
     } catch (err) {
       console.error('Error processing file:', err);
-      toast.error(`Fout bij verwerken bestand: ${err.message}`);
-      inputText = ''; // Clear input on error
+      const errorMessage = err instanceof Error ? err.message : 'Onbekende fout';
+      toast.error(`Fout bij verwerken bestand: ${errorMessage}`);
+      inputText = '';
     } finally {
-      // --- Stop Fake Progress ---
-      if (fileProcessingInterval) clearInterval(fileProcessingInterval); // Clear interval if still running
-      fileProcessingInterval = null;
-      fileProcessingProgress = 100; // Set to 100% on completion (success or error)
-      isProcessingFile = false; // Set processing to false *after* setting progress to 100
-      // --- End Fake Progress Stop ---
-
-      if (fileInput) fileInput.value = ''; // Reset file input
-      // End visual feedback after a short delay
-      setTimeout(() => {
-        isFlashing = false;
-        // Optionally reset progress visual after flash animation
-        // setTimeout(() => { fileProcessingProgress = 0; }, 500); // Reset after another delay if needed
-      }, 1000);
+      if (fileProcessingInterval) {
+        clearInterval(fileProcessingInterval);
+        fileProcessingInterval = null;
+      }
+      fileProcessingProgress = 100;
+      isProcessingFile = false;
+      setTimeout(() => isFlashing = false, 1000);
     }
   }
 
-  // Helper function to convert markdown **bold** to HTML <strong> for display
+  // File upload handler using /api/v1/files
+  async function handleFileUpload(event) {
+    // Block if no model is selected
+    if (!validateModelSelection()) {
+      return;
+    }
+
+    const file = event.target?.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!validateFileType(file)) {
+      return;
+    }
+
+    // Use the same processing function as drag & drop
+    await processDroppedFile(file);
+    
+    // Reset file input
+    if (fileInput) fileInput.value = '';
+  }
+
   function processText(text) {
     if (!text) return '';
-    // Replace **text** with <strong>text</strong>, handle spaces around **
     return text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
   }
 
   // Reactive calculation for progress display text
   $: progressDisplay = totalChunks > 0 ? Math.round((receivedChunks / totalChunks) * 100) : (isLoading ? 0 : (outputText ? 100 : 0));
 
+  // Utility functions to reduce code duplication
+  function validateModelSelection() {
+    if (!selectedModelId) {
+      const error = 'Selecteer eerst een AI-model via de modelselectie bovenaan de pagina';
+      toast.error(error);
+      return false;
+    }
+    return true;
+  }
+
+  function validateFileType(file) {
+    if (!file.name.match(/\.(doc|docx|pdf|txt|rtf)$/i)) {
+      toast.error('Alleen Word, PDF, TXT of RTF bestanden zijn toegestaan');
+      return false;
+    }
+    return true;
+  }
 </script>
 <div class="max-w-7xl mx-auto mt-6">
   <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
@@ -628,20 +519,11 @@
             rows="12"
             draggable="false"
             class="w-full h-[400px] flex-grow px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white min-h-[250px] md:min-h-[400px] overflow-y-auto font-[system-ui] {isFlashing ? 'flash-animation' : ''}"
-            placeholder="Plak of typ hier de tekst die je wilt vereenvoudigen."
-            disabled={isLoading}
+            placeholder={!selectedModelId ? "Selecteer eerst een taalmodel via de modelselectie links-bovenaan de pagina" : "Plak of typ hier de tekst die je wilt vereenvoudigen."}
+            disabled={isLoading || !selectedModelId}
             spellcheck="false"
             on:dragover|preventDefault
-            on:drop|preventDefault={(event) => {
-              const file = event.dataTransfer.files[0];
-              if (file) {
-                if (file.name.match(/\.(doc|docx|pdf|txt|rtf)$/i)) {
-                  handleFileUpload({ target: { files: [file] } });
-                } else {
-                  toast.error('Alleen Word, PDF, TXT of RTF bestanden zijn toegestaan');
-                }
-              }
-            }}
+            on:drop|preventDefault={handleFileDrop}
           ></textarea>
 
           <!-- Bottom section with fixed height and spacing -->
@@ -683,8 +565,9 @@
               
               <button
                 on:click={() => fileInput.click()}
-                disabled={isProcessingFile}
-                class="bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-white font-medium py-1 px-3 rounded focus:outline-none focus:shadow-outline disabled:opacity-50 min-w-[140px] flex items-center justify-center gap-2"
+                disabled={isProcessingFile || !selectedModelId}
+                class="bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-white font-medium py-1 px-3 rounded focus:outline-none focus:shadow-outline disabled:opacity-50 disabled:cursor-not-allowed min-w-[140px] flex items-center justify-center gap-2"
+                title={!selectedModelId ? "Geen model geselecteerd" : "Upload een document"}
               >
                 {#if isProcessingFile}
                   <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -713,9 +596,9 @@
       <div class="hidden md:flex flex-col items-center justify-center">
         <button
           on:click={simplifyText}
-          disabled={isLoading || !selectedModels[0]}
-          class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-full focus:outline-none focus:shadow-outline disabled:opacity-50 h-12 w-12 flex items-center justify-center"
-          title="Versimpel naar {languageLevel}-taalniveau"
+          disabled={isLoading || !selectedModelId}
+          class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-full focus:outline-none focus:shadow-outline disabled:opacity-50 disabled:cursor-not-allowed h-12 w-12 flex items-center justify-center"
+          title={!selectedModelId ? "Geen model geselecteerd" : `Versimpel naar ${languageLevel}-taalniveau`}
         >
           {#if isLoading}
             <svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -1010,20 +893,6 @@
 </Modal>
 
 <style>
-  /* Loading spinner */
-  .loading-spinner {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    border: 3px solid rgba(59, 130, 246, 0.1);
-    border-top-color: #3b82f6;
-    animation: spin 1s linear infinite;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
-  
   /* Output strong elements */
   :global(#output strong) {
     font-weight: 700;
@@ -1062,10 +931,5 @@
     animation: flash 1.0s cubic-bezier(0.4, 0, 0.2, 1);
     border-color: rgba(96, 165, 250, 0.8);
     position: relative;
-  }
-
-  /* Optional: Style for the progress text during loading */
-  .progress-text {
-    font-variant-numeric: tabular-nums; /* Keeps numbers aligned */
   }
 </style>
