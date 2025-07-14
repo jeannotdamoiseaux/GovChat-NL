@@ -21,7 +21,7 @@
 	let autoSelectionInProgress = false;
 
 	// Use either filtered models or all models based on useAppFilter prop
-	$: availableModels = useAppFilter ? $filteredModels : $models;
+	$: availableModels = useAppFilter ? $filteredModels : $models; //
 
 	// Auto-select first available model if none selected and we have filtered models
 	$: if (useAppFilter && availableModels && availableModels.length > 0 && selectedModels && selectedModels[0] === '' && !autoSelectionInProgress) {
