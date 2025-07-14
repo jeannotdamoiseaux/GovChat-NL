@@ -1130,6 +1130,15 @@ USER_PERMISSIONS_FEATURES_NOTES = (
     os.environ.get("USER_PERMISSIONS_FEATURES_NOTES", "True").lower() == "true"
 )
 
+####################################
+# AppLauncher Permissies GovChat-NL
+####################################
+
+VERSIMPELAAR = PersistentConfig(
+    "VERSIMPELAAR",
+    "user.permissions.app_launcher.versimpelaar",
+    os.environ.get("VERSIMPELAAR", "True").lower() == "true",
+)
 
 DEFAULT_USER_PERMISSIONS = {
     "workspace": {
@@ -1165,6 +1174,9 @@ DEFAULT_USER_PERMISSIONS = {
         "code_interpreter": USER_PERMISSIONS_FEATURES_CODE_INTERPRETER,
         "notes": USER_PERMISSIONS_FEATURES_NOTES,
     },
+    "app_launcher": {
+        "versimpelaar": VERSIMPELAAR.value
+    }
 }
 
 USER_PERMISSIONS = PersistentConfig(
@@ -3004,18 +3016,9 @@ B1_DEFAULT_PRESERVED_WORDS = PersistentConfig(
     os.getenv("B1_DEFAULT_PRESERVED_WORDS", json.dumps([
         'Provinciale Staten', 'Gedeputeerde Staten', 'Directieteam', 'Regulier overleg (RO)',
         'Fracties', 'Statenleden', 'Statenlid', 'Gedeputeerde', 'Commissaris van de Koning (CdK)',
-        'Subsidie', 'Begroting', 'Interprovinciaal overleg (IPO)', 'Ruimtelijke ordening',
-        'Regionaal beleid', 'Provinciefonds', 'Omgevingsvisie', 'Provinciale verordening',
-        'Regionaal samenwerkingsverband', 'Gebiedscommissie', 'Waterplan', 'Milieubeleidsplan',
-        'Inpassingsplan', 'Ruimtelijk Economisch Programma', 'Uitvoeringsprogramma Bereikbaarheid',
-        'Adaptatieplan Klimaat', 'Erfgoedprogramma', 'Interprovinciaal Coördinatie Overleg (IPCO)',
-        'Regionaal Beleidsplan Verkeersveiligheid (RBV)', 'Regionaal economisch beleid',
-        'Ontwikkelingsfonds', 'Veiligheids- en Crisismanagementplan (RVCP)', 'Natuurbeheer',
-        'Waterbeheer', 'Milieubeleid', 'Mobiliteitsbeleid', 'Plattelandsontwikkeling',
-        'Provinciale infrastructuur', 'Omgevingsverordening', 'Energietransitie', 'Waterkwaliteit',
-        'Duurzaamheidsagenda', 'Natuurbeheerplan', 'Mobiliteitsvisie', 'Sociale agenda',
-        'Bodembeleid', 'Burgerparticipatie', 'Ecologie', 'Ecologisch', 'Groenbeleid',
-        'Natuur- en landschapsbeheerorganisaties', 'Informerend stuk', 'Onderwerp', 'Samenvatting', 
+        'Gouverneur', 'Subsidie', 'Begroting', 'Interprovinciaal overleg (IPO)',
+        'Provinciefonds', 'verordening', 'Economisch', 'Beleid', 'Fonds'
+        'Informerend stuk', 'Onderwerp', 'Samenvatting', 
         'Kennisnemen van', 'Aanleiding en bestuurlijke context', 'Bevoegdheid', 'Communicatie', 'Vervolg', 
         'Bijlage(n)', 'Sonderend stuk', 'Vraag aan PS', 'Context', 'Voorstel', 'Statenvoorstel', 'Geachte', 'Argumenten'
     ]))

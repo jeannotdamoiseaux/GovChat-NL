@@ -380,6 +380,8 @@ from open_webui.config import (
     SHOW_OVERVIEW_IN_DROPDOWN,
     SHOW_WIDESCREEN_MODE,
     SHOW_ARCHIVED_CHATS,
+    # App Launcher for GovChat-NL
+    VERSIMPELAAR,
 
     AppConfig,
     reset_config,
@@ -1071,7 +1073,7 @@ async def inspect_websocket(request: Request, call_next):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ALLOW_ORIGIN, #Dit veranderen naar ["http://localhost:5173"], standaard is dit CORS_ALLOW_ORIGIN
+    allow_origins=["http://localhost:5173"], #Dit veranderen naar ["http://localhost:5173"], standaard is dit CORS_ALLOW_ORIGIN
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -1435,6 +1437,10 @@ async def get_app_config(request: Request):
             "show_overview_in_dropdown": SHOW_OVERVIEW_IN_DROPDOWN.value,
             "show_widescreen_mode": SHOW_WIDESCREEN_MODE.value,
             "show_archived_chats": SHOW_ARCHIVED_CHATS.value,
+        },
+        # App Launcher for GovChat-NL
+        "app_launcher": {
+            "versimpelaar": VERSIMPELAAR.value
         },
         "features": {
             "auth": WEBUI_AUTH,

@@ -131,12 +131,15 @@ class FeaturesPermissions(BaseModel):
     code_interpreter: bool = True
     notes: bool = True
 
+class AppLauncherPermissions(BaseModel):
+    versimpelaar: bool = True    
 
 class UserPermissions(BaseModel):
     workspace: WorkspacePermissions
     sharing: SharingPermissions
     chat: ChatPermissions
     features: FeaturesPermissions
+    app_launcher: AppLauncherPermissions
 
 
 @router.get("/default/permissions", response_model=UserPermissions)
@@ -153,6 +156,9 @@ async def get_default_user_permissions(request: Request, user=Depends(get_admin_
         ),
         "features": FeaturesPermissions(
             **request.app.state.config.USER_PERMISSIONS.get("features", {})
+        ),
+        "app_launcher": AppLauncherPermissions(
+            **request.app.state.config.USER_PERMISSIONS.get("app_launcher", {})
         ),
     }
 

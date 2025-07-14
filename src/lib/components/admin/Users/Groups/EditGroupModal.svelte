@@ -56,6 +56,9 @@
 			web_search: true,
 			image_generation: true,
 			code_interpreter: true
+		},
+		app_launcher: {
+			versimpelaar: true
 		}
 	};
 	export let userIds = [];

@@ -829,7 +829,7 @@
 <Modal
   bind:show={showInfoModal}
   size="md"
-  containerClassName="p-0"
+  containerClassName="p-0 max-h-[70vh] overflow-y-auto"
 >
   <div class="p-6">
     <div class="flex justify-between items-center mb-4">

@@ -3,10 +3,17 @@
 	import Checkbox from '$lib/components/common/Checkbox.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import { marked } from 'marked';
+	import { apps } from '$lib/appList'; // GovChat-NL: Importing app list for capabilities
 
 	const i18n = getContext('i18n');
 
-	const capabilityLabels = {
+	// Dynamisch ophalen van de app-gebonden capabilities (behalve Chat)
+  	const appAccessApps = apps.filter(app => 
+		app.capabilityKey
+	);
+	export let capabilities: { [key: string]: boolean } = {};
+
+	const staticLabels = { // GovChat-NL: Static labels for existing capabilities 
 		vision: {
 			label: $i18n.t('Vision'),
 			description: $i18n.t('Model accepts image inputs')
@@ -34,30 +41,23 @@
 			)
 		},
 		citations: {
-			label: $i18n.t('Citations'),
-			description: $i18n.t('Displays citations in the response')
-		},
-		b1_app_access: {
-			label: 'B1 Taalniveau',
-			description: 'Model is beschikbaar voor de B1 Taalniveau vereenvoudigings-app'
-		},
-		subsidie_app_access: {
-			label: 'Subsidie App',
-			description: 'Model is beschikbaar voor de subsidie beoordeling en analyse app'
-		}
-	};
+            label: $i18n.t('Citations'),
+            description: $i18n.t('Displays citations in the response')
+        }
+    };
 
-	export let capabilities: {
-		vision?: boolean;
-		file_upload?: boolean;
-		web_search?: boolean;
-		image_generation?: boolean;
-		code_interpreter?: boolean;
-		usage?: boolean;
-		citations?: boolean;
-		b1_app_access?: boolean;
-		subsidie_app_access?: boolean;
-	} = {};
+    const dynamicLabels = Object.fromEntries( // GovChat-NL: Dynamically create labels for app access capabilities
+        appAccessApps.map(app => [
+            app.capabilityKey,
+            {
+                label: app.name,
+                description: `Model is beschikbaar voor de ${app.name} app`
+            }
+        ])
+    );
+
+    const capabilityLabels = { ...staticLabels, ...dynamicLabels }; // GovChat-NL: Combine static and dynamic labels
+
 </script>
 
 <div>
@@ -83,7 +83,7 @@
 		{/each}
 	</div>
 
-	<!-- App Access Section -->
+	<!-- App Access Section --> 
 	<div class="flex w-full justify-between mb-1 mt-4">
 		<div class=" self-center text-sm font-semibold">App Toegang</div>
 	</div>

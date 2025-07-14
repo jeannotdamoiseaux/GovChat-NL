@@ -1,6 +1,6 @@
 <script lang="ts">
 	import Lechat from '$lib/components/chat/lechat.svelte';
-	import B1Logic from '$lib/components/app-launcher/b1-taalniveau/b1-logic.svelte';
+	import B1Logic from '$lib/components/app-launcher/versimpelaar/b1-logic.svelte';
 	
 	let lechatComponent;
 </script>

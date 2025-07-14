@@ -39,6 +39,9 @@
 			image_generation: true,
 			code_interpreter: true,
 			notes: true
+		},
+		app_launcher: {
+			versimpelaar: true
 		}
 	};
 
@@ -56,7 +59,8 @@
 			workspace: { ...defaults.workspace, ...obj.workspace },
 			sharing: { ...defaults.sharing, ...obj.sharing },
 			chat: { ...defaults.chat, ...obj.chat },
-			features: { ...defaults.features, ...obj.features }
+			features: { ...defaults.features, ...obj.features },
+			app_launcher: { ...defaults.app_launcher, ...obj.app_launcher}
 		};
 	}
 
@@ -388,6 +392,17 @@
 			</div>
 
 			<Switch bind:state={permissions.features.notes} />
+		</div>
+	</div>
+	<div>
+		<div class=" mb-2 text-sm font-medium">{'App Launcher'}</div>
+		
+		<div class="  flex w-full justify-between my-2 pr-2">
+			<div class=" self-center text-xs font-medium">
+				{'Versimpelaar'}
+			</div>
+
+			<Switch bind:state={permissions.app_launcher.versimpelaar} />
 		</div>
 	</div>
 </div>
