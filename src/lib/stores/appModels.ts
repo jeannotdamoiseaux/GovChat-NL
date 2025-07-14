@@ -28,7 +28,7 @@ interface Model {
 }
 
 // Store to track current app context
-export const currentAppContext = writable<'versimpelaar' | 'subsidie' | 'general'>('general');
+export const currentAppContext = writable<'chat' | 'versimpelaar'>('chat'); // Default to 'chat' context
 
 // Derived store that filters models based on current app context
 export const filteredModels = derived(
@@ -43,33 +43,25 @@ export const filteredModels = derived(
 
         switch ($currentAppContext) {
             case 'versimpelaar':
-                const b1Models = typedModels.filter(model => 
+                const versimpelaarModels  = typedModels.filter(model => 
                     model && model.info?.meta?.capabilities?.versimpelaar === true
                 );
                 console.log('[appModels] B1 app context - Available models:', {
-                    total: typedModels.length,
-                    b1Accessible: b1Models.length,
-                    b1ModelIds: b1Models.map(m => m.id)
+                    available_models: versimpelaarModels
                 });
-                return b1Models;
+                return versimpelaarModels ;
                 
-            case 'general':
+            case 'chat':
             default:
-                // Filter models that have general_chat_app_access capability, or if no models have this capability, show all
+                // Filter models that have chat capability, or if no models have this capability, show all
                 const generalChatModels = typedModels.filter(model => 
-                    model && model.info?.meta?.capabilities?.general_chat_app_access === true
+                    model && model.info?.meta?.capabilities?.chat === true
                 );
 
-                // If no models have general_chat_app_access capability set, show all models (backward compatibility)
-                const modelsToShow = generalChatModels.length > 0 ? generalChatModels : typedModels;
-
                 console.log('[appModels] General context - Available models:', {
-                    total: typedModels.length,
-                    generalAccessible: generalChatModels.length,
-                    showingAll: generalChatModels.length === 0,
-                    finalCount: modelsToShow.length
+                    available_models: generalChatModels
                 });
-                return modelsToShow;
+                return generalChatModels;
         }
     }
 );
@@ -82,13 +74,10 @@ export function setAppContextFromRoute(route: string) {
     if (route && route.includes('/app-launcher/versimpelaar')) {
         console.log('[appModels] Setting context to versimpelaar');
         currentAppContext.set('versimpelaar');
-    } else if (route && route.includes('/app-launcher/subsidies')) {
-        console.log('[appModels] Setting context to subsidie');
-        currentAppContext.set('subsidie');
     } else if (route && (route.includes('/chat') || route === '/(app)' || route === '/(app)/')) {
         // Only set to general for chat routes and main app route
         console.log('[appModels] Setting context to general');
-        currentAppContext.set('general');
+        currentAppContext.set('chat');
     }
     // For all other routes (admin, settings, etc.), don't change the context
 }
