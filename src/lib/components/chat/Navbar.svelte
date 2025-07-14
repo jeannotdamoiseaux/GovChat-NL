@@ -85,7 +85,7 @@
 						<ModelSelector 
 							bind:selectedModels 
 							showSetDefault={!shareEnabled} 
-							useAppFilter={$currentAppContext !== 'general'}
+							useAppFilter={true}
 						/>
 					{/if}
 				</div>

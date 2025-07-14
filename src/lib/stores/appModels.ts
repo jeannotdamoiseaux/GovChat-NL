@@ -7,6 +7,7 @@ import { page } from '$app/stores';
 interface ModelCapabilities {
     b1_app_access?: boolean;
     subsidie_app_access?: boolean;
+    general_chat_app_access?: boolean;
     [key: string]: any;
 }
 
@@ -53,10 +54,34 @@ export const filteredModels = derived(
                 });
                 return b1Models;
                 
+            case 'subsidie':
+                const subsidieModels = typedModels.filter(model => 
+                    model && model.info?.meta?.capabilities?.subsidie_app_access === true
+                );
+                console.log('[appModels] Subsidie app context - Available models:', {
+                    total: typedModels.length,
+                    subsidieAccessible: subsidieModels.length,
+                    subsidieModelIds: subsidieModels.map(m => m.id)
+                });
+                return subsidieModels;
+                
             case 'general':
             default:
-                console.log('[appModels] General context - All models available:', typedModels.length);
-                return typedModels;
+                // Filter models that have general_chat_app_access capability, or if no models have this capability, show all
+                const generalChatModels = typedModels.filter(model => 
+                    model && model.info?.meta?.capabilities?.general_chat_app_access === true
+                );
+                
+                // If no models have general_chat_app_access capability set, show all models (backward compatibility)
+                const modelsToShow = generalChatModels.length > 0 ? generalChatModels : typedModels;
+                
+                console.log('[appModels] General context - Available models:', {
+                    total: typedModels.length,
+                    generalAccessible: generalChatModels.length,
+                    showingAll: generalChatModels.length === 0,
+                    finalCount: modelsToShow.length
+                });
+                return modelsToShow;
         }
     }
 );
