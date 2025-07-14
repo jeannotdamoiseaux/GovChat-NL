@@ -21,16 +21,25 @@
 	let autoSelectionInProgress = false;
 
 	// Use either filtered models or all models based on useAppFilter prop
-	$: availableModels = useAppFilter ? $filteredModels : $models; //
+	$: availableModels = useAppFilter ? $filteredModels : $models;
 
-	// Auto-select first available model if none selected and we have filtered models
-	$: if (useAppFilter && availableModels && availableModels.length > 0 && selectedModels && selectedModels[0] === '' && !autoSelectionInProgress) {
+	// Simple auto-selection logic inspired by Open WebUI
+	// Auto-select first available model if none selected
+	$: if (useAppFilter && availableModels && availableModels.length > 0 && selectedModels && 
+		(selectedModels.length === 0 || selectedModels[0] === '') && !autoSelectionInProgress) {
 		autoSelectionInProgress = true;
 		selectedModels = [availableModels[0].id];
-		console.log('[ModelSelector] Auto-selected model for app context:', availableModels[0].id);
+		console.log('[ModelSelector] Auto-selected model:', availableModels[0].id);
 		setTimeout(() => {
 			autoSelectionInProgress = false;
 		}, 100);
+	}
+
+	// Ensure selected models are valid when available models change
+	$: if (selectedModels.length > 0 && availableModels.length > 0) {
+		selectedModels = selectedModels.map((model) =>
+			availableModels.find(m => m.id === model) ? model : ''
+		);
 	}
 
 	const saveDefaultModel = async () => {
