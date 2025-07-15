@@ -425,7 +425,7 @@
     return true;
   }
 </script>
-<div class="max-w-7xl mx-auto mt-6">
+<div class="max-w-7xl mx-auto" style="margin-top: -12px;">
   <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
     <div class="flex justify-between items-center mb-6">
       <div class="flex items-start gap-2">
@@ -601,11 +601,11 @@
       </div>
       
       <!-- Midden: Translate button -->
-      <div class="hidden md:flex flex-col items-center justify-center">
+      <div class="flex flex-col items-center justify-center">
         <button
           on:click={simplifyText}
           disabled={isLoading || !selectedModelId}
-          class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-full focus:outline-none focus:shadow-outline disabled:opacity-50 disabled:cursor-not-allowed h-12 w-12 flex items-center justify-center"
+          class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-full md:rounded-full rounded-md focus:outline-none focus:shadow-outline disabled:opacity-50 disabled:cursor-not-allowed h-12 w-12 md:h-12 md:w-12 h-auto w-auto flex items-center justify-center gap-2 my-4 md:my-0"
           title={!selectedModelId ? "Geen model geselecteerd" : `Versimpel naar ${languageLevel}-taalniveau`}
         >
           {#if isLoading}
@@ -613,10 +613,12 @@
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
               <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
+            <span class="md:hidden">Verwerken...</span>
           {:else}
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 md:h-6 md:w-6 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
             </svg>
+            <span class="md:hidden">Versimpel naar {languageLevel}</span>
           {/if} 
         </button>
       </div>
