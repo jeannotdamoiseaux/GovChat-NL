@@ -4,6 +4,7 @@ from typing import List, Any
 from pydantic import BaseModel
 import asyncio
 import json
+import os
 from open_webui.utils.chat import generate_chat_completion
 from open_webui.utils.auth import get_current_user
 import tiktoken
@@ -144,8 +145,12 @@ def build_selection_prompt(language_level, preserved_words_text):
     return "\n".join(line.strip() for line in prompt.splitlines() if line.strip())  # Verwijdert overtollige whitespaces
 # --- END: Language Level Specific Prompt Data ---
 
-def split_into_chunks(text: str, max_tokens: int = 1500) -> List[str]:
+def split_into_chunks(text: str, max_tokens: int = None) -> List[str]:
     """Split text into chunks of approximately max_tokens"""
+    # Get max_tokens from environment variable if not provided
+    if max_tokens is None:
+        max_tokens = int(os.getenv('B1_MAX_CHUNK_TOKENS', '1500'))
+    
     encoding = tiktoken.get_encoding("cl100k_base")
     paragraphs = text.split('\n')
     chunks = []
@@ -338,12 +343,36 @@ class SimplifyTextRequest(BaseModel):
     model: str
     preserved_words: list[str] = []
     language_level: str = "B1"
+    max_chunk_tokens: int = None  # Optional override for chunk size
+
+@router.get("/config")
+async def get_b1_config():
+    """Get B1 configuration values from environment variables"""
+    return {
+        "max_input_words": int(os.getenv('B1_MAX_INPUT_WORDS', '24750')),
+        "max_chunk_tokens": int(os.getenv('B1_MAX_CHUNK_TOKENS', '1500'))
+    }
 
 @router.post("/translate")
 async def simplify_text_endpoint(request: Request, data: SimplifyTextRequest, user = Depends(get_current_user)):
     """Endpoint to simplify text to B1/B2 level. Generates 3 versions per chunk, then selects the best."""
 
     print(f"Using model: {data.model}")
+    
+    # Get configuration values
+    max_input_words = int(os.getenv('B1_MAX_INPUT_WORDS', '24750'))
+    effective_max_tokens = data.max_chunk_tokens if data.max_chunk_tokens is not None else int(os.getenv('B1_MAX_CHUNK_TOKENS', '1500'))
+    
+    print(f"Using max_input_words: {max_input_words}")
+    print(f"Using max_chunk_tokens: {effective_max_tokens}")
+    
+    # Validate input word count
+    word_count = len(data.text.split()) if data.text else 0
+    if word_count > max_input_words:
+        return StreamingResponse(
+            iter([json.dumps({"error": f"Input text ({word_count} words) exceeds the limit of {max_input_words} words."}) + "\n"]),
+            media_type="application/x-ndjson"
+        )
 
     # --- START: Automatically detect and add law articles to preserved_words ---
     # Regex to find common law article mentions (e.g., Artikel 1, art. 2.3, Artikel 3:16)
@@ -360,7 +389,7 @@ async def simplify_text_endpoint(request: Request, data: SimplifyTextRequest, us
     data.preserved_words = list(current_preserved_words)
     # --- END: Automatically detect and add law articles to preserved_words ---
 
-    chunks = split_into_chunks(data.text)
+    chunks = split_into_chunks(data.text, data.max_chunk_tokens)
     num_chunks = len(chunks)
     temperatures = [1.0, 1.0, 1.0]
 

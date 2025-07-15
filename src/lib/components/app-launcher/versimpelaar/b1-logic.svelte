@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte'; 
-  import { models, settings, config } from '$lib/stores';
+  import { models, config } from '$lib/stores';
   import { filteredModels, currentAppContext } from '$lib/stores/appModels';
   import { WEBUI_BASE_URL } from '$lib/constants';
   import { fade } from 'svelte/transition';
@@ -64,6 +64,26 @@
     // Set app context to B1 to ensure proper model filtering
     currentAppContext.set('b1');
     
+    // Load B1 configuration from backend
+    try {
+      const configResponse = await fetch(`${WEBUI_BASE_URL}/api/b1/config`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (configResponse.ok) {
+        const config = await configResponse.json();
+        MAX_WORDS = config.max_input_words;
+        MAX_CHUNK_TOKENS = config.max_chunk_tokens;
+        configLoaded = true;
+        console.log(`[B1 Config] Loaded: MAX_WORDS=${MAX_WORDS}, MAX_CHUNK_TOKENS=${MAX_CHUNK_TOKENS}`);
+      } else {
+        console.warn('[B1 Config] Failed to load config, using defaults');
+        configLoaded = true; // Still set to true to allow functionality with defaults
+      }
+    } catch (e) {
+      console.warn('[B1 Config] Error loading config, using defaults:', e);
+      configLoaded = true; // Still set to true to allow functionality with defaults
+    }
+    
     if (browser) {
       // Load user preserved words
       const storedUserWords = localStorage.getItem('b1UserPreservedWords');
@@ -118,10 +138,18 @@
   let totalChunks = 0;
   let receivedChunks = 0;
 
-  const MAX_WORDS = 24750; // Define the word limit
+  // Configuration variables - will be loaded from backend
+  let MAX_WORDS = 24750; // Default fallback value
+  let MAX_CHUNK_TOKENS = 1500; // Default fallback value
+  let configLoaded = false; // Track if config has been loaded
 
   // Main function to trigger text simplification
   async function simplifyText() {
+    // Show maximum word limit info if configuration is still loading
+    if (!configLoaded) {
+      toast.info(`Maximum aantal woorden: ${MAX_WORDS}. Configuratie wordt geladen op de achtergrond.`);
+    }
+
     // Reset errors and state
     error = null;
     isLoading = true;
@@ -176,7 +204,8 @@
           text: inputText,
           model: modelToUse, // Using the validated model (original or fallback)
           preserved_words: preservedWords, 
-          language_level: languageLevel
+          language_level: languageLevel,
+          max_chunk_tokens: MAX_CHUNK_TOKENS // Pass the loaded configuration
         })
       });
 
@@ -206,6 +235,11 @@
 
           try {
             const parsed = JSON.parse(line);
+
+            // Check for backend errors
+            if (parsed.error) {
+              throw new Error(parsed.error);
+            }
 
             if (parsed.total_chunks !== undefined) {
               totalChunks = parsed.total_chunks;
@@ -436,16 +470,27 @@
           <p class="text-lg text-gray-600 dark:text-gray-300">
             Kies een tekst en breng die eenvoudig naar B1- of B2-niveau.
           </p>
-          <button
-            on:click={() => showInfoModal = true}
-            class="bg-blue-100 hover:bg-blue-200 dark:bg-blue-700 dark:hover:bg-blue-600 text-blue-700 dark:text-blue-200 font-medium py-1.5 px-3 rounded-md focus:outline-none focus:shadow-outline flex items-center gap-1.5 mb-1"
-            aria-label="Uitleg over de Versimpelaar"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span>Wat doet de Versimpelaar?</span>
-          </button>
+          <div class="flex gap-2">
+            <button
+              on:click={() => showInfoModal = true}
+              class="bg-blue-100 hover:bg-blue-200 dark:bg-blue-700 dark:hover:bg-blue-600 text-blue-700 dark:text-blue-200 font-medium py-1.5 px-3 rounded-md focus:outline-none focus:shadow-outline flex items-center gap-1.5 mb-1"
+              aria-label="Uitleg over de Versimpelaar"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>Wat doet de Versimpelaar?</span>
+            </button>
+            <div
+              class="bg-green-100 dark:bg-green-700 text-green-700 dark:text-green-200 font-medium py-1.5 px-3 rounded-md flex items-center gap-1.5 mb-1"
+              aria-label="Maximum woordenaantal"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <span>Max woorden: {MAX_WORDS}</span>
+            </div>
+          </div>
         </div>
       </div>
       
@@ -536,7 +581,7 @@
 
           <!-- Bottom section with fixed height and spacing -->
           <div class="mt-auto">
-            <!-- Progress bar - same position as right side -->
+            <!-- File processing progress bar - same position as before -->
             <div class="mt-2 flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
               <div class="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                 <div
@@ -551,7 +596,9 @@
 
             <!-- Status text - fixed height -->
             <div class="mt-1 h-5 text-xs text-gray-500 dark:text-gray-400">
-              {#if isProcessingFile}
+              {#if inputWordCount > MAX_WORDS}
+                <span class="text-red-600 dark:text-red-400 font-medium">⚠️ Te veel woorden! Max {MAX_WORDS} toegestaan.</span>
+              {:else if isProcessingFile}
                 <span>Verwerken...</span>
               {:else if fileProcessingProgress === 100}
                 <span>Bestand verwerkt</span>
