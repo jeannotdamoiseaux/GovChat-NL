@@ -74,9 +74,6 @@ export function setAppContextFromRoute(route: string) {
     if (route && route.includes('/app-launcher/versimpelaar')) {
         console.log('[appModels] Setting context to versimpelaar');
         currentAppContext.set('versimpelaar');
-    } else if (route && route.includes('/app-launcher/subsidies')) {
-        console.log('[appModels] Setting context to chat'); // Map subsidies to chat for now
-        currentAppContext.set('chat');
     } else if (route && (route.includes('/chat') || route === '/(app)' || route === '/(app)/')) {
         // Only set to chat for chat routes and main app route
         console.log('[appModels] Setting context to chat');

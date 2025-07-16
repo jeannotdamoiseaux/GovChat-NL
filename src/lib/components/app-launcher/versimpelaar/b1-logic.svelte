@@ -53,7 +53,7 @@
         }
         activeDefaultWords = [...originalDefaultWords];
       } catch (error) {
-        console.error('Error parsing B1 default words from config:', error);
+        console.error('Error parsing versimpelaar default words from config:', error);
         originalDefaultWords = [];
         activeDefaultWords = [];
       }
@@ -64,24 +64,26 @@
     // Set app context to versimpelaar to ensure proper model filtering
     currentAppContext.set('versimpelaar');
     
-    // Load B1 configuration from backend
+    // Load configuration from backend
     try {
       const configResponse = await fetch(`${WEBUI_BASE_URL}/api/b1/config`, {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
       if (configResponse.ok) {
         const config = await configResponse.json();
-        MAX_WORDS = config.max_input_words;
-        MAX_CHUNK_TOKENS = config.max_chunk_tokens;
+        maxWords = config.max_input_words || 24750;
+        maxChunkTokens = config.max_chunk_tokens || 1200;
         configLoaded = true;
-        console.log(`[B1 Config] Loaded: MAX_WORDS=${MAX_WORDS}, MAX_CHUNK_TOKENS=${MAX_CHUNK_TOKENS}`);
+        console.log(`[versimpelaar] Loaded: maxWords=${maxWords}, maxChunkTokens=${maxChunkTokens}`);
       } else {
-        console.error('[B1 Config] Failed to load config from backend');
-        toast.error('Kan configuratie niet laden van de server. Probeer de pagina te verversen.');
-        configLoaded = false;
+        console.error('[versimpelaar] Failed to load config from backend');
+        // Use default values as fallback
+        configLoaded = true;
+        console.log(`[versimpelaar] Using default values: maxWords=${maxWords}, maxChunkTokens=${maxChunkTokens}`);
+        toast.warning('Configuratie niet geladen van server, standaardwaarden gebruikt.');
       }
     } catch (e) {
-      console.error('[B1 Config] Error loading config:', e);
+      console.error('[versimpelaar] Error loading config:', e);
       toast.error('Fout bij laden configuratie van de server. Probeer de pagina te verversen.');
       configLoaded = false;
     }
@@ -108,14 +110,6 @@
       
       initialLoadComplete = true;
     }
-
-    // Print meteen bij laden
-    console.log('[DEBUG] isLoading:', isLoading, '| selectedModels[0]:', selectedModels[0], '| disabled:', isLoading || !selectedModels[0]);
-    
-    // Print elke 3 seconden (3000 ms)
-    setInterval(() => {
-      console.log('[DEBUG] isLoading:', isLoading, '| selectedModels[0]:', selectedModels[0], '| disabled:', isLoading || !selectedModels[0]);
-    }, 3000)
   });
 
   // Save userWords to localStorage whenever it changes
@@ -141,14 +135,14 @@
   let receivedChunks = 0;
 
   // Configuration variables - will be loaded from backend
-  let MAX_WORDS: number | null = null; // Will be loaded from backend
-  let MAX_CHUNK_TOKENS: number | null = null; // Will be loaded from backend
+  let maxWords: number | null = null; // Will be loaded from backend
+  let maxChunkTokens: number | null = null; // Will be loaded from backend
   let configLoaded = false; // Track if config has been loaded
 
   // Main function to trigger text simplification
   async function simplifyText() {
     // Check if configuration is loaded
-    if (!configLoaded || MAX_WORDS === null || MAX_CHUNK_TOKENS === null) {
+    if (!configLoaded || maxWords === null || maxChunkTokens === null) {
       error = "Configuratie nog niet geladen. Probeer opnieuw.";
       toast.error(error);
       return;
@@ -174,8 +168,8 @@
       return;
     }
 
-    if (inputWordCount > MAX_WORDS) {
-      error = `De invoertekst (${inputWordCount} woorden) overschrijdt de limiet van ${MAX_WORDS} woorden.`;
+    if (inputWordCount > maxWords) {
+      error = `De invoertekst (${inputWordCount} woorden) overschrijdt de limiet van ${maxWords} woorden.`;
       toast.error(error);
       isLoading = false;
       showOutput = false; // Don't show output area if input is invalid
@@ -184,7 +178,7 @@
 
     // Model validation
     if (!validateModelSelection()) {
-      console.error('[B1Logic] No model selected - selectedModelId:', selectedModelId, 'selectedModels:', selectedModels);
+      console.error('[versimpelaar] No model selected - selectedModelId:', selectedModelId, 'selectedModels:', selectedModels);
       isLoading = false;
       showOutput = false;
       return;
@@ -209,7 +203,7 @@
           model: modelToUse, // Using the validated model (original or fallback)
           preserved_words: preservedWords, 
           language_level: languageLevel,
-          max_chunk_tokens: MAX_CHUNK_TOKENS // Pass the loaded configuration
+          max_chunk_tokens: maxChunkTokens // Pass the loaded configuration
         })
       });
 
@@ -360,7 +354,7 @@
           fileProcessingProgress = 99;
         }
       } else {
-        clearInterval(fileProcessingInterval);
+        if (fileProcessingInterval) clearInterval(fileProcessingInterval);
         fileProcessingInterval = null;
       }
     }, 50);
@@ -599,8 +593,8 @@
             <div class="mt-1 h-5 text-xs text-gray-500 dark:text-gray-400">
               {#if !configLoaded}
                 <span class="text-yellow-600 dark:text-yellow-400 font-medium">⏳ Configuratie laden...</span>
-              {:else if inputWordCount > MAX_WORDS}
-                <span class="text-red-600 dark:text-red-400 font-medium">⚠️ Te veel woorden! Max {MAX_WORDS} toegestaan.</span>
+              {:else if maxWords && inputWordCount > maxWords}
+                <span class="text-red-600 dark:text-red-400 font-medium">⚠️ Te veel woorden! Max {maxWords} toegestaan.</span>
               {:else if isProcessingFile}
                 <span>Verwerken...</span>
               {:else if fileProcessingProgress === 100}

@@ -340,14 +340,13 @@ class SimplifyTextRequest(BaseModel):
     model: str
     preserved_words: list[str] = []
     language_level: str = "B1"
-    max_chunk_tokens: int = None  # Optional override for chunk size
 
 @router.get("/config")
 async def get_versimpelaar_config():
     """Get B1 configuration values from environment variables"""
     return {
-        "max_input_words": int(os.getenv('B1_MAX_INPUT_WORDS')),
-        "max_chunk_tokens": int(os.getenv('B1_MAX_CHUNK_TOKENS'))
+        "max_input_words": int(os.getenv('versimpelaar_MAX_INPUT_WORDS', 24750)),
+        "max_chunk_tokens": int(os.getenv('versimpelaar_MAX_CHUNK_TOKENS', 1200)),
     }
 
 @router.post("/translate")
@@ -355,19 +354,16 @@ async def simplify_text_endpoint(request: Request, data: SimplifyTextRequest, us
     """Endpoint to simplify text to B1/B2 level. Generates 3 versions per chunk, then selects the best."""
 
     print(f"Using model: {data.model}")
-    
-    # Get configuration values
-    max_input_words = int(os.getenv('B1_MAX_INPUT_WORDS'))
-    effective_max_tokens = data.max_chunk_tokens if data.max_chunk_tokens is not None else int(os.getenv('B1_MAX_CHUNK_TOKENS'))
-    
-    print(f"Using max_input_words: {max_input_words}")
-    print(f"Using max_chunk_tokens: {effective_max_tokens}")
+
+    # Load configuration values from environment or defaults
+    config = await get_versimpelaar_config()
+    print(f"Configuration: {config}")
     
     # Validate input word count
     word_count = len(data.text.split()) if data.text else 0
-    if word_count > max_input_words:
+    if word_count > config['max_input_words']:
         return StreamingResponse(
-            iter([json.dumps({"error": f"Input text ({word_count} words) exceeds the limit of {max_input_words} words."}) + "\n"]),
+            iter([json.dumps({"error": f"Input text ({word_count} words) exceeds the limit of {config['max_input_words']} words."}) + "\n"]),
             media_type="application/x-ndjson"
         )
 
@@ -386,7 +382,7 @@ async def simplify_text_endpoint(request: Request, data: SimplifyTextRequest, us
     data.preserved_words = list(current_preserved_words)
     # --- END: Automatically detect and add law articles to preserved_words ---
 
-    chunks = split_into_chunks(data.text, data.max_chunk_tokens)
+    chunks = split_into_chunks(data.text, config['max_chunk_tokens'])
     num_chunks = len(chunks)
     temperatures = [1.0, 1.0, 1.0]
 

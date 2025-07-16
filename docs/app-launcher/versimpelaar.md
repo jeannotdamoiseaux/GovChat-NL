@@ -66,3 +66,34 @@
    ## Status & implementatie
 
    De Versimpelaar is **gereed** en inmiddels geïntegreerd in het App Launcher-platform van GovChat-NL. De applicatie wordt momenteel binnen de **Provincie Limburg** gebruikt. Ook andere overheden kunnen gebruikmaken van de Versimpelaar.
+      
+   ---
+
+   ## Versimpelaar App-Launcher configuratie
+
+   De Versimpelaar heeft eigen configuratie-opties die via environment-variabelen kunnen worden ingesteld.
+
+   ### `versimpelaar_MAX_INPUT_WORDS` (Default: `24750`)
+   Deze variabele bepaalt het maximale aantal woorden dat kan worden ingevoerd in de Versimpelaar voor tekstverwerking. De limiet is ingesteld om optimale verwerkingsprestaties te garanderen en serverbelasting te beheersen.
+
+   Wanneer een gebruiker een tekst invoert die langer is dan deze limiet, krijgt deze een foutmelding en wordt de tekst niet verwerkt. De standaardwaarde van 24.750 woorden biedt ruimte voor aanzienlijk lange documenten, zoals beleidsnotities of rapporten.
+
+   ### `versimpelaar_MAX_CHUNK_TOKENS` (Default: `1200`)
+   Deze variabele regelt de maximale grootte van tekstblokken (chunks) waarin lange teksten worden opgesplitst tijdens de vereenvoudigingsverwerking. Elke chunk wordt afzonderlijk naar het AI-model gestuurd voor verwerking.
+
+   Een kleinere chunk-grootte zorgt voor snellere verwerking per stuk, maar verhoogt het totale aantal verwerkingsstappen. Een grotere chunk-grootte kan efficiënter zijn voor lange teksten, maar vraagt meer verwerkingskracht per stap. De standaardwaarde van 1.200 tokens biedt een goede balans tussen verwerkingssnelheid en kwaliteit.
+
+   Voorbeeldinstelling:
+   ```plaintext
+   versimpelaar_MAX_CHUNK_TOKENS=1500
+   ```
+
+   ### `versimpelaar_DEFAULT_PRESERVED_WORDS` (Default: JSON array met standaardtermen)
+   Deze variabele bevat een JSON-array met standaardwoorden en -termen die tijdens de tekstvereenvoudiging behouden moeten blijven. Deze woorden worden niet vereenvoudigd en blijven in hun originele vorm staan, ook al zijn ze complex voor het B1-taalniveau.
+
+   De standaardlijst bevat typische overheidstermen zoals 'Provinciale Staten', 'Gedeputeerde Staten', 'Commissaris van de Koning', 'Subsidie', 'Begroting', enzovoort. Organisaties kunnen deze lijst aanpassen naar hun specifieke terminologie.
+
+   Voorbeeldinstelling:
+   ```plaintext
+   versimpelaar_DEFAULT_PRESERVED_WORDS=["Provinciale Staten","Gemeenteraad","Burgemeester","Wethouder","Subsidie","Begroting","Verordening"]
+   ```
