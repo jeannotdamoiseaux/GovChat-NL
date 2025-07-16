@@ -1,6 +1,6 @@
-<script>
+<script lang="ts">
   import { onMount } from 'svelte'; 
-  import { models, settings, config } from '$lib/stores';
+  import { models, config } from '$lib/stores';
   import { filteredModels, currentAppContext } from '$lib/stores/appModels';
   import { WEBUI_BASE_URL } from '$lib/constants';
   import { fade } from 'svelte/transition';
@@ -19,7 +19,7 @@
   let inputText = '';
   let outputText = '';
   let isLoading = false;
-  let error = null;
+  let error: string | null = null;
   let newPreservedWord = '';
   let showOutput = false;
   let languageLevel = 'B1';
@@ -27,10 +27,10 @@
   let useDefaultWords = true;
 
   // Remove hardcoded words - will be loaded from API
-  let originalDefaultWords = [];
+  let originalDefaultWords: string[] = [];
 
-  let activeDefaultWords = [...originalDefaultWords];
-  let userWords = [];
+  let activeDefaultWords: string[] = [...originalDefaultWords];
+  let userWords: string[] = [];
   let initialLoadComplete = false;
   
   // Get the current selected model from selectedModels prop
@@ -41,9 +41,9 @@
 
   // Load default words from config store
   $: {
-    if ($config?.customization?.b1_default_preserved_words) {
+    if ($config && ($config as any)?.customization?.b1_default_preserved_words) {
       try {
-        const configWords = $config.customization.b1_default_preserved_words;
+        const configWords = ($config as any).customization.b1_default_preserved_words;
         if (typeof configWords === 'string') {
           originalDefaultWords = JSON.parse(configWords);
         } else if (Array.isArray(configWords)) {
@@ -53,7 +53,7 @@
         }
         activeDefaultWords = [...originalDefaultWords];
       } catch (error) {
-        console.error('Error parsing B1 default words from config:', error);
+        console.error('Error parsing versimpelaar default words from config:', error);
         originalDefaultWords = [];
         activeDefaultWords = [];
       }
@@ -61,8 +61,32 @@
   }
 
   onMount(async () => {
-    // Set app context to B1 to ensure proper model filtering
-    currentAppContext.set('b1');
+    // Set app context to versimpelaar to ensure proper model filtering
+    currentAppContext.set('versimpelaar');
+    
+    // Load configuration from backend
+    try {
+      const configResponse = await fetch(`${WEBUI_BASE_URL}/api/b1/config`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (configResponse.ok) {
+        const config = await configResponse.json();
+        maxWords = config.max_input_words || 24750;
+        maxChunkTokens = config.max_chunk_tokens || 1200;
+        configLoaded = true;
+        console.log(`[versimpelaar] Loaded: maxWords=${maxWords}, maxChunkTokens=${maxChunkTokens}`);
+      } else {
+        console.error('[versimpelaar] Failed to load config from backend');
+        // Use default values as fallback
+        configLoaded = true;
+        console.log(`[versimpelaar] Using default values: maxWords=${maxWords}, maxChunkTokens=${maxChunkTokens}`);
+        toast.warning('Configuratie niet geladen van server, standaardwaarden gebruikt.');
+      }
+    } catch (e) {
+      console.error('[versimpelaar] Error loading config:', e);
+      toast.error('Fout bij laden configuratie van de server. Probeer de pagina te verversen.');
+      configLoaded = false;
+    }
     
     if (browser) {
       // Load user preserved words
@@ -86,14 +110,6 @@
       
       initialLoadComplete = true;
     }
-
-    // Print meteen bij laden
-    console.log('[DEBUG] isLoading:', isLoading, '| selectedModels[0]:', selectedModels[0], '| disabled:', isLoading || !selectedModels[0]);
-    
-    // Print elke 3 seconden (3000 ms)
-    setInterval(() => {
-      console.log('[DEBUG] isLoading:', isLoading, '| selectedModels[0]:', selectedModels[0], '| disabled:', isLoading || !selectedModels[0]);
-    }, 3000)
   });
 
   // Save userWords to localStorage whenever it changes
@@ -106,9 +122,9 @@
   let inputWordCount = 0;
   let outputWordCount = 0;
 
-  function countWords(text) {
+  function countWords(text: string): number {
     if (!text) return 0;
-    return text.trim().split(/\s+/).filter(word => word.length > 0).length;
+    return text.trim().split(/\s+/).filter((word: string) => word.length > 0).length;
   }
 
   $: inputWordCount = countWords(inputText);
@@ -118,10 +134,20 @@
   let totalChunks = 0;
   let receivedChunks = 0;
 
-  const MAX_WORDS = 24750; // Define the word limit
+  // Configuration variables - will be loaded from backend
+  let maxWords: number | null = null; // Will be loaded from backend
+  let maxChunkTokens: number | null = null; // Will be loaded from backend
+  let configLoaded = false; // Track if config has been loaded
 
   // Main function to trigger text simplification
   async function simplifyText() {
+    // Check if configuration is loaded
+    if (!configLoaded || maxWords === null || maxChunkTokens === null) {
+      error = "Configuratie nog niet geladen. Probeer opnieuw.";
+      toast.error(error);
+      return;
+    }
+
     // Reset errors and state
     error = null;
     isLoading = true;
@@ -142,8 +168,8 @@
       return;
     }
 
-    if (inputWordCount > MAX_WORDS) {
-      error = `De invoertekst (${inputWordCount} woorden) overschrijdt de limiet van ${MAX_WORDS} woorden.`;
+    if (inputWordCount > maxWords) {
+      error = `De invoertekst (${inputWordCount} woorden) overschrijdt de limiet van ${maxWords} woorden.`;
       toast.error(error);
       isLoading = false;
       showOutput = false; // Don't show output area if input is invalid
@@ -152,7 +178,7 @@
 
     // Model validation
     if (!validateModelSelection()) {
-      console.error('[B1Logic] No model selected - selectedModelId:', selectedModelId, 'selectedModels:', selectedModels);
+      console.error('[versimpelaar] No model selected - selectedModelId:', selectedModelId, 'selectedModels:', selectedModels);
       isLoading = false;
       showOutput = false;
       return;
@@ -176,7 +202,8 @@
           text: inputText,
           model: modelToUse, // Using the validated model (original or fallback)
           preserved_words: preservedWords, 
-          language_level: languageLevel
+          language_level: languageLevel,
+          max_chunk_tokens: maxChunkTokens // Pass the loaded configuration
         })
       });
 
@@ -206,6 +233,11 @@
 
           try {
             const parsed = JSON.parse(line);
+
+            // Check for backend errors
+            if (parsed.error) {
+              throw new Error(parsed.error);
+            }
 
             if (parsed.total_chunks !== undefined) {
               totalChunks = parsed.total_chunks;
@@ -269,7 +301,7 @@
     }
   }
 
-  function removePreservedWord(wordToRemove) {
+  function removePreservedWord(wordToRemove: string) {
     userWords = userWords.filter(w => w !== wordToRemove);
     activeDefaultWords = activeDefaultWords.filter(w => w !== wordToRemove);
   }
@@ -280,16 +312,19 @@
   }
 
   // File handling variables
-  let fileInput;
+  let fileInput: HTMLInputElement;
   let isProcessingFile = false;
   let isFlashing = false;
   let fileProcessingProgress = 0;
-  let fileProcessingInterval = null;
+  let fileProcessingInterval: ReturnType<typeof setInterval> | null = null;
 
   // Handle drag & drop files
-  function handleFileDrop(event) {
-    // Block if no model is selected
-    if (!validateModelSelection()) {
+  function handleFileDrop(event: DragEvent) {
+    // Block if no model is selected or config not loaded
+    if (!validateModelSelection() || !configLoaded) {
+      if (!configLoaded) {
+        toast.error('Configuratie nog niet geladen. Probeer opnieuw.');
+      }
       return;
     }
 
@@ -305,7 +340,7 @@
   }
 
   // Process dropped file without going through the file input
-  async function processDroppedFile(file) {
+  async function processDroppedFile(file: File) {
     // Start progress simulation
     isProcessingFile = true;
     isFlashing = true;
@@ -319,14 +354,14 @@
           fileProcessingProgress = 99;
         }
       } else {
-        clearInterval(fileProcessingInterval);
+        if (fileProcessingInterval) clearInterval(fileProcessingInterval);
         fileProcessingInterval = null;
       }
     }, 50);
 
     try {
       // Use the same uploadFile function as the normal chat interface
-      const uploadedFile = await uploadFile(localStorage.getItem('token'), file);
+      const uploadedFile = await uploadFile(localStorage.getItem('token') || '', file);
 
       if (uploadedFile) {
         if (uploadedFile.error) {
@@ -378,13 +413,16 @@
   }
 
   // File upload handler using /api/v1/files
-  async function handleFileUpload(event) {
-    // Block if no model is selected
-    if (!validateModelSelection()) {
+  async function handleFileUpload(event: Event) {
+    // Block if no model is selected or config not loaded
+    if (!validateModelSelection() || !configLoaded) {
+      if (!configLoaded) {
+        toast.error('Configuratie nog niet geladen. Probeer opnieuw.');
+      }
       return;
     }
 
-    const file = event.target?.files?.[0];
+    const file = (event.target as HTMLInputElement)?.files?.[0];
     if (!file) return;
 
     // Validate file type
@@ -399,7 +437,7 @@
     if (fileInput) fileInput.value = '';
   }
 
-  function processText(text) {
+  function processText(text: string): string {
     if (!text) return '';
     return text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
   }
@@ -417,7 +455,7 @@
     return true;
   }
 
-  function validateFileType(file) {
+  function validateFileType(file: File): boolean {
     if (!file.name.match(/\.(doc|docx|pdf|txt|rtf)$/i)) {
       toast.error('Alleen Word, PDF, TXT of RTF bestanden zijn toegestaan');
       return false;
@@ -425,7 +463,7 @@
     return true;
   }
 </script>
-<div class="max-w-7xl mx-auto mt-6">
+<div class="max-w-7xl mx-auto" style="margin-top: -12px;">
   <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
     <div class="flex justify-between items-center mb-6">
       <div class="flex items-start gap-2">
@@ -436,16 +474,18 @@
           <p class="text-lg text-gray-600 dark:text-gray-300">
             Kies een tekst en breng die eenvoudig naar B1- of B2-niveau.
           </p>
-          <button
-            on:click={() => showInfoModal = true}
-            class="bg-blue-100 hover:bg-blue-200 dark:bg-blue-700 dark:hover:bg-blue-600 text-blue-700 dark:text-blue-200 font-medium py-1.5 px-3 rounded-md focus:outline-none focus:shadow-outline flex items-center gap-1.5 mb-1"
-            aria-label="Uitleg over de Versimpelaar"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span>Wat doet de Versimpelaar?</span>
-          </button>
+          <div class="flex gap-2">
+            <button
+              on:click={() => showInfoModal = true}
+              class="bg-blue-100 hover:bg-blue-200 dark:bg-blue-700 dark:hover:bg-blue-600 text-blue-700 dark:text-blue-200 font-medium py-1.5 px-3 rounded-md focus:outline-none focus:shadow-outline flex items-center gap-1.5 mb-1"
+              aria-label="Uitleg over de Versimpelaar"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>Wat doet de Versimpelaar?</span>
+            </button>
+          </div>
         </div>
       </div>
       
@@ -527,8 +567,8 @@
             rows="12"
             draggable="false"
             class="w-full h-[400px] flex-grow px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white min-h-[250px] md:min-h-[400px] overflow-y-auto font-[system-ui] {isFlashing ? 'flash-animation' : ''}"
-            placeholder={!selectedModelId ? "Selecteer eerst een taalmodel via de modelselectie links-bovenaan de pagina" : "Plak of typ hier de tekst die je wilt vereenvoudigen."}
-            disabled={isLoading || !selectedModelId}
+            placeholder={!selectedModelId ? "Selecteer eerst een taalmodel via de modelselectie links-bovenaan de pagina" : !configLoaded ? "Configuratie wordt geladen..." : "Plak of typ hier de tekst die je wilt vereenvoudigen."}
+            disabled={isLoading || !selectedModelId || !configLoaded}
             spellcheck="false"
             on:dragover|preventDefault
             on:drop|preventDefault={handleFileDrop}
@@ -536,7 +576,7 @@
 
           <!-- Bottom section with fixed height and spacing -->
           <div class="mt-auto">
-            <!-- Progress bar - same position as right side -->
+            <!-- File processing progress bar - same position as before -->
             <div class="mt-2 flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
               <div class="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                 <div
@@ -551,7 +591,11 @@
 
             <!-- Status text - fixed height -->
             <div class="mt-1 h-5 text-xs text-gray-500 dark:text-gray-400">
-              {#if isProcessingFile}
+              {#if !configLoaded}
+                <span class="text-yellow-600 dark:text-yellow-400 font-medium">⏳ Configuratie laden...</span>
+              {:else if maxWords && inputWordCount > maxWords}
+                <span class="text-red-600 dark:text-red-400 font-medium">⚠️ Te veel woorden! Max {maxWords} toegestaan.</span>
+              {:else if isProcessingFile}
                 <span>Verwerken...</span>
               {:else if fileProcessingProgress === 100}
                 <span>Bestand verwerkt</span>
@@ -573,9 +617,9 @@
               
               <button
                 on:click={() => fileInput.click()}
-                disabled={isProcessingFile || !selectedModelId}
+                disabled={isProcessingFile || !selectedModelId || !configLoaded}
                 class="bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-white font-medium py-1 px-3 rounded focus:outline-none focus:shadow-outline disabled:opacity-50 disabled:cursor-not-allowed min-w-[140px] flex items-center justify-center gap-2"
-                title={!selectedModelId ? "Geen model geselecteerd" : "Upload een document"}
+                title={!selectedModelId ? "Geen model geselecteerd" : !configLoaded ? "Configuratie wordt geladen" : "Upload een document"}
               >
                 {#if isProcessingFile}
                   <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -601,22 +645,24 @@
       </div>
       
       <!-- Midden: Translate button -->
-      <div class="hidden md:flex flex-col items-center justify-center">
+      <div class="flex flex-col items-center justify-center">
         <button
           on:click={simplifyText}
-          disabled={isLoading || !selectedModelId}
-          class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-full focus:outline-none focus:shadow-outline disabled:opacity-50 disabled:cursor-not-allowed h-12 w-12 flex items-center justify-center"
-          title={!selectedModelId ? "Geen model geselecteerd" : `Versimpel naar ${languageLevel}-taalniveau`}
+          disabled={isLoading || !selectedModelId || !configLoaded}
+          class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-full md:rounded-full rounded-md focus:outline-none focus:shadow-outline disabled:opacity-50 disabled:cursor-not-allowed h-12 w-12 md:h-12 md:w-12 h-auto w-auto flex items-center justify-center gap-2 my-4 md:my-0"
+          title={!selectedModelId ? "Geen model geselecteerd" : !configLoaded ? "Configuratie wordt geladen" : `Versimpel naar ${languageLevel}-taalniveau`}
         >
           {#if isLoading}
             <svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
               <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
+            <span class="md:hidden">Verwerken...</span>
           {:else}
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 md:h-6 md:w-6 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
             </svg>
+            <span class="md:hidden">Versimpel naar {languageLevel}</span>
           {/if} 
         </button>
       </div>

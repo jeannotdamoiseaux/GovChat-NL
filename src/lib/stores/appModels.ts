@@ -6,7 +6,7 @@ import { page } from '$app/stores';
 // Interface for model capabilities
 interface ModelCapabilities {
     general_chat_app_access?: boolean;
-    versimpelaar?: boolean;
+    versimpelaar_app_access?: boolean;
     [key: string]: any;
 }
 
@@ -43,22 +43,22 @@ export const filteredModels = derived(
 
         switch ($currentAppContext) {
             case 'versimpelaar':
-                const versimpelaarModels  = typedModels.filter(model => 
-                    model && model.info?.meta?.capabilities?.versimpelaar === true
+                const versimpelaarModels = typedModels.filter(model => 
+                    model && model.info?.meta?.capabilities?.versimpelaar_app_access === true
                 );
-                console.log('[appModels] B1 app context - Available models:', {
+                console.log('[appModels] Versimpelaar app context - Available models:', {
                     available_models: versimpelaarModels
                 });
-                return versimpelaarModels ;
+                return versimpelaarModels;
                 
             case 'chat':
             default:
-                // Filter models that have chat capability, or if no models have this capability, show all
+                // Filter models that have chat_app_access capability
                 const generalChatModels = typedModels.filter(model => 
-                    model && model.info?.meta?.capabilities?.chat === true
+                    model && model.info?.meta?.capabilities?.chat_app_access === true
                 );
 
-                console.log('[appModels] General context - Available models:', {
+                console.log('[appModels] Chat app context - Available models:', {
                     available_models: generalChatModels
                 });
                 return generalChatModels;
@@ -75,8 +75,8 @@ export function setAppContextFromRoute(route: string) {
         console.log('[appModels] Setting context to versimpelaar');
         currentAppContext.set('versimpelaar');
     } else if (route && (route.includes('/chat') || route === '/(app)' || route === '/(app)/')) {
-        // Only set to general for chat routes and main app route
-        console.log('[appModels] Setting context to general');
+        // Only set to chat for chat routes and main app route
+        console.log('[appModels] Setting context to chat');
         currentAppContext.set('chat');
     }
     // For all other routes (admin, settings, etc.), don't change the context
