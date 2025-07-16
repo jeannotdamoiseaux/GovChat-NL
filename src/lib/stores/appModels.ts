@@ -53,9 +53,9 @@ export const filteredModels = derived(
                 
             case 'chat':
             default:
-                // Filter models that have chat_app_access capability
+                // Filter models that have general_chat_app_access capability
                 const generalChatModels = typedModels.filter(model => 
-                    model && model.info?.meta?.capabilities?.chat_app_access === true
+                    model && model.info?.meta?.capabilities?.general_chat_app_access === true
                 );
 
                 console.log('[appModels] Chat app context - Available models:', {
