@@ -18,7 +18,7 @@ export const apps: AppDefinition[] = [
     name: 'Chat',
     icon: '💬',
     href: '/',
-    capabilityKey: 'chat_app_access',
+    capabilityKey: 'general_chat_app_access',
     permission: (_user) => true // Altijd zichtbaar
   },
   {

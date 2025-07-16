@@ -145,11 +145,8 @@ def build_selection_prompt(language_level, preserved_words_text):
     return "\n".join(line.strip() for line in prompt.splitlines() if line.strip())  # Verwijdert overtollige whitespaces
 # --- END: Language Level Specific Prompt Data ---
 
-def split_into_chunks(text: str, max_tokens: int = None) -> List[str]:
+def split_into_chunks(text: str, max_tokens) -> List[str]:
     """Split text into chunks of approximately max_tokens"""
-    # Get max_tokens from environment variable if not provided
-    if max_tokens is None:
-        max_tokens = int(os.getenv('B1_MAX_CHUNK_TOKENS', '1500'))
     
     encoding = tiktoken.get_encoding("cl100k_base")
     paragraphs = text.split('\n')
@@ -346,11 +343,11 @@ class SimplifyTextRequest(BaseModel):
     max_chunk_tokens: int = None  # Optional override for chunk size
 
 @router.get("/config")
-async def get_b1_config():
+async def get_versimpelaar_config():
     """Get B1 configuration values from environment variables"""
     return {
-        "max_input_words": int(os.getenv('B1_MAX_INPUT_WORDS', '24750')),
-        "max_chunk_tokens": int(os.getenv('B1_MAX_CHUNK_TOKENS', '1500'))
+        "max_input_words": int(os.getenv('B1_MAX_INPUT_WORDS')),
+        "max_chunk_tokens": int(os.getenv('B1_MAX_CHUNK_TOKENS'))
     }
 
 @router.post("/translate")
@@ -360,8 +357,8 @@ async def simplify_text_endpoint(request: Request, data: SimplifyTextRequest, us
     print(f"Using model: {data.model}")
     
     # Get configuration values
-    max_input_words = int(os.getenv('B1_MAX_INPUT_WORDS', '24750'))
-    effective_max_tokens = data.max_chunk_tokens if data.max_chunk_tokens is not None else int(os.getenv('B1_MAX_CHUNK_TOKENS', '1500'))
+    max_input_words = int(os.getenv('B1_MAX_INPUT_WORDS'))
+    effective_max_tokens = data.max_chunk_tokens if data.max_chunk_tokens is not None else int(os.getenv('B1_MAX_CHUNK_TOKENS'))
     
     print(f"Using max_input_words: {max_input_words}")
     print(f"Using max_chunk_tokens: {effective_max_tokens}")

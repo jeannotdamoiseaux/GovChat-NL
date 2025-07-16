@@ -7,7 +7,6 @@ import { page } from '$app/stores';
 interface ModelCapabilities {
     general_chat_app_access?: boolean;
     versimpelaar_app_access?: boolean;
-    chat_app_access?: boolean;
     [key: string]: any;
 }
 
