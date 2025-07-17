@@ -173,9 +173,9 @@
 				
 				<!-- GovChat-NL -->
 				{#if $user?.name}
-					{`${$i18n.t('Hello')} ${getGreetingName($user)}, ${placeholderMessage}`}
+					{$i18n.t('Hello, {{name}}', { name: getGreetingName($user) })}
 				{:else}
-					{`${$i18n.t('Hello')} ${placeholderMessage.charAt(0).toUpperCase()}${placeholderMessage.slice(1)}`}
+					{$i18n.t('Hello, {{name}}', { name: placeholderMessage.charAt(0).toUpperCase() + placeholderMessage.slice(1) })}
 				{/if}
 
 			</div>
