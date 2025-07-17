@@ -2,7 +2,7 @@
 
 GovChat-NL is een open-source platform voor en door Nederlandse overheidsorganisaties dat ondersteunt bij het implementeren en beheren van AI-oplossingen. Het platform stelt organisaties in staat om zowel chatbots als andere AI-toepassingen laagdrempelig in te zetten. Dankzij de ingebouwde App Launcher hebben gebruikers direct toegang tot relevante AI-tools, die zijn afgestemd op overheidstaken. Daarnaast voorziet het platform standaard in een uitgebreide handleiding gericht op AI-geletterdheid voor Nederlandse ambtenaren (zoals wettelijk verplicht vanuit de AI-verordening).
 
-![Schermafbeelding 2025-01-31 101624](https://github.com/user-attachments/assets/6a5b689e-5804-47d0-8ce2-85a3275ea857)
+<img width="1116" height="697" alt="beginscherm" src="https://github.com/user-attachments/assets/a51b0379-5472-4dde-b729-adec85edc45a" />
 
 ## Waarom GovChat-NL? 
 
@@ -45,6 +45,8 @@ Bovenop de standaard Role-Based Access Control (RBAC) van OpenWebUI biedt GovCha
 **Beheer van taalmodellen per app**
 Daarnaast is in GovChat-NL een extra beheermogelijkheid toegevoegd waarmee je per applicatie in de App Launcher het meest geschikte taalmodel kunt selecteren. Zo kun je voor iedere app een model kiezen dat past bij het beoogde gebruik, bijvoorbeeld een efficiënt en snel taalmodel voor de Versimpelaar en een krachtiger model voor juridische analyse-tools. Bovendien kun je de LLM-workload verdelen over verschillende modellen of providers. Hiermee voorkom je dat één model of leverancier overbelast raakt of zijn quota overschrijdt.
 
+<img width="1116" height="697" alt="app_launcher" src="https://github.com/user-attachments/assets/9383fae7-850d-4178-a537-29d79f31199d" />
+
 Via de App Launcher zijn momenteel de volgende AI-applicaties (of plannen daarvoor) beschikbaar:
 
 | **App**            | **Beschrijving**                                      | **Status**       | **Initiatiefnemer**       | **Meer informatie**         |
@@ -53,9 +55,11 @@ Via de App Launcher zijn momenteel de volgende AI-applicaties (of plannen daarvo
 | **ToeKenner**       | Beoordeelt subsidieaanvragen en genereert rapportages.| In ontwikkeling | Provincie Limburg      | [Meer informatie](docs/app-launcher/subsidies.md)     |
 | **WooAssist**    | Helpt bij het doorzoeken van je mails en bestanden bij een woo-verzoek.               | Backlog          | Provincie Limburg                         | Beschikbaar binnenkort     |
 
----
+**Voorbeeld applicatie: de Versimpelaar**
 
-![image](https://github.com/user-attachments/assets/04da966a-05c2-4a95-ad8c-f0de95dcb60c)
+<img width="1474" height="910" alt="versimpelaar" src="https://github.com/user-attachments/assets/86f9a2a1-2fdf-46db-96bb-04a49ce118bf" />
+
+---
 
 ## Implementatie 
 
@@ -87,8 +91,6 @@ Voor deze implementatie is een uitgebreide **Data Protection Impact Assessment (
 
 - De volledige DPIA is [hier](/docs/implementaties/provincie-limburg-dpia.pdf) te raadplegen.
 - Meer informatie over deze implementatie is te vinden op [deze pagina](/docs/implementaties/provincie-limburg.md).
-
-![Schermafbeelding 2025-01-31 102730](https://github.com/user-attachments/assets/ac30f57d-fdfa-4cf6-a1da-abb56dad1ad7)
 
 ## Onderliggende repositories
 
