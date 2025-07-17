@@ -491,7 +491,7 @@
       
       <!-- Taalniveau dropdown -->
       <div class="flex items-center">
-        <label for="language-level-select" class="mr-2 text-sm text-gray-600 dark:text-gray-400">Taalniveau:</label>
+        <label for="language-level-select" class="mr-2 text-sm text-gray-600 dark:text-gray-400 hidden md:inline">Taalniveau:</label>
         <select 
           id="language-level-select"
           bind:value={languageLevel}
