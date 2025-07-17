@@ -1,6 +1,6 @@
-# SubsidieBeoordeling App
+# ToeKenner
 
-De **SubsidieBeoordeling App** is een geavanceerde tool die helpt bij het verwerken en beoordelen van subsidieaanvragen. Door gebruik te maken van **Large Language Models (LLM's)** automatiseert deze applicatie een groot deel van het beoordelingsproces, waardoor zowel de snelheid als de consistentie van beoordelingen wordt verbeterd. 
+De **ToeKenner** is een geavanceerde tool die helpt bij het verwerken en beoordelen van subsidieaanvragen. Door gebruik te maken van **Large Language Models (LLM's)** automatiseert deze applicatie een groot deel van het beoordelingsproces, waardoor zowel de snelheid als de consistentie van beoordelingen wordt verbeterd. 
 
 Het algoritme is speciaal ontworpen om de benodigde stappen sequentieel uit te voeren met behulp van LLM's, waardoor een reproduceerbaar proces wordt gegarandeerd. Tegelijkertijd biedt de app een gebruiksvriendelijke interface die aansluit op de werkwijze van de subsidieverlener. Het algoritme kan beoordelingscriteria automatisch extraheren uit subsidievoorwaarden, individuele aanvragen beoordelen en overzichtelijke rapportages genereren. Door het beoordelingsproces op te delen in duidelijke en gestructureerde stappen, ontstaat een overzichtelijke procedure die de subsidieverlener helder inzicht biedt in de totstandkoming van het oordeel.
 
@@ -8,7 +8,7 @@ Het algoritme is speciaal ontworpen om de benodigde stappen sequentieel uit te v
 
 ## Uitleg van het Algoritme
 
-Het onderstaande schema illustreert de werking van de SubsidieBeoordeling App:
+Het onderstaande schema illustreert de werking van de ToeKenner App:
 
 ![Algoritme Workflow](images/subsidies.png)
 
@@ -33,4 +33,4 @@ Het onderstaande schema illustreert de werking van de SubsidieBeoordeling App:
 
 ## Status van het Project
 
-De ontwikkeling van de **SubsidieBeoordeling App** is momenteel in uitvoering binnen de **Provincie Limburg**. De app wordt getest op praktische toepasbaarheid en gebruiksgemak en geïntegreerd in het **App Launcher-platform** van GovChat-NL. Naar verwachting zal de app in de komende maanden beschikbaar komen voor gebruik door ambtelijke diensten en andere betrokken overheidsorganisaties.
+De ontwikkeling van de **ToeKenner** is momenteel in uitvoering binnen de **Provincie Limburg**. De app wordt getest op praktische toepasbaarheid en gebruiksgemak en geïntegreerd in het **App Launcher-platform** van GovChat-NL. Naar verwachting zal de app in de komende maanden beschikbaar komen voor gebruik door ambtelijke diensten en andere betrokken overheidsorganisaties.
