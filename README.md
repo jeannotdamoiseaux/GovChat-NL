@@ -14,8 +14,11 @@ GovChat-NL biedt verschillende voordelen voor Nederlandse overheidsorganisaties:
 - **Ondersteuning voor AI-geletterdheid en regelgeving**  
   Het platform bevat een uitgebreide, standaard meegeleverde handleiding die specifiek is gericht op AI-geletterdheid voor ambtenaren, conform de wettelijke verplichtingen uit de AI-verordening (vanaf februari 2025).
 
-- **In de praktijk getoetst (inclusief DPIA)**  
+- **In de praktijk getoetst (inclusief DPIA)**
   GovChat-NL wordt reeds gebruikt door verschillende overheden (700+ gebruikers) en beschikt over een goedgekeurde Data Protection Impact Assessment (DPIA) als referentie.
+
+- **Geavanceerd beheermanagement per app (RBAC en taalmodellen)**  
+  Binnen GovChat-NL zijn geavanceerde beheerfuncties toegevoegd waarmee je per applicatie in de App Launcher zowel de toegangsrechten (met Role-Based Access Control) als het gebruikte taalmodel kunt instellen. Zo kun je bijvoorbeeld bepalen dat alleen subsidieverleners toegang hebben tot apps zoals de ToeKenner (voor het beoordelen van subsidieaanvragen), terwijl de Versimpelaar juist breed toegankelijk blijft. Daarnaast kun je per app het gewenste taalmodel selecteren, zodat de belasting verspreid wordt over verschillende modellen.
 
 - **Centrale basis, lokale flexibiliteit**  
   Het platform wordt centraal beheerd en onderhouden in deze repository, maar ondersteunt ook lokale aanpassingen en maatwerk.
@@ -35,6 +38,12 @@ GovChat-NL biedt verschillende voordelen voor Nederlandse overheidsorganisaties:
 ## App Launcher
 
 De **App Launcher** is het centrale startpunt binnen het GovChat-NL platform, waar gebruikers eenvoudig toegang krijgen tot beschikbare AI-toepassingen. Dankzij deze functie kunnen overheidsorganisaties snel gebruikmaken van diverse AI-tools die specifiek zijn ontwikkeld voor overheidstaken.
+
+**Toegangscontrole per app (uitgebreidere RBAC)**
+Bovenop de standaard Role-Based Access Control (RBAC) van OpenWebUI biedt GovChat-NL de mogelijkheid om per app in de App Launcher te bepalen wie toegang heeft tot welke applicatie of workflow. Zo kun je bijvoorbeeld instellen dat alleen subsidieverleners gebruik mogen maken van gevoelige toepassingen zoals de ToeKenner (voor subsidieaanvragen), terwijl de Versimpelaar juist voor alle medewerkers toegankelijk blijft. Dit bevordert informatiebeveiliging en zorgt ervoor dat medewerkers alleen toegang hebben tot relevante AI-tools.
+
+**Beheer van taalmodellen per app**
+Daarnaast is in GovChat-NL een extra beheermogelijkheid toegevoegd waarmee je per applicatie in de App Launcher het meest geschikte taalmodel kunt selecteren. Zo kun je voor iedere app een model kiezen dat past bij het beoogde gebruik, bijvoorbeeld een efficiënt en snel taalmodel voor de Versimpelaar en een krachtiger model voor juridische analyse-tools. Bovendien kun je de LLM-workload verdelen over verschillende modellen of providers. Hiermee voorkom je dat één model of leverancier overbelast raakt of zijn quota overschrijdt.
 
 Via de App Launcher zijn momenteel de volgende AI-applicaties (of plannen daarvoor) beschikbaar:
 

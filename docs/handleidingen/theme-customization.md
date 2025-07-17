@@ -1,61 +1,120 @@
-# Thema-aanpassingen
+# GovChat-NL: Specifieke Environment-variabelen
 
-GovChat-NL biedt de mogelijkheid om de chatbot volledig aan te passen aan de huisstijl en communicatiebehoeften van een overheidsorganisatie. De belangrijkste aanpassingen kunnen eenvoudig worden doorgevoerd via environment-variabelen. Het doel is om deze variabelen in de toekomst te integreren in het admin-paneel, zodat aanpassingen nog toegankelijker worden voor beheerders.
+Als organisatie kun je GovChat-NL eenvoudig aanpassen aan de eigen wensen en uitstraling. Dat doe je met ‘environment-variabelen’: instellingen waarmee je bepaalt hoe de chatbot eruitziet en wat gebruikers kunnen. 
+Deze variabelen stel je in voordat je de applicatie start, meestal in een configuratiebestand of via de beheeromgeving. 
+
+Hieronder vind je een overzicht van alle specifieke environment-variabelen voor GovChat-NL, met uitleg over wat ze doen en hoe je ze gebruikt. 
+Zo kun je GovChat-NL beter laten aansluiten bij de behoefte van jouw organisatie.
 
 ---
 
-## GovChat-NL-specifieke environment-variabelen
+## EMPTY_CHAT_WELCOME_MESSAGE
 
-GovChat-NL bouwt voort op de sterke basis van OpenWebUI, maar introduceert enkele extra environment-variabelen die specifiek zijn ontworpen om aan te sluiten bij de behoeften van overheidsorganisaties. Deze variabelen maken het mogelijk om het uiterlijk en gedrag van de chatbot te personaliseren. Hieronder vind je een overzicht van de extra beschikbare variabele:
+- **Type:** `str`
+- **Default:** "welkom bij GovChat-NL"
+- **Beschrijving:**  
+  Deze variabele bepaalt het standaard welkomstbericht wanneer een nieuwe, lege chat gestart wordt.  
+  Het bericht wordt als volgt getoond:
+    - Gebruiker met voornaam:  
+      `Hallo <voornaam>, <EMPTY_CHAT_WELCOME_MESSAGE>`
+    - Gebruiker zonder voornaam:  
+      `Hallo, <EMPTY_CHAT_WELCOME_MESSAGE>`
+- **Persistentie:** Wordt geladen tijdens opstarten van GovChat-NL.
 
-### `EMPTY_CHAT_WELCOME_MESSAGE` (Default: `"welkom bij GovChat-NL"`)
+---
 
-De variabele `EMPTY_CHAT_WELCOME_MESSAGE` wordt gebruikt voor het instellen van een standaardbegroeting wanneer een nieuwe (lege) chat wordt gestart. De begroetingszin is opgebouwd volgens het volgende format:
+## LOGIN_SCREEN_SUBTITLE
 
-```plaintext
-Hallo <voornaam>, <EMPTY_CHAT_WELCOME_MESSAGE>
-```
+- **Type:** `str`
+- **Default:** None
+- **Beschrijving:**  
+  Hiermee kun je een aangepaste subtitel toevoegen aan het inlogscherm (bijvoorbeeld toelichting of slogan).  
+  Indien niet ingesteld of gelijk aan `None`, wordt er geen subtitel getoond.
+- **Voorbeeld instelling:**  
+  `LOGIN_SCREEN_SUBTITLE="Jouw kennisassistent voor de Provincie Limburg"`
+- **Persistentie:** Wordt geladen tijdens opstarten van GovChat-NL.
 
-Als de voornaam niet beschikbaar is, zal de gebruiker alleen het welkomstbericht zien, zonder voornaam:
+---
 
-```plaintext
-Hallo, <EMPTY_CHAT_WELCOME_MESSAGE>
-```
+## ENABLE_CONTROLS_BUTTON
 
-### `LOGIN_SCREEN_SUBTITLE` (Default: `None`)
-De variabele `LOGIN_SCREEN_SUBTITLE` biedt de mogelijkheid om een aangepaste subtitel weer te geven op het inlogscherm van de chatbot. Deze subtitel kan worden gebruikt om extra uitleg of een slogan toe te voegen die aansluit bij de communicatiebehoefte van de organisatie. 
+- **Type:** `bool`
+- **Default:** False
+- **Beschrijving:**  
+  Toon of verberg een extra bedieningsknop in de gebruikersinterface. Bij `True` ontstaat er een knoppenbalk voor snelle acties.
+- **Persistentie:** Wordt geladen tijdens opstarten van GovChat-NL.
 
-Als de variabele niet wordt ingesteld (of als deze expliciet `None` is), zal er geen subtitel worden weergegeven.
+---
 
-Voorbeeldinstelling:
-```plaintext
-LOGIN_SCREEN_SUBTITLE="Jouw kennisassistent voor de Provincie Limburg"
-```
+## SHOW_CHANGE_PASSWORD
 
-### `ENABLE_CALL` (Default: `False`)
-Met de variabele `ENABLE_CALL` kun je de belfunctie in de chatinterface activeren.  
-Standaard staat deze optie uitgeschakeld, omdat het voeren van een spraakgesprek alleen goed ondersteund wordt door specifieke AI-modellen en niet altijd relevant of duidelijk is voor alle gebruikers. Wanneer je `ENABLE_CALL=True` instelt in de omgeving, verschijnt de call-knop in de chatinterface. Gebruikers kunnen dan direct een spraakconversatie met het gekozen model starten.
+- **Type:** `bool`
+- **Default:** False
+- **Beschrijving:**  
+  Maakt wijzigen van het wachtwoord door gebruikers direct via de interface mogelijk. Bij `True` verschijnt deze optie in het profiel- of instellingenmenu.
+- **Persistentie:** Wordt geladen tijdens opstarten van GovChat-NL.
 
-Voorbeeldinstelling:
-```plaintext
-ENABLE_CALL=True
-```
+---
 
-### `ENABLE_MULTIPLE_MODELS` (Default: `False`)
-Met `ENABLE_MULTIPLE_MODELS` geef je gebruikers de mogelijkheid om in één chatgesprek meerdere AI-modellen tegelijk te selecteren en te gebruiken.  
-Wanneer deze optie is ingeschakeld (`ENABLE_MULTIPLE_MODELS=True`), kunnen er binnen één gesprek verschillende modellen tegelijkertijd worden bevraagd.
-Standaard staat deze functie uit om de interface eenvoudig te houden.
+## ALLOW_USERNAME_EDIT
 
-Voorbeeldinstelling:
-```plaintext
-ENABLE_MULTIPLE_MODELS=True
-```
+- **Type:** `bool`
+- **Default:** False
+- **Beschrijving:**  
+  Bij activeren (`True`) mogen gebruikers hun gebruikersnaam zelf aanpassen via hun profiel.
+- **Persistentie:** Wordt geladen tijdens opstarten van GovChat-NL.
 
-### `ENABLE_CONTROLS_BUTTON` (Default: `False`)
-Deze optie maakt een extra besturingsknop ("controls button") zichtbaar in de chatinterface, waarmee aanvullende instellingen of actiemogelijkheden toegankelijk kunnen worden gemaakt voor de gebruiker.  
-Standaard is deze extra knop verborgen gehouden om de interface zo overzichtelijk en gebruiksvriendelijk mogelijk te houden. Zet je `ENABLE_CONTROLS_BUTTON=True`, dan verschijnt deze controls-knop.
+---
 
-Voorbeeldinstelling:
-```plaintext
-ENABLE_CONTROLS_BUTTON=True
-```
+## SHOW_ABOUT_TAB
+
+- **Type:** `bool`
+- **Default:** False
+- **Beschrijving:**  
+  Toon het tabblad “Over” in het hoofdmenu met uitleg over de applicatie.
+- **Persistentie:** Wordt geladen tijdens opstarten van GovChat-NL.
+
+---
+
+## SHOW_OVERVIEW_IN_DROPDOWN
+
+- **Type:** `bool`
+- **Default:** False
+- **Beschrijving:**  
+  Voegt een overzichstpagina toe aan het dropdownmenu voor snellere navigatie.
+- **Persistentie:** Wordt geladen tijdens opstarten van GovChat-NL.
+
+---
+
+## SHOW_WIDESCREEN_MODE
+
+- **Type:** `bool`
+- **Default:** False
+- **Beschrijving:**  
+  Schakelt een breedbeeldmodus in wanneer geactiveerd (`True`). Handig voor grote schermen.
+- **Persistentie:** Wordt geladen tijdens opstarten van GovChat-NL.
+
+---
+
+## SHOW_ARCHIVED_CHATS
+
+- **Type:** `bool`
+- **Default:** False
+- **Beschrijving:**  
+  Geeft gebruikers toegang tot gearchiveerde chatgesprekken via het menu. Maakt terugzoeken van oude chats eenvoudiger.
+- **Persistentie:** Wordt geladen tijdens opstarten van GovChat-NL.
+
+---
+
+## VERSIMPELAAR
+
+- **Type:** `bool`
+- **Default:** True
+- **Beschrijving:**  
+  Bepaalt of de Versimpelaar-app (voor vereenvoudiging naar B1/B2-niveau) zichtbaar is in de App Launcher.  
+  Bij instellen op `False` wordt deze app standaard verborgen voor gebruikers.
+- **Voorbeeld instelling:**  
+  `VERSIMPELAAR=True  # Versimpelaar zichtbaar`
+- **Persistentie:** Wordt geladen tijdens opstarten van GovChat-NL.
+
+---

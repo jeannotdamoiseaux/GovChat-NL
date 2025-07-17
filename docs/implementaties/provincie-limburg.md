@@ -1,114 +1,142 @@
 # Documentatie Pilot-Implementatie Provincie Limburg
-De Provincie Limburg voert een pilot uit waarin AI-taalmodellen worden geïmplementeerd binnen een veilige en schaalbare infrastructuur. Deze documentatie beschrijft deze implementatie.
+De Provincie Limburg draait sinds 21 mei 2025 GovChat-NL als de Limburgse AI Chat Assistent (LAICA). Deze documentatie beschrijft de docker-stack en haar configuratie-onderdelen.
 
-## Doelstellingen:
-- Verkennen van de toepassingsmogelijkheden van taalmodellen.
-- Ondersteuning bieden aan projecten binnen verschillende domeinen van de Provincie.
-- Waarborging van dataveiligheid en naleving van regelgeving.
-
-## Gebruik een `.env`-bestand
-Om gevoelige informatie, zoals API-sleutels en wachtwoorden, veilig te beheren, maken we gebruik van een .env-bestand. Dit bestand bevat de variabelen die door Docker en andere componenten worden opgehaald tijdens de uitvoering van de omgeving.
-
-### Locatie:
-Plaats het .env-bestand in de hoofdmappen van de respectieve configuraties, bijvoorbeeld:
-
-- Voor docker-compose.yml: in `app`
-- Voor specifieke configuraties van LiteLLM: in `app/litellm`
-
-## Overzicht van de Componenten
+## 1. Overzicht van de Componenten
 | **Wat**             | **Leverancier**          | **Details**                                    |
 |----------------------|--------------------------|------------------------------------------------|
-| **Taalmodellen**     | Microsoft Azure          | GPT-4o, DeepSeek-R1, text-embeddings-3-large  |
-| **Taalmodellen**     | Google Vertex AI         | Claude-3.5-Sonnet                              |
+| **Taalmodellen**     | Microsoft Azure          | GPT-4.1, GPT-4o, text-embeddings-3-large  |
 | **Virtual Machine**  | Hetzner via Elestio     | Hosting van infrastructuur                    |
 | **Authenticatie**    | Microsoft Entra ID       | Single sign-on en beveiligde login            |
 
-## Stap 1: .env-bestand opstellen
-Maak een .env-bestand in `app/` en voeg de volgende variabelen toe. Vul onderstaande placeholders in met jouw eigen API-sleutels, URL's en gegevens.
+## 2. Snelle start
+### 2.1 Docker Configuratie
 
-```
-# Algemene instellingen
-$SOFTWARE_VERSION_TAG=<versie>
-ADMIN_EMAIL=<jouw_admin_email>
-ENV=<development|production>
-ENABLE_SIGNUP=true
-ENABLE_LOGIN_FORM=true
+Deze implementatie van LAICA bestaat uit meerdere samenwerkende softwareonderdelen (componenten), die elk als een zelfstandige 'container' via Docker draaien. Docker-onderdelen zijn als volgt opgebouwd, zowel qua concept als inrichting:
 
-# Microsoft authenticatie
-MICROSOFT_CLIENT_ID=<jouw_client_id>
-MICROSOFT_CLIENT_SECRET=<jouw_client_secret>
-MICROSOFT_CLIENT_TENANT_ID=<jouw_tenant_id>
-MICROSOFT_REDIRECT_URI=<jouw_redirect_uri>
-MICROSOFT_OAUTH_SCOPE="openid profile email offline_access"
+#### Wat zijn Docker images en containers?
 
-# Azure-instellingen
-AZURE_API_KEY=<jouw_azure_api_key>
-AZURE_API_BASE=<jouw_azure_api_base_url>
-AZURE_API_VERSION=<jouw_azure_api_version>
+- **Docker image:**  
+  Een Docker image is een kant-en-klaar pakket van software, inclusief alle benodigde instructies, afhankelijkheden en instellingen om die software uit te voeren. Een image wordt één keer gebouwd en kan daarna op iedere geschikte server identiek worden gestart.
 
-# Google Vertex AI
-VERTEX_PROJECT=<jouw_vertex_project_id>
-VERTEX_LOCATION=<jouw_vertex_locatie>
-VERTEX_CREDENTIALS_FILE=calcium-alchemy-416511-58b3843781ae.json
+- **Container:**  
+  Een container is een draaiende (uitgevoerde) instantie van een image. Containers zijn geïsoleerd van elkaar; zo draaien ze onafhankelijk, maar kunnen via netwerken/volumes samenwerken wanneer dat gewenst is.
 
-# Web interface instellingen
-WEBUI_SECRET_KEY=<jouw_webui_secret_key>
-WEBUI_NAME=<project_naam>
-WEBUI_URL=<web_url>
+#### Waarom Docker Compose?
 
-# Overige instellingen
-DO_NOT_TRACK=true
-ANONYMIZED_TELEMETRY=false
-```
+Met **Docker Compose** beheer je meerdere containers als één samenhangend geheel via een configuratiebestand (`docker-compose.yml`). Je beschrijft hierin wélke images worden gebruikt, welke netwerkverbindingen en volumes ze hebben, en met welke instellingen/omgevingvariabelen ze opstarten.  
+Dit maakt het opstarten, beheren en opschalen van een multi-component applicatie overzichtelijk en reproduceerbaar.
 
-## Stap 2: docker-compose.yml configuratie
-De configuratie in `app/docker-compose.yml` wordt aangepast om gebruik te maken van de waarden in het `.env`-bestand. Hieronder de verbeterde configuratie:
+#### Overzicht van deze componenten
 
-```
+In de stack voor LAICA worden de volgende (open source of publieke) images gebruikt:
+
+
+| Docker image                                   | Rol / functionaliteit                                    |
+|------------------------------------------------|---------------------------------------------------------|
+| `ghcr.io/jeannotdamoiseaux/govchat-nl`         | **Webinterface** (OpenWebUI) — de gebruikersinterface van LAICA |
+| `ghcr.io/berriai/litellm`                      | **LLM-adapter/router** — koppelt en verdeelt LLM-verzoeken naar taalmodellen. |
+| `apache/tika`                                  | **Documentverwerking** — analyseert/extraheert tekst uit documenten voor de chatassistent                      |
+| `postgres`                                     | **Database** — slaat gebruikersgegevens, chathistorie en configuratie op       |
+
+#### Werkschema in de praktijk
+
+1. Je configureert in het `.env`-bestand alle benodigde geheime gegevens en afstemmingen (zoals API-sleutels, domeinnamen, wachtwoorden).
+2. Met het commando `docker compose up -d` start je alle beschreven containers tegelijk; ze worden automatisch met elkaar verbonden (binnen het eigen Docker-netwerk).
+3. Updates (bijvoorbeeld nieuwe versies van LAICA of LiteLLM) breng je door een nieuwe image-versie te pullen en de stack opnieuw te starten.
+4. Logs, foutmeldingen en storingen zijn per container afzonderlijk te bekijken, bijvoorbeeld met `docker logs <containernaam>`.
+
+**Belangrijk:**  
+Sla gevoelige gegevens zoals wachtwoorden, API-sleutels enzovoort altijd op in een `.env`-bestand dat niet wordt gedeeld buiten de beheerdersgroep.  
+
+#### Voorbeeld: `docker-compose.yml`
+```yaml
 version: "3.3"
+
 services:
   open-webui:
-    image: ghcr.io/jeannotdamoiseaux/open-webui:$SOFTWARE_VERSION_TAG
+    image: ghcr.io/jeannotdamoiseaux/govchat-nl:v1.0.0
     restart: always
     ports:
-      - 172.17.0.1:18462:8080
+      - 8080:8080
     environment:
-      - OLLAMA_BASE_URL=http://ollama:11434
-      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY}
-      - ADMIN_EMAIL=${ADMIN_EMAIL}
-      - ENV=${ENV}
-      - ENABLE_SIGNUP=${ENABLE_SIGNUP}
-      - SCARF_NO_ANALYTICS=true
-      - DO_NOT_TRACK=${DO_NOT_TRACK}
-      - ANONYMIZED_TELEMETRY=${ANONYMIZED_TELEMETRY}
-      - WEBUI_NAME=${WEBUI_NAME}
-      - WEBUI_URL=${WEBUI_URL}
-      - OAUTH_PROVIDER_NAME=Microsoft
-      - MICROSOFT_OAUTH_SCOPE=${MICROSOFT_OAUTH_SCOPE}
-      - ENABLE_OAUTH_SIGNUP=${ENABLE_SIGNUP}
-      - ENABLE_LOGIN_FORM=${ENABLE_LOGIN_FORM}
-      - MICROSOFT_REDIRECT_URI=${MICROSOFT_REDIRECT_URI}
-      - MICROSOFT_CLIENT_ID=${MICROSOFT_CLIENT_ID}
-      - MICROSOFT_CLIENT_SECRET=${MICROSOFT_CLIENT_SECRET}
-      - MICROSOFT_CLIENT_TENANT_ID=${MICROSOFT_CLIENT_TENANT_ID}
-      - OPENAI_API_BASE_URL=http://litellm:4000
+    # 1. Authenticatie & security
+    - ADMIN_EMAIL=<admin@example.org>               # Admin-login e-mail (hoeft niet te bestaan)
+    - ADMIN_PASSWORD=<Password>                     # Wachtwoord voor admin
+    - ENV=prod                                      # Omgeving (prod/dev)
+    - DOMAIN=<laica.example.org>                    # (Sub)domein van de app
+    - WEBUI_SECRET_KEY=<SuperSecret123>             # Geheime sleutel voor sessies/encryptie
+    - SAFE_MODE=true                                # Extra beveiliging inschakelen
+    - DEFAULT_USER_ROLE="user"                      # Standaardrol nieuw account/SSO
+    - JWT_EXPIRES_IN="24h"                          # Token-geldigheid (standaard 24 uur)
+
+    # 2. Microsoft Entra / Azure SSO (OAuth)
+    - OAUTH_PROVIDER_NAME=Microsoft                 # Altijd 'Microsoft' voor Entra ID
+    - MICROSOFT_CLIENT_ID=<MICROSOFT_CLIENT_ID>     # Azure App/Client ID
+    - MICROSOFT_CLIENT_SECRET=<MICROSOFT_CLIENT_SECRET> # Azure Client Secret
+    - MICROSOFT_CLIENT_TENANT_ID=<MICROSOFT_CLIENT_TENANT_ID> # Azure Tenant-ID
+    - MICROSOFT_REDIRECT_URI=https://laica.example.org/oauth/microsoft/callback # OAuth callback-URL
+    - MICROSOFT_OAUTH_SCOPE="openid email profile"  # OAuth scopes/gebruikersrechten
+    - ENABLE_OAUTH_GROUP_MANAGEMENT=false           # (Optioneel) Groepsbeheer via Azure
+    - ENABLE_OAUTH_SIGNUP=true                      # Nieuwe accounts via SSO toestaan
+
+    # 3. AI-model & API
+    - OPENAI_API_BASE_URL="http://litellm:4000"     # Interne URL LiteLLM-router
+
+    # 4. Frontend / UI instellingen
+    - WEBUI_NAME="Laica"                            # Naam in interface
+    - WEBUI_URL=<https://laica.example.org>         # Publieke webinterface-url
+    - ENABLE_SIGNUP=false                           # Lokale signup uitschakelen
+    - ENABLE_LOGIN_FORM=false                       # Lokale loginscherm uitschakelen (SSO)
+    - EMPTY_CHAT_WELCOME_MESSAGE="Ik ben Laica"     # Welkomsttekst in leeg chatvenster
+    - LOGIN_SCREEN_SUBTITLE="Jouw kennisassistent voor de Provincie Limburg" # Ondertitel loginpagina
+    - DEFAULT_LOCALE=nl-NL                         # Standaardtaal
+    - SHOW_ADMIN_DETAILS=false                      # Admin-details verbergen voor gewone gebruikers
+
+    # 5. Functies & gebruikersrechten
+    - ENABLE_ADMIN_CHAT_ACCESS=false                # Beheerder heeft inzage gebruikerschats?
+    - ENABLE_CODE_INTERPRETER=false                 # Code interpreter inschakelen?
+    - ENABLE_API_KEY=false                          # Inloggen met API-sleutels?
+    - ENABLE_COMMUNITY_SHARING=false                # Delen met andere gebruikers?
+    - ENABLE_MESSAGE_RATING=false                   # AI-antwoorden beoordelen?
+    - ENABLE_EVALUATION_ARENA_MODELS=false          # Modelvergelijking inschakelen?
+    - ENABLE_VERSION_UPDATE_CHECK=false             # Automatische updatecheck?
+    - ENABLE_CHANNELS=false                         # Groepskanalen/kanalenfunctie?
+    - ENABLE_DIRECT_CONNECTIONS=false               # Directe verbindingen tussen gebruikers?
+    - ENABLE_USER_WEBHOOKS=false                    # Webhooks voor gebruikers?
+    - USER_PERMISSIONS_CHAT_CALL=false              # Voice/video call inschakelen?
+    - USER_PERMISSIONS_CHAT_MULTIPLE_MODELS=false   # Meerdere AI-modellen per chat?
+    - USER_PERMISSIONS_FEATURES_WEB_SEARCH=false    # Web search functie?
+    - USER_PERMISSIONS_FEATURES_IMAGE_GENERATION=false # AI-afbeeldingen genereren?
+    - USER_PERMISSIONS_FEATURES_CODE_INTERPRETER=false # Code interpreter toegang?
+    - USER_PERMISSIONS_CHAT_CONTROLS=false          # Extra chatbediening zichtbaar?
+    - VERSIMPELAAR=true                             # 'Versimpelaar' (app) activeren
+
+    # 6. Privacy, analytics & tracking 
+    - SCARF_NO_ANALYTICS=true                       # Geen externe analytics (Scarf)
+    - DO_NOT_TRACK=true                             # 'Niet volgen'-headers instellen
+    - ANONYMIZED_TELEMETRY=true                     # Telemetrie volledig anoniem
+
+    # 7. Database / opslag
+    - DATABASE_URL=postgresql://<db_gebruiker>:<db_wachtwoord>@<db_host>:<db_poort>/<db_naam> # Database verbinding
+
+    # 8. Documentverwerking
+    - CONTENT_EXTRACTION_ENGINE="tika"              # Engine voor documentextractie
+    - TIKA_SERVER_URL="http://tika:9998"            # URL van Tika-server
+
+    # 9. Prompts / promptinstellingen
+    - TITLE_GENERATION_PROMPT_TEMPLATE=$TITLE_GENERATION_PROMPT_TEMPLATE
+    - TAGS_GENERATION_PROMPT_TEMPLATE=$TAGS_GENERATION_PROMPT_TEMPLATE
+    - RAG_TEMPLATE=$RAG_TEMPLATE
+    - DEFAULT_PROMPT_SUGGESTIONS=$DEFAULT_PROMPT_SUGGESTIONS
+
     volumes:
       - ./open-webui:/app/backend/data
+      - ./static:/app/build/static
     depends_on:
-      - ollama
       - litellm
+      - db
     extra_hosts:
       - host.docker.internal:host-gateway
-
-  ollama:
-    image: ollama/ollama:latest
-    restart: always
-    expose:
-      - 11434:11434
-    pull_policy: always
-    tty: true
-    volumes:
-      - ./ollama:/root/.ollama
 
   litellm:
     image: ghcr.io/berriai/litellm:main-latest
@@ -116,64 +144,91 @@ services:
     ports:
       - 4000:4000
     environment:
-      - AZURE_API_KEY=${AZURE_API_KEY}
-      - AZURE_API_BASE=${AZURE_API_BASE}
-      - AZURE_API_VERSION=${AZURE_API_VERSION}
-      - VERTEX_PROJECT=${VERTEX_PROJECT}
-      - VERTEX_LOCATION=${VERTEX_LOCATION}
-      - VERTEX_CREDENTIALS_FILE=${VERTEX_CREDENTIALS_FILE}
+      - AZURE_API_KEY=<AZURE_API_KEY>
+      - AZURE_API_BASE=https://<azure_openai_endpoint>/
+      - AZURE_API_VERSION=2024-05-01-preview
     volumes:
       - ./litellm/litellm_config.yaml:/app/config.yaml
-      - ./litellm/${VERTEX_CREDENTIALS_FILE}:/app/${VERTEX_CREDENTIALS_FILE}
-    command: --config /app/config.yaml --detailed_debug
+    command: --config /app/config.yaml
+
+  tika:
+    image: apache/tika:latest-full
+    container_name: tika
+    restart: unless-stopped
+    ports:
+      - "9998:9998"
+
+  db:
+    image: postgres:16
+    restart: always
+    environment:
+      POSTGRES_DB=<database_naam>
+      POSTGRES_USER=<database_gebruiker>
+      POSTGRES_PASSWORD=<database_wachtwoord>
+    volumes:
+      - openwebui-pgdata:/var/lib/postgresql/data
+    ports:
+      - "<db_poort>:<db_poort>"
+
+volumes:
+  openwebui-pgdata:
 ```
 
-## Stap 3: LiteLLM Configuratie
-Werk de configuratie in `app/litellm/litellm_config.yaml` bij zodat alle gevoelige variabelen worden opgehaald uit de omgevingsvariabelen in het `.env`-bestand:
+### 2.2 LiteLLM Configuratie
+
+LiteLLM fungeert als router én adapter tussen de applicatie (zoals OpenWebUI) en verschillende AI-taalmodellen (bijvoorbeeld van Azure OpenAI). Met LiteLLM kun je meerdere leveranciers en modellen naast elkaar beschikbaar stellen, uitgebreide router-logica zoals load balancing toepassen, het gebruik monitoren en limieten instellen (bijvoorbeeld op groep-niveau).
+
+In dit configuratiebestand stel je in:
+
+- Welke taalmodellen gebruikt worden, en waar die draaien (endpoints/regio’s)
+- Hoe LiteLLM moet verbinden (API-sleutels, versies)
+- (Optioneel) router-logica zoals load balancing en fallback
+- (Optioneel) gebruiksmonitoring en limieten per gebruiker of groep
+
+#### **Voorbeeld** `litellm_config.yaml`
 
 ```
 model_list:
+  # West-Europa endpoint
+  - model_name: azure-gpt-4o
+    litellm_params:
+      model: azure/gpt-4o                         # Modelnaam zoals aangemaakt op Azure OpenAI
+      api_base: <AZURE_API_BASE_WESTEUROPE>       # Voorbeeld: https://<resource>.openai.azure.com/
+      api_key: <AZURE_API_KEY>                    # API key (zet deze altijd in je .env)
+      api_version: 2024-05-01-preview             # API-versie voor Azure OpenAI
+
+  # Frankrijk endpoint
   - model_name: azure-gpt-4o
     litellm_params:
       model: azure/gpt-4o
-      api_base: ${AZURE_API_BASE}
-      api_key: ${AZURE_API_KEY}
-      api_version: ${AZURE_API_VERSION}
+      api_base: <AZURE_API_BASE_FRANCECENTRAL>    # Voorbeeld: https://<resource>.openai.azure.com/
+      api_key: <AZURE_API_KEY>
+      api_version: 2024-05-01-preview
+  
+  ...
 
+  # West-Europa embedding-model
   - model_name: azure-text-embedding-3-large
     litellm_params:
       model: azure/text-embedding-3-large
-      api_base: ${AZURE_API_BASE}
-      api_key: ${AZURE_API_KEY}
-      api_version: ${AZURE_API_VERSION}
+      api_base: <AZURE_API_BASE_WESTEUROPE>       # Zelfde als hierboven, ander deploy-model
+      api_key: <AZURE_API_KEY>
+      api_version: 2024-05-01-preview
 
-  - model_name: azure-deepseek-r1
+  # Frankrijk embedding-model
+  - model_name: azure-text-embedding-3-large
     litellm_params:
-      model: azure_ai/DeepSeek-R1-wlvjj
-      api_base: https://DeepSeek-R1-wlvjj.westus.models.ai.azure.com
-      api_key: ${AZURE_API_KEY}
-      api_version: ${AZURE_API_VERSION}
+      model: azure/text-embedding-3-large
+      api_base: <AZURE_API_BASE_FRANCECENTRAL>
+      api_key: <AZURE_API_KEY>
+      api_version: 2024-05-01-preview
 
-  - model_name: vertex-claude-3.5-sonnet
-    litellm_params:
-      model: vertex_ai/claude-3-5-sonnet@20240620
-      vertex_project: ${VERTEX_PROJECT}
-      vertex_location: ${VERTEX_LOCATION}
-      vertex_credentials: ${VERTEX_CREDENTIALS_FILE}
+router_settings:
+  - routing_strategy: latency-based-routing        # Loadbalancing: automatisch snelste endpoint kiezen
 ```
 
-## Stap 4: LiteLLM Connectie Finaliseren
-Om de verbinding met LiteLLM volledig te configureren, zorg je ervoor dat de API Base URL correct is ingesteld in de beheerdersinstellingen van de webinterface.
+## Opmerkingen
 
-Stappen:
-1. Log in op de Webinterface:
-3. Gebruik je beheerdersaccount om in te loggen.
-3. Klik op Beheerdersinstellingen in het menu.
-4. Ga naar het tabblad Verbindingen .
-5. API Base URL Instellen:
-6. Voeg de volgende waarde toe aan het veld API Base URL bij OpenAI API:
-`http://litellm:4000`
-Dit is de interne URL die door de Docker-containers wordt gebruikt om de LiteLLM-service te bereiken.
-
-7. Opslaan:
-Klik op Opslaan (of de equivalente knop) om de wijzigingen te bevestigen.
+- Gebruik áltijd `.env`-bestanden voor geheime waarden en verwijs in config-bestanden naar variabele namen (zoals `${VAR_NAAM}`), niet naar harde waarden.
+- Kies leveranciers, endpoints en modellen zorgvuldig met oog op betrouwbaarheid én gegevensbescherming (AVG/Privacy).
+- Beperk toegang tot gevoelige functies en beheer gebruikers-/rollen via SSO (bijv. Entra ID).
