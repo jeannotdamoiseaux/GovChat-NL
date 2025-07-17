@@ -3,6 +3,7 @@ import logging
 import os
 import shutil
 import base64
+import redis
 
 from datetime import datetime
 from pathlib import Path
@@ -17,6 +18,9 @@ from open_webui.env import (
     DATA_DIR,
     DATABASE_URL,
     ENV,
+    REDIS_URL,
+    REDIS_SENTINEL_HOSTS,
+    REDIS_SENTINEL_PORT,
     FRONTEND_BUILD_DIR,
     OFFLINE_MODE,
     OPEN_WEBUI_DIR,
@@ -26,6 +30,7 @@ from open_webui.env import (
     log,
 )
 from open_webui.internal.db import Base, get_db
+from open_webui.utils.redis import get_redis_connection
 
 
 class EndpointFilter(logging.Filter):
@@ -104,54 +109,7 @@ if os.path.exists(f"{DATA_DIR}/config.json"):
 
 DEFAULT_CONFIG = {
     "version": 0,
-    "ui": {
-        "default_locale": "",
-        "prompt_suggestions": [
-            {
-                "title": [
-                    "Help me study",
-                    "vocabulary for a college entrance exam",
-                ],
-                "content": "Help me study vocabulary: write a sentence for me to fill in the blank, and I'll try to pick the correct option.",
-            },
-            {
-                "title": [
-                    "Give me ideas",
-                    "for what to do with my kids' art",
-                ],
-                "content": "What are 5 creative things I could do with my kids' art? I don't want to throw them away, but it's also so much clutter.",
-            },
-            {
-                "title": ["Tell me a fun fact", "about the Roman Empire"],
-                "content": "Tell me a random fun fact about the Roman Empire",
-            },
-            {
-                "title": [
-                    "Show me a code snippet",
-                    "of a website's sticky header",
-                ],
-                "content": "Show me a code snippet of a website's sticky header in CSS and JavaScript.",
-            },
-            {
-                "title": [
-                    "Explain options trading",
-                    "if I'm familiar with buying and selling stocks",
-                ],
-                "content": "Explain options trading in simple terms if I'm familiar with buying and selling stocks.",
-            },
-            {
-                "title": ["Overcome procrastination", "give me tips"],
-                "content": "Could you start by asking me about instances when I procrastinate the most and then give me some suggestions to overcome it?",
-            },
-            {
-                "title": [
-                    "Grammar check",
-                    "rewrite it for better readability ",
-                ],
-                "content": 'Check the following sentence for grammar and clarity: "[sentence]". Rewrite it for better readability while maintaining its original meaning.',
-            },
-        ],
-    },
+    "ui": {},
 }
 
 
@@ -196,6 +154,10 @@ def save_config(config):
 
 T = TypeVar("T")
 
+ENABLE_PERSISTENT_CONFIG = (
+    os.environ.get("ENABLE_PERSISTENT_CONFIG", "True").lower() == "true"
+)
+
 
 class PersistentConfig(Generic[T]):
     def __init__(self, env_name: str, config_path: str, env_value: T):
@@ -203,7 +165,7 @@ class PersistentConfig(Generic[T]):
         self.config_path = config_path
         self.env_value = env_value
         self.config_value = get_config_value(config_path)
-        if self.config_value is not None:
+        if self.config_value is not None and ENABLE_PERSISTENT_CONFIG:
             log.info(f"'{env_name}' loaded from the latest database entry")
             self.value = self.config_value
         else:
@@ -248,9 +210,17 @@ class PersistentConfig(Generic[T]):
 
 class AppConfig:
     _state: dict[str, PersistentConfig]
+    _redis: Optional[redis.Redis] = None
 
-    def __init__(self):
+    def __init__(
+        self, redis_url: Optional[str] = None, redis_sentinels: Optional[list] = []
+    ):
         super().__setattr__("_state", {})
+        if redis_url:
+            super().__setattr__(
+                "_redis",
+                get_redis_connection(redis_url, redis_sentinels, decode_responses=True),
+            )
 
     def __setattr__(self, key, value):
         if isinstance(value, PersistentConfig):
@@ -259,7 +229,31 @@ class AppConfig:
             self._state[key].value = value
             self._state[key].save()
 
+            if self._redis:
+                redis_key = f"open-webui:config:{key}"
+                self._redis.set(redis_key, json.dumps(self._state[key].value))
+
     def __getattr__(self, key):
+        if key not in self._state:
+            raise AttributeError(f"Config key '{key}' not found")
+
+        # If Redis is available, check for an updated value
+        if self._redis:
+            redis_key = f"open-webui:config:{key}"
+            redis_value = self._redis.get(redis_key)
+
+            if redis_value is not None:
+                try:
+                    decoded_value = json.loads(redis_value)
+
+                    # Update the in-memory value if different
+                    if self._state[key].value != decoded_value:
+                        self._state[key].value = decoded_value
+                        log.info(f"Updated {key} from Redis: {decoded_value}")
+
+                except json.JSONDecodeError:
+                    log.error(f"Invalid JSON format in Redis for {key}: {redis_value}")
+
         return self._state[key].value
 
 
@@ -294,11 +288,13 @@ JWT_EXPIRES_IN = PersistentConfig(
 # OAuth config
 ####################################
 
+
 ENABLE_OAUTH_SIGNUP = PersistentConfig(
     "ENABLE_OAUTH_SIGNUP",
     "oauth.enable_signup",
     os.environ.get("ENABLE_OAUTH_SIGNUP", "False").lower() == "true",
 )
+
 
 OAUTH_MERGE_ACCOUNTS_BY_EMAIL = PersistentConfig(
     "OAUTH_MERGE_ACCOUNTS_BY_EMAIL",
@@ -417,6 +413,12 @@ OAUTH_SCOPES = PersistentConfig(
     os.environ.get("OAUTH_SCOPES", "openid email profile"),
 )
 
+OAUTH_CODE_CHALLENGE_METHOD = PersistentConfig(
+    "OAUTH_CODE_CHALLENGE_METHOD",
+    "oauth.oidc.code_challenge_method",
+    os.environ.get("OAUTH_CODE_CHALLENGE_METHOD", None),
+)
+
 OAUTH_PROVIDER_NAME = PersistentConfig(
     "OAUTH_PROVIDER_NAME",
     "oauth.oidc.provider_name",
@@ -428,6 +430,7 @@ OAUTH_USERNAME_CLAIM = PersistentConfig(
     "oauth.oidc.username_claim",
     os.environ.get("OAUTH_USERNAME_CLAIM", "name"),
 )
+
 
 OAUTH_PICTURE_CLAIM = PersistentConfig(
     "OAUTH_PICTURE_CLAIM",
@@ -459,6 +462,19 @@ ENABLE_OAUTH_GROUP_MANAGEMENT = PersistentConfig(
     os.environ.get("ENABLE_OAUTH_GROUP_MANAGEMENT", "False").lower() == "true",
 )
 
+ENABLE_OAUTH_GROUP_CREATION = PersistentConfig(
+    "ENABLE_OAUTH_GROUP_CREATION",
+    "oauth.enable_group_creation",
+    os.environ.get("ENABLE_OAUTH_GROUP_CREATION", "False").lower() == "true",
+)
+
+
+OAUTH_BLOCKED_GROUPS = PersistentConfig(
+    "OAUTH_BLOCKED_GROUPS",
+    "oauth.blocked_groups",
+    os.environ.get("OAUTH_BLOCKED_GROUPS", "[]"),
+)
+
 OAUTH_ROLES_CLAIM = PersistentConfig(
     "OAUTH_ROLES_CLAIM",
     "oauth.roles_claim",
@@ -487,6 +503,12 @@ OAUTH_ALLOWED_DOMAINS = PersistentConfig(
         domain.strip()
         for domain in os.environ.get("OAUTH_ALLOWED_DOMAINS", "*").split(",")
     ],
+)
+
+OAUTH_UPDATE_PICTURE_ON_LOGIN = PersistentConfig(
+    "OAUTH_UPDATE_PICTURE_ON_LOGIN",
+    "oauth.update_picture_on_login",
+    os.environ.get("OAUTH_UPDATE_PICTURE_ON_LOGIN", "False").lower() == "true",
 )
 
 
@@ -520,7 +542,7 @@ def load_oauth_providers():
                 name="microsoft",
                 client_id=MICROSOFT_CLIENT_ID.value,
                 client_secret=MICROSOFT_CLIENT_SECRET.value,
-                server_metadata_url=f"https://login.microsoftonline.com/{MICROSOFT_CLIENT_TENANT_ID.value}/v2.0/.well-known/openid-configuration",
+                server_metadata_url=f"https://login.microsoftonline.com/{MICROSOFT_CLIENT_TENANT_ID.value}/v2.0/.well-known/openid-configuration?appid={MICROSOFT_CLIENT_ID.value}",
                 client_kwargs={
                     "scope": MICROSOFT_OAUTH_SCOPE.value,
                 },
@@ -561,14 +583,27 @@ def load_oauth_providers():
     ):
 
         def oidc_oauth_register(client):
+            client_kwargs = {
+                "scope": OAUTH_SCOPES.value,
+            }
+
+            if (
+                OAUTH_CODE_CHALLENGE_METHOD.value
+                and OAUTH_CODE_CHALLENGE_METHOD.value == "S256"
+            ):
+                client_kwargs["code_challenge_method"] = "S256"
+            elif OAUTH_CODE_CHALLENGE_METHOD.value:
+                raise Exception(
+                    'Code challenge methods other than "%s" not supported. Given: "%s"'
+                    % ("S256", OAUTH_CODE_CHALLENGE_METHOD.value)
+                )
+
             client.register(
                 name="oidc",
                 client_id=OAUTH_CLIENT_ID.value,
                 client_secret=OAUTH_CLIENT_SECRET.value,
                 server_metadata_url=OPENID_PROVIDER_URL.value,
-                client_kwargs={
-                    "scope": OAUTH_SCOPES.value,
-                },
+                client_kwargs=client_kwargs,
                 redirect_uri=OPENID_REDIRECT_URI.value,
             )
 
@@ -685,9 +720,10 @@ S3_BUCKET_NAME = os.environ.get("S3_BUCKET_NAME", None)
 S3_KEY_PREFIX = os.environ.get("S3_KEY_PREFIX", None)
 S3_ENDPOINT_URL = os.environ.get("S3_ENDPOINT_URL", None)
 S3_USE_ACCELERATE_ENDPOINT = (
-    os.environ.get("S3_USE_ACCELERATE_ENDPOINT", "False").lower() == "true"
+    os.environ.get("S3_USE_ACCELERATE_ENDPOINT", "false").lower() == "true"
 )
 S3_ADDRESSING_STYLE = os.environ.get("S3_ADDRESSING_STYLE", None)
+S3_ENABLE_TAGGING = os.getenv("S3_ENABLE_TAGGING", "false").lower() == "true"
 
 GCS_BUCKET_NAME = os.environ.get("GCS_BUCKET_NAME", None)
 GOOGLE_APPLICATION_CREDENTIALS_JSON = os.environ.get(
@@ -842,6 +878,25 @@ except Exception:
 OPENAI_API_BASE_URL = "https://api.openai.com/v1"
 
 ####################################
+# TOOL_SERVERS
+####################################
+
+try:
+    tool_server_connections = json.loads(
+        os.environ.get("TOOL_SERVER_CONNECTIONS", "[]")
+    )
+except Exception as e:
+    log.exception(f"Error loading TOOL_SERVER_CONNECTIONS: {e}")
+    tool_server_connections = []
+
+
+TOOL_SERVER_CONNECTIONS = PersistentConfig(
+    "TOOL_SERVER_CONNECTIONS",
+    "tool_server.connections",
+    tool_server_connections,
+)
+
+####################################
 # WEBUI
 ####################################
 
@@ -878,10 +933,15 @@ DEFAULT_MODELS = PersistentConfig(
     "DEFAULT_MODELS", "ui.default_models", os.environ.get("DEFAULT_MODELS", None)
 )
 
-DEFAULT_PROMPT_SUGGESTIONS = PersistentConfig(
-    "DEFAULT_PROMPT_SUGGESTIONS",
-    "ui.prompt_suggestions",
-    [
+try:
+    default_prompt_suggestions = json.loads(
+        os.environ.get("DEFAULT_PROMPT_SUGGESTIONS", "[]")
+    )
+except Exception as e:
+    log.exception(f"Error loading DEFAULT_PROMPT_SUGGESTIONS: {e}")
+    default_prompt_suggestions = []
+if default_prompt_suggestions == []:
+    default_prompt_suggestions = [
         {
             "title": ["Help me study", "vocabulary for a college entrance exam"],
             "content": "Help me study vocabulary: write a sentence for me to fill in the blank, and I'll try to pick the correct option.",
@@ -909,7 +969,12 @@ DEFAULT_PROMPT_SUGGESTIONS = PersistentConfig(
             "title": ["Overcome procrastination", "give me tips"],
             "content": "Could you start by asking me about instances when I procrastinate the most and then give me some suggestions to overcome it?",
         },
-    ],
+    ]
+
+DEFAULT_PROMPT_SUGGESTIONS = PersistentConfig(
+    "DEFAULT_PROMPT_SUGGESTIONS",
+    "ui.prompt_suggestions",
+    default_prompt_suggestions,
 )
 
 MODEL_ORDER_LIST = PersistentConfig(
@@ -923,6 +988,26 @@ DEFAULT_USER_ROLE = PersistentConfig(
     "ui.default_user_role",
     os.getenv("DEFAULT_USER_ROLE", "pending"),
 )
+
+PENDING_USER_OVERLAY_TITLE = PersistentConfig(
+    "PENDING_USER_OVERLAY_TITLE",
+    "ui.pending_user_overlay_title",
+    os.environ.get("PENDING_USER_OVERLAY_TITLE", ""),
+)
+
+PENDING_USER_OVERLAY_CONTENT = PersistentConfig(
+    "PENDING_USER_OVERLAY_CONTENT",
+    "ui.pending_user_overlay_content",
+    os.environ.get("PENDING_USER_OVERLAY_CONTENT", ""),
+)
+
+
+RESPONSE_WATERMARK = PersistentConfig(
+    "RESPONSE_WATERMARK",
+    "ui.watermark",
+    os.environ.get("RESPONSE_WATERMARK", ""),
+)
+
 
 USER_PERMISSIONS_WORKSPACE_MODELS_ACCESS = (
     os.environ.get("USER_PERMISSIONS_WORKSPACE_MODELS_ACCESS", "False").lower()
@@ -943,6 +1028,35 @@ USER_PERMISSIONS_WORKSPACE_TOOLS_ACCESS = (
     os.environ.get("USER_PERMISSIONS_WORKSPACE_TOOLS_ACCESS", "False").lower() == "true"
 )
 
+USER_PERMISSIONS_WORKSPACE_MODELS_ALLOW_PUBLIC_SHARING = (
+    os.environ.get(
+        "USER_PERMISSIONS_WORKSPACE_MODELS_ALLOW_PUBLIC_SHARING", "False"
+    ).lower()
+    == "true"
+)
+
+USER_PERMISSIONS_WORKSPACE_KNOWLEDGE_ALLOW_PUBLIC_SHARING = (
+    os.environ.get(
+        "USER_PERMISSIONS_WORKSPACE_KNOWLEDGE_ALLOW_PUBLIC_SHARING", "False"
+    ).lower()
+    == "true"
+)
+
+USER_PERMISSIONS_WORKSPACE_PROMPTS_ALLOW_PUBLIC_SHARING = (
+    os.environ.get(
+        "USER_PERMISSIONS_WORKSPACE_PROMPTS_ALLOW_PUBLIC_SHARING", "False"
+    ).lower()
+    == "true"
+)
+
+USER_PERMISSIONS_WORKSPACE_TOOLS_ALLOW_PUBLIC_SHARING = (
+    os.environ.get(
+        "USER_PERMISSIONS_WORKSPACE_TOOLS_ALLOW_PUBLIC_SHARING", "False"
+    ).lower()
+    == "true"
+)
+
+
 USER_PERMISSIONS_CHAT_CONTROLS = (
     os.environ.get("USER_PERMISSIONS_CHAT_CONTROLS", "True").lower() == "true"
 )
@@ -959,8 +1073,43 @@ USER_PERMISSIONS_CHAT_EDIT = (
     os.environ.get("USER_PERMISSIONS_CHAT_EDIT", "True").lower() == "true"
 )
 
+USER_PERMISSIONS_CHAT_SHARE = (
+    os.environ.get("USER_PERMISSIONS_CHAT_SHARE", "True").lower() == "true"
+)
+
+USER_PERMISSIONS_CHAT_EXPORT = (
+    os.environ.get("USER_PERMISSIONS_CHAT_EXPORT", "True").lower() == "true"
+)
+
+USER_PERMISSIONS_CHAT_STT = (
+    os.environ.get("USER_PERMISSIONS_CHAT_STT", "True").lower() == "true"
+)
+
+USER_PERMISSIONS_CHAT_TTS = (
+    os.environ.get("USER_PERMISSIONS_CHAT_TTS", "True").lower() == "true"
+)
+
+USER_PERMISSIONS_CHAT_CALL = (
+    os.environ.get("USER_PERMISSIONS_CHAT_CALL", "True").lower() == "true"
+)
+
+USER_PERMISSIONS_CHAT_MULTIPLE_MODELS = (
+    os.environ.get("USER_PERMISSIONS_CHAT_MULTIPLE_MODELS", "True").lower() == "true"
+)
+
 USER_PERMISSIONS_CHAT_TEMPORARY = (
     os.environ.get("USER_PERMISSIONS_CHAT_TEMPORARY", "True").lower() == "true"
+)
+
+USER_PERMISSIONS_CHAT_TEMPORARY_ENFORCED = (
+    os.environ.get("USER_PERMISSIONS_CHAT_TEMPORARY_ENFORCED", "False").lower()
+    == "true"
+)
+
+
+USER_PERMISSIONS_FEATURES_DIRECT_TOOL_SERVERS = (
+    os.environ.get("USER_PERMISSIONS_FEATURES_DIRECT_TOOL_SERVERS", "False").lower()
+    == "true"
 )
 
 USER_PERMISSIONS_FEATURES_WEB_SEARCH = (
@@ -977,6 +1126,19 @@ USER_PERMISSIONS_FEATURES_CODE_INTERPRETER = (
     == "true"
 )
 
+USER_PERMISSIONS_FEATURES_NOTES = (
+    os.environ.get("USER_PERMISSIONS_FEATURES_NOTES", "True").lower() == "true"
+)
+
+####################################
+# AppLauncher Permissies GovChat-NL
+####################################
+
+VERSIMPELAAR = PersistentConfig(
+    "VERSIMPELAAR",
+    "user.permissions.app_launcher.versimpelaar",
+    os.environ.get("VERSIMPELAAR", "True").lower() == "true",
+)
 
 DEFAULT_USER_PERMISSIONS = {
     "workspace": {
@@ -985,18 +1147,36 @@ DEFAULT_USER_PERMISSIONS = {
         "prompts": USER_PERMISSIONS_WORKSPACE_PROMPTS_ACCESS,
         "tools": USER_PERMISSIONS_WORKSPACE_TOOLS_ACCESS,
     },
+    "sharing": {
+        "public_models": USER_PERMISSIONS_WORKSPACE_MODELS_ALLOW_PUBLIC_SHARING,
+        "public_knowledge": USER_PERMISSIONS_WORKSPACE_KNOWLEDGE_ALLOW_PUBLIC_SHARING,
+        "public_prompts": USER_PERMISSIONS_WORKSPACE_PROMPTS_ALLOW_PUBLIC_SHARING,
+        "public_tools": USER_PERMISSIONS_WORKSPACE_TOOLS_ALLOW_PUBLIC_SHARING,
+    },
     "chat": {
         "controls": USER_PERMISSIONS_CHAT_CONTROLS,
         "file_upload": USER_PERMISSIONS_CHAT_FILE_UPLOAD,
         "delete": USER_PERMISSIONS_CHAT_DELETE,
         "edit": USER_PERMISSIONS_CHAT_EDIT,
+        "share": USER_PERMISSIONS_CHAT_SHARE,
+        "export": USER_PERMISSIONS_CHAT_EXPORT,
+        "stt": USER_PERMISSIONS_CHAT_STT,
+        "tts": USER_PERMISSIONS_CHAT_TTS,
+        "call": USER_PERMISSIONS_CHAT_CALL,
+        "multiple_models": USER_PERMISSIONS_CHAT_MULTIPLE_MODELS,
         "temporary": USER_PERMISSIONS_CHAT_TEMPORARY,
+        "temporary_enforced": USER_PERMISSIONS_CHAT_TEMPORARY_ENFORCED,
     },
     "features": {
+        "direct_tool_servers": USER_PERMISSIONS_FEATURES_DIRECT_TOOL_SERVERS,
         "web_search": USER_PERMISSIONS_FEATURES_WEB_SEARCH,
         "image_generation": USER_PERMISSIONS_FEATURES_IMAGE_GENERATION,
         "code_interpreter": USER_PERMISSIONS_FEATURES_CODE_INTERPRETER,
+        "notes": USER_PERMISSIONS_FEATURES_NOTES,
     },
+    "app_launcher": {
+        "versimpelaar": VERSIMPELAAR.value
+    }
 }
 
 USER_PERMISSIONS = PersistentConfig(
@@ -1011,6 +1191,11 @@ ENABLE_CHANNELS = PersistentConfig(
     os.environ.get("ENABLE_CHANNELS", "False").lower() == "true",
 )
 
+ENABLE_NOTES = PersistentConfig(
+    "ENABLE_NOTES",
+    "notes.enable",
+    os.environ.get("ENABLE_NOTES", "True").lower() == "true",
+)
 
 ENABLE_EVALUATION_ARENA_MODELS = PersistentConfig(
     "ENABLE_EVALUATION_ARENA_MODELS",
@@ -1055,6 +1240,24 @@ ENABLE_MESSAGE_RATING = PersistentConfig(
     os.environ.get("ENABLE_MESSAGE_RATING", "True").lower() == "true",
 )
 
+ENABLE_USER_WEBHOOKS = PersistentConfig(
+    "ENABLE_USER_WEBHOOKS",
+    "ui.enable_user_webhooks",
+    os.environ.get("ENABLE_USER_WEBHOOKS", "True").lower() == "true",
+)
+
+# FastAPI / AnyIO settings
+THREAD_POOL_SIZE = os.getenv("THREAD_POOL_SIZE", None)
+
+if THREAD_POOL_SIZE is not None and isinstance(THREAD_POOL_SIZE, str):
+    try:
+        THREAD_POOL_SIZE = int(THREAD_POOL_SIZE)
+    except ValueError:
+        log.warning(
+            f"THREAD_POOL_SIZE is not a valid integer: {THREAD_POOL_SIZE}. Defaulting to None."
+        )
+        THREAD_POOL_SIZE = None
+
 
 def validate_cors_origins(origins):
     for origin in origins:
@@ -1081,7 +1284,9 @@ def validate_cors_origin(origin):
 # To test CORS_ALLOW_ORIGIN locally, you can set something like
 # CORS_ALLOW_ORIGIN=http://localhost:5173;http://localhost:8080
 # in your .env file depending on your frontend port, 5173 in this case.
-CORS_ALLOW_ORIGIN = os.environ.get("CORS_ALLOW_ORIGIN", "*").split(";")
+CORS_ALLOW_ORIGIN = os.environ.get(
+    "CORS_ALLOW_ORIGIN", "*;http://localhost:5173;http://localhost:8080"
+).split(";")
 
 if "*" in CORS_ALLOW_ORIGIN:
     log.warning(
@@ -1153,6 +1358,9 @@ Generate a concise, 3-5 word title with an emoji summarizing the chat history.
 - Use emojis that enhance understanding of the topic, but avoid quotation marks or special formatting.
 - Write the title in the chat's primary language; default to English if multilingual.
 - Prioritize accuracy over excessive creativity; keep it clear and simple.
+- Your entire response must consist solely of the JSON object, without any introductory or concluding text.
+- The output must be a single, raw JSON object, without any markdown code fences or other encapsulating text.
+- Ensure no conversational text, affirmations, or explanations precede or follow the raw JSON output, as this will cause direct parsing failure.
 ### Output:
 JSON format: { "title": "your concise title here" }
 ### Examples:
@@ -1276,7 +1484,7 @@ Strictly return in JSON format:
 ENABLE_AUTOCOMPLETE_GENERATION = PersistentConfig(
     "ENABLE_AUTOCOMPLETE_GENERATION",
     "task.autocomplete.enable",
-    os.environ.get("ENABLE_AUTOCOMPLETE_GENERATION", "True").lower() == "true",
+    os.environ.get("ENABLE_AUTOCOMPLETE_GENERATION", "False").lower() == "true",
 )
 
 AUTOCOMPLETE_GENERATION_INPUT_MAX_LENGTH = PersistentConfig(
@@ -1495,7 +1703,8 @@ DEFAULT_CODE_INTERPRETER_PROMPT = """
 1. **Code Interpreter**: `<code_interpreter type="code" lang="python"></code_interpreter>`
    - You have access to a Python shell that runs directly in the user's browser, enabling fast execution of code for analysis, calculations, or problem-solving.  Use it in this response.
    - The Python code you write can incorporate a wide array of libraries, handle data manipulation or visualization, perform API calls for web-related tasks, or tackle virtually any computational challenge. Use this flexibility to **think outside the box, craft elegant solutions, and harness Python's full potential**.
-   - To use it, **you must enclose your code within `<code_interpreter type="code" lang="python">` XML tags** and stop right away. If you don't, the code won't execute. Do NOT use triple backticks.
+   - To use it, **you must enclose your code within `<code_interpreter type="code" lang="python">` XML tags** and stop right away. If you don't, the code won't execute. 
+   - When writing code in the code_interpreter XML tag, Do NOT use the triple backticks code block for markdown formatting, example: ```py # python code ``` will cause an error because it is markdown formatting, it is not python code.
    - When coding, **always aim to print meaningful outputs** (e.g., results, tables, summaries, or visuals) to better interpret and verify the findings. Avoid relying on implicit outputs; prioritize explicit and clear print statements so the results are effectively communicated to the user.  
    - After obtaining the printed output, **always provide a concise analysis, interpretation, or next steps to help the user understand the findings or refine the outcome further.**  
    - If the results are unclear, unexpected, or require validation, refine the code and execute it again as needed. Always aim to deliver meaningful insights from the results, iterating if necessary.  
@@ -1542,14 +1751,28 @@ MILVUS_URI = os.environ.get("MILVUS_URI", f"{DATA_DIR}/vector_db/milvus.db")
 MILVUS_DB = os.environ.get("MILVUS_DB", "default")
 MILVUS_TOKEN = os.environ.get("MILVUS_TOKEN", None)
 
+MILVUS_INDEX_TYPE = os.environ.get("MILVUS_INDEX_TYPE", "HNSW")
+MILVUS_METRIC_TYPE = os.environ.get("MILVUS_METRIC_TYPE", "COSINE")
+MILVUS_HNSW_M = int(os.environ.get("MILVUS_HNSW_M", "16"))
+MILVUS_HNSW_EFCONSTRUCTION = int(os.environ.get("MILVUS_HNSW_EFCONSTRUCTION", "100"))
+MILVUS_IVF_FLAT_NLIST = int(os.environ.get("MILVUS_IVF_FLAT_NLIST", "128"))
+
 # Qdrant
 QDRANT_URI = os.environ.get("QDRANT_URI", None)
 QDRANT_API_KEY = os.environ.get("QDRANT_API_KEY", None)
+QDRANT_ON_DISK = os.environ.get("QDRANT_ON_DISK", "false").lower() == "true"
+QDRANT_PREFER_GRPC = os.environ.get("QDRANT_PREFER_GRPC", "False").lower() == "true"
+QDRANT_GRPC_PORT = int(os.environ.get("QDRANT_GRPC_PORT", "6334"))
+ENABLE_QDRANT_MULTITENANCY_MODE = (
+    os.environ.get("ENABLE_QDRANT_MULTITENANCY_MODE", "false").lower() == "true"
+)
 
 # OpenSearch
 OPENSEARCH_URI = os.environ.get("OPENSEARCH_URI", "https://localhost:9200")
-OPENSEARCH_SSL = os.environ.get("OPENSEARCH_SSL", True)
-OPENSEARCH_CERT_VERIFY = os.environ.get("OPENSEARCH_CERT_VERIFY", False)
+OPENSEARCH_SSL = os.environ.get("OPENSEARCH_SSL", "true").lower() == "true"
+OPENSEARCH_CERT_VERIFY = (
+    os.environ.get("OPENSEARCH_CERT_VERIFY", "false").lower() == "true"
+)
 OPENSEARCH_USERNAME = os.environ.get("OPENSEARCH_USERNAME", None)
 OPENSEARCH_PASSWORD = os.environ.get("OPENSEARCH_PASSWORD", None)
 
@@ -1573,6 +1796,14 @@ if VECTOR_DB == "pgvector" and not PGVECTOR_DB_URL.startswith("postgres"):
 PGVECTOR_INITIALIZE_MAX_VECTOR_LENGTH = int(
     os.environ.get("PGVECTOR_INITIALIZE_MAX_VECTOR_LENGTH", "1536")
 )
+
+# Pinecone
+PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY", None)
+PINECONE_ENVIRONMENT = os.environ.get("PINECONE_ENVIRONMENT", None)
+PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "open-webui-index")
+PINECONE_DIMENSION = int(os.getenv("PINECONE_DIMENSION", 1536))  # or 3072, 1024, 768
+PINECONE_METRIC = os.getenv("PINECONE_METRIC", "cosine")
+PINECONE_CLOUD = os.getenv("PINECONE_CLOUD", "aws")  # or "gcp" or "azure"
 
 ####################################
 # Information Retrieval (RAG)
@@ -1610,6 +1841,18 @@ ONEDRIVE_CLIENT_ID = PersistentConfig(
     os.environ.get("ONEDRIVE_CLIENT_ID", ""),
 )
 
+ONEDRIVE_SHAREPOINT_URL = PersistentConfig(
+    "ONEDRIVE_SHAREPOINT_URL",
+    "onedrive.sharepoint_url",
+    os.environ.get("ONEDRIVE_SHAREPOINT_URL", ""),
+)
+
+ONEDRIVE_SHAREPOINT_TENANT_ID = PersistentConfig(
+    "ONEDRIVE_SHAREPOINT_TENANT_ID",
+    "onedrive.sharepoint_tenant_id",
+    os.environ.get("ONEDRIVE_SHAREPOINT_TENANT_ID", ""),
+)
+
 # RAG Content Extraction
 CONTENT_EXTRACTION_ENGINE = PersistentConfig(
     "CONTENT_EXTRACTION_ENGINE",
@@ -1617,10 +1860,101 @@ CONTENT_EXTRACTION_ENGINE = PersistentConfig(
     os.environ.get("CONTENT_EXTRACTION_ENGINE", "").lower(),
 )
 
+DATALAB_MARKER_API_KEY = PersistentConfig(
+    "DATALAB_MARKER_API_KEY",
+    "rag.datalab_marker_api_key",
+    os.environ.get("DATALAB_MARKER_API_KEY", ""),
+)
+
+DATALAB_MARKER_LANGS = PersistentConfig(
+    "DATALAB_MARKER_LANGS",
+    "rag.datalab_marker_langs",
+    os.environ.get("DATALAB_MARKER_LANGS", ""),
+)
+
+DATALAB_MARKER_USE_LLM = PersistentConfig(
+    "DATALAB_MARKER_USE_LLM",
+    "rag.DATALAB_MARKER_USE_LLM",
+    os.environ.get("DATALAB_MARKER_USE_LLM", "false").lower() == "true",
+)
+
+DATALAB_MARKER_SKIP_CACHE = PersistentConfig(
+    "DATALAB_MARKER_SKIP_CACHE",
+    "rag.datalab_marker_skip_cache",
+    os.environ.get("DATALAB_MARKER_SKIP_CACHE", "false").lower() == "true",
+)
+
+DATALAB_MARKER_FORCE_OCR = PersistentConfig(
+    "DATALAB_MARKER_FORCE_OCR",
+    "rag.datalab_marker_force_ocr",
+    os.environ.get("DATALAB_MARKER_FORCE_OCR", "false").lower() == "true",
+)
+
+DATALAB_MARKER_PAGINATE = PersistentConfig(
+    "DATALAB_MARKER_PAGINATE",
+    "rag.datalab_marker_paginate",
+    os.environ.get("DATALAB_MARKER_PAGINATE", "false").lower() == "true",
+)
+
+DATALAB_MARKER_STRIP_EXISTING_OCR = PersistentConfig(
+    "DATALAB_MARKER_STRIP_EXISTING_OCR",
+    "rag.datalab_marker_strip_existing_ocr",
+    os.environ.get("DATALAB_MARKER_STRIP_EXISTING_OCR", "false").lower() == "true",
+)
+
+DATALAB_MARKER_DISABLE_IMAGE_EXTRACTION = PersistentConfig(
+    "DATALAB_MARKER_DISABLE_IMAGE_EXTRACTION",
+    "rag.datalab_marker_disable_image_extraction",
+    os.environ.get("DATALAB_MARKER_DISABLE_IMAGE_EXTRACTION", "false").lower()
+    == "true",
+)
+
+DATALAB_MARKER_OUTPUT_FORMAT = PersistentConfig(
+    "DATALAB_MARKER_OUTPUT_FORMAT",
+    "rag.datalab_marker_output_format",
+    os.environ.get("DATALAB_MARKER_OUTPUT_FORMAT", "markdown"),
+)
+
+EXTERNAL_DOCUMENT_LOADER_URL = PersistentConfig(
+    "EXTERNAL_DOCUMENT_LOADER_URL",
+    "rag.external_document_loader_url",
+    os.environ.get("EXTERNAL_DOCUMENT_LOADER_URL", ""),
+)
+
+EXTERNAL_DOCUMENT_LOADER_API_KEY = PersistentConfig(
+    "EXTERNAL_DOCUMENT_LOADER_API_KEY",
+    "rag.external_document_loader_api_key",
+    os.environ.get("EXTERNAL_DOCUMENT_LOADER_API_KEY", ""),
+)
+
 TIKA_SERVER_URL = PersistentConfig(
     "TIKA_SERVER_URL",
     "rag.tika_server_url",
     os.getenv("TIKA_SERVER_URL", "http://tika:9998"),  # Default for sidecar deployment
+)
+
+DOCLING_SERVER_URL = PersistentConfig(
+    "DOCLING_SERVER_URL",
+    "rag.docling_server_url",
+    os.getenv("DOCLING_SERVER_URL", "http://docling:5001"),
+)
+
+DOCLING_OCR_ENGINE = PersistentConfig(
+    "DOCLING_OCR_ENGINE",
+    "rag.docling_ocr_engine",
+    os.getenv("DOCLING_OCR_ENGINE", "tesseract"),
+)
+
+DOCLING_OCR_LANG = PersistentConfig(
+    "DOCLING_OCR_LANG",
+    "rag.docling_ocr_lang",
+    os.getenv("DOCLING_OCR_LANG", "eng,fra,deu,spa"),
+)
+
+DOCLING_DO_PICTURE_DESCRIPTION = PersistentConfig(
+    "DOCLING_DO_PICTURE_DESCRIPTION",
+    "rag.docling_do_picture_description",
+    os.getenv("DOCLING_DO_PICTURE_DESCRIPTION", "False").lower() == "true",
 )
 
 DOCUMENT_INTELLIGENCE_ENDPOINT = PersistentConfig(
@@ -1635,6 +1969,11 @@ DOCUMENT_INTELLIGENCE_KEY = PersistentConfig(
     os.getenv("DOCUMENT_INTELLIGENCE_KEY", ""),
 )
 
+MISTRAL_OCR_API_KEY = PersistentConfig(
+    "MISTRAL_OCR_API_KEY",
+    "rag.mistral_ocr_api_key",
+    os.getenv("MISTRAL_OCR_API_KEY", ""),
+)
 
 BYPASS_EMBEDDING_AND_RETRIEVAL = PersistentConfig(
     "BYPASS_EMBEDDING_AND_RETRIEVAL",
@@ -1646,10 +1985,20 @@ BYPASS_EMBEDDING_AND_RETRIEVAL = PersistentConfig(
 RAG_TOP_K = PersistentConfig(
     "RAG_TOP_K", "rag.top_k", int(os.environ.get("RAG_TOP_K", "3"))
 )
+RAG_TOP_K_RERANKER = PersistentConfig(
+    "RAG_TOP_K_RERANKER",
+    "rag.top_k_reranker",
+    int(os.environ.get("RAG_TOP_K_RERANKER", "3")),
+)
 RAG_RELEVANCE_THRESHOLD = PersistentConfig(
     "RAG_RELEVANCE_THRESHOLD",
     "rag.relevance_threshold",
     float(os.environ.get("RAG_RELEVANCE_THRESHOLD", "0.0")),
+)
+RAG_HYBRID_BM25_WEIGHT = PersistentConfig(
+    "RAG_HYBRID_BM25_WEIGHT",
+    "rag.hybrid_bm25_weight",
+    float(os.environ.get("RAG_HYBRID_BM25_WEIGHT", "0.5")),
 )
 
 ENABLE_RAG_HYBRID_SEARCH = PersistentConfig(
@@ -1684,10 +2033,14 @@ RAG_FILE_MAX_SIZE = PersistentConfig(
     ),
 )
 
-ENABLE_RAG_WEB_LOADER_SSL_VERIFICATION = PersistentConfig(
-    "ENABLE_RAG_WEB_LOADER_SSL_VERIFICATION",
-    "rag.enable_web_loader_ssl_verification",
-    os.environ.get("ENABLE_RAG_WEB_LOADER_SSL_VERIFICATION", "True").lower() == "true",
+RAG_ALLOWED_FILE_EXTENSIONS = PersistentConfig(
+    "RAG_ALLOWED_FILE_EXTENSIONS",
+    "rag.file.allowed_extensions",
+    [
+        ext.strip()
+        for ext in os.environ.get("RAG_ALLOWED_FILE_EXTENSIONS", "").split(",")
+        if ext.strip()
+    ],
 )
 
 RAG_EMBEDDING_ENGINE = PersistentConfig(
@@ -1727,6 +2080,20 @@ RAG_EMBEDDING_BATCH_SIZE = PersistentConfig(
     ),
 )
 
+RAG_EMBEDDING_QUERY_PREFIX = os.environ.get("RAG_EMBEDDING_QUERY_PREFIX", None)
+
+RAG_EMBEDDING_CONTENT_PREFIX = os.environ.get("RAG_EMBEDDING_CONTENT_PREFIX", None)
+
+RAG_EMBEDDING_PREFIX_FIELD_NAME = os.environ.get(
+    "RAG_EMBEDDING_PREFIX_FIELD_NAME", None
+)
+
+RAG_RERANKING_ENGINE = PersistentConfig(
+    "RAG_RERANKING_ENGINE",
+    "rag.reranking_engine",
+    os.environ.get("RAG_RERANKING_ENGINE", ""),
+)
+
 RAG_RERANKING_MODEL = PersistentConfig(
     "RAG_RERANKING_MODEL",
     "rag.reranking_model",
@@ -1735,6 +2102,7 @@ RAG_RERANKING_MODEL = PersistentConfig(
 if RAG_RERANKING_MODEL.value != "":
     log.info(f"Reranking model set: {RAG_RERANKING_MODEL.value}")
 
+
 RAG_RERANKING_MODEL_AUTO_UPDATE = (
     not OFFLINE_MODE
     and os.environ.get("RAG_RERANKING_MODEL_AUTO_UPDATE", "True").lower() == "true"
@@ -1742,6 +2110,18 @@ RAG_RERANKING_MODEL_AUTO_UPDATE = (
 
 RAG_RERANKING_MODEL_TRUST_REMOTE_CODE = (
     os.environ.get("RAG_RERANKING_MODEL_TRUST_REMOTE_CODE", "True").lower() == "true"
+)
+
+RAG_EXTERNAL_RERANKER_URL = PersistentConfig(
+    "RAG_EXTERNAL_RERANKER_URL",
+    "rag.external_reranker_url",
+    os.environ.get("RAG_EXTERNAL_RERANKER_URL", ""),
+)
+
+RAG_EXTERNAL_RERANKER_API_KEY = PersistentConfig(
+    "RAG_EXTERNAL_RERANKER_API_KEY",
+    "rag.external_reranker_api_key",
+    os.environ.get("RAG_EXTERNAL_RERANKER_API_KEY", ""),
 )
 
 
@@ -1770,7 +2150,7 @@ CHUNK_OVERLAP = PersistentConfig(
 )
 
 DEFAULT_RAG_TEMPLATE = """### Task:
-Respond to the user query using the provided context, incorporating inline citations in the format [source_id] **only when the <source_id> tag is explicitly provided** in the context.
+Respond to the user query using the provided context, incorporating inline citations in the format [id] **only when the <source> tag includes an explicit id attribute** (e.g., <source id="1">).
 
 ### Guidelines:
 - If you don't know the answer, clearly state that.
@@ -1778,18 +2158,17 @@ Respond to the user query using the provided context, incorporating inline citat
 - Respond in the same language as the user's query.
 - If the context is unreadable or of poor quality, inform the user and provide the best possible answer.
 - If the answer isn't present in the context but you possess the knowledge, explain this to the user and provide the answer using your own understanding.
-- **Only include inline citations using [source_id] (e.g., [1], [2]) when a `<source_id>` tag is explicitly provided in the context.**
-- Do not cite if the <source_id> tag is not provided in the context.  
+- **Only include inline citations using [id] (e.g., [1], [2]) when the <source> tag includes an id attribute.**
+- Do not cite if the <source> tag does not contain an id attribute.
 - Do not use XML tags in your response.
 - Ensure citations are concise and directly related to the information provided.
 
 ### Example of Citation:
-If the user asks about a specific topic and the information is found in "whitepaper.pdf" with a provided <source_id>, the response should include the citation like so:  
-* "According to the study, the proposed method increases efficiency by 20% [whitepaper.pdf]."
-If no <source_id> is present, the response should omit the citation.
+If the user asks about a specific topic and the information is found in a source with a provided id attribute, the response should include the citation like in the following example:
+* "According to the study, the proposed method increases efficiency by 20% [1]."
 
 ### Output:
-Provide a clear and direct response to the user's query, including inline citations in the format [source_id] only when the <source_id> tag is present in the context.
+Provide a clear and direct response to the user's query, including inline citations in the format [id] only when the <source> tag with id attribute is present in the context.
 
 <context>
 {{CONTEXT}}
@@ -1815,6 +2194,22 @@ RAG_OPENAI_API_KEY = PersistentConfig(
     "RAG_OPENAI_API_KEY",
     "rag.openai_api_key",
     os.getenv("RAG_OPENAI_API_KEY", OPENAI_API_KEY),
+)
+
+RAG_AZURE_OPENAI_BASE_URL = PersistentConfig(
+    "RAG_AZURE_OPENAI_BASE_URL",
+    "rag.azure_openai.base_url",
+    os.getenv("RAG_AZURE_OPENAI_BASE_URL", ""),
+)
+RAG_AZURE_OPENAI_API_KEY = PersistentConfig(
+    "RAG_AZURE_OPENAI_API_KEY",
+    "rag.azure_openai.api_key",
+    os.getenv("RAG_AZURE_OPENAI_API_KEY", ""),
+)
+RAG_AZURE_OPENAI_API_VERSION = PersistentConfig(
+    "RAG_AZURE_OPENAI_API_VERSION",
+    "rag.azure_openai.api_version",
+    os.getenv("RAG_AZURE_OPENAI_API_VERSION", ""),
 )
 
 RAG_OLLAMA_BASE_URL = PersistentConfig(
@@ -1847,16 +2242,20 @@ YOUTUBE_LOADER_PROXY_URL = PersistentConfig(
 )
 
 
-ENABLE_RAG_WEB_SEARCH = PersistentConfig(
-    "ENABLE_RAG_WEB_SEARCH",
+####################################
+# Web Search (RAG)
+####################################
+
+ENABLE_WEB_SEARCH = PersistentConfig(
+    "ENABLE_WEB_SEARCH",
     "rag.web.search.enable",
-    os.getenv("ENABLE_RAG_WEB_SEARCH", "False").lower() == "true",
+    os.getenv("ENABLE_WEB_SEARCH", "False").lower() == "true",
 )
 
-RAG_WEB_SEARCH_ENGINE = PersistentConfig(
-    "RAG_WEB_SEARCH_ENGINE",
+WEB_SEARCH_ENGINE = PersistentConfig(
+    "WEB_SEARCH_ENGINE",
     "rag.web.search.engine",
-    os.getenv("RAG_WEB_SEARCH_ENGINE", ""),
+    os.getenv("WEB_SEARCH_ENGINE", ""),
 )
 
 BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL = PersistentConfig(
@@ -1865,10 +2264,24 @@ BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL = PersistentConfig(
     os.getenv("BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL", "False").lower() == "true",
 )
 
+
+BYPASS_WEB_SEARCH_WEB_LOADER = PersistentConfig(
+    "BYPASS_WEB_SEARCH_WEB_LOADER",
+    "rag.web.search.bypass_web_loader",
+    os.getenv("BYPASS_WEB_SEARCH_WEB_LOADER", "False").lower() == "true",
+)
+
+WEB_SEARCH_RESULT_COUNT = PersistentConfig(
+    "WEB_SEARCH_RESULT_COUNT",
+    "rag.web.search.result_count",
+    int(os.getenv("WEB_SEARCH_RESULT_COUNT", "3")),
+)
+
+
 # You can provide a list of your own websites to filter after performing a web search.
 # This ensures the highest level of safety and reliability of the information sources.
-RAG_WEB_SEARCH_DOMAIN_FILTER_LIST = PersistentConfig(
-    "RAG_WEB_SEARCH_DOMAIN_FILTER_LIST",
+WEB_SEARCH_DOMAIN_FILTER_LIST = PersistentConfig(
+    "WEB_SEARCH_DOMAIN_FILTER_LIST",
     "rag.web.search.domain.filter_list",
     [
         # "wikipedia.com",
@@ -1877,11 +2290,54 @@ RAG_WEB_SEARCH_DOMAIN_FILTER_LIST = PersistentConfig(
     ],
 )
 
+WEB_SEARCH_CONCURRENT_REQUESTS = PersistentConfig(
+    "WEB_SEARCH_CONCURRENT_REQUESTS",
+    "rag.web.search.concurrent_requests",
+    int(os.getenv("WEB_SEARCH_CONCURRENT_REQUESTS", "10")),
+)
+
+
+WEB_LOADER_ENGINE = PersistentConfig(
+    "WEB_LOADER_ENGINE",
+    "rag.web.loader.engine",
+    os.environ.get("WEB_LOADER_ENGINE", ""),
+)
+
+ENABLE_WEB_LOADER_SSL_VERIFICATION = PersistentConfig(
+    "ENABLE_WEB_LOADER_SSL_VERIFICATION",
+    "rag.web.loader.ssl_verification",
+    os.environ.get("ENABLE_WEB_LOADER_SSL_VERIFICATION", "True").lower() == "true",
+)
+
+WEB_SEARCH_TRUST_ENV = PersistentConfig(
+    "WEB_SEARCH_TRUST_ENV",
+    "rag.web.search.trust_env",
+    os.getenv("WEB_SEARCH_TRUST_ENV", "False").lower() == "true",
+)
+
 
 SEARXNG_QUERY_URL = PersistentConfig(
     "SEARXNG_QUERY_URL",
     "rag.web.search.searxng_query_url",
     os.getenv("SEARXNG_QUERY_URL", ""),
+)
+
+YACY_QUERY_URL = PersistentConfig(
+    "YACY_QUERY_URL",
+    "rag.web.search.yacy_query_url",
+    os.getenv("YACY_QUERY_URL", ""),
+)
+
+YACY_USERNAME = PersistentConfig(
+    "YACY_USERNAME",
+    "rag.web.search.yacy_username",
+    os.getenv("YACY_USERNAME", ""),
+)
+
+YACY_PASSWORD = PersistentConfig(
+    "YACY_PASSWORD",
+    "rag.web.search.yacy_password",
+    os.getenv("YACY_PASSWORD", ""),
 )
 
 GOOGLE_PSE_API_KEY = PersistentConfig(
@@ -1944,12 +2400,6 @@ SERPLY_API_KEY = PersistentConfig(
     os.getenv("SERPLY_API_KEY", ""),
 )
 
-TAVILY_API_KEY = PersistentConfig(
-    "TAVILY_API_KEY",
-    "rag.web.search.tavily_api_key",
-    os.getenv("TAVILY_API_KEY", ""),
-)
-
 JINA_API_KEY = PersistentConfig(
     "JINA_API_KEY",
     "rag.web.search.jina_api_key",
@@ -2006,46 +2456,76 @@ PERPLEXITY_API_KEY = PersistentConfig(
     os.getenv("PERPLEXITY_API_KEY", ""),
 )
 
-RAG_WEB_SEARCH_RESULT_COUNT = PersistentConfig(
-    "RAG_WEB_SEARCH_RESULT_COUNT",
-    "rag.web.search.result_count",
-    int(os.getenv("RAG_WEB_SEARCH_RESULT_COUNT", "3")),
+SOUGOU_API_SID = PersistentConfig(
+    "SOUGOU_API_SID",
+    "rag.web.search.sougou_api_sid",
+    os.getenv("SOUGOU_API_SID", ""),
 )
 
-RAG_WEB_SEARCH_CONCURRENT_REQUESTS = PersistentConfig(
-    "RAG_WEB_SEARCH_CONCURRENT_REQUESTS",
-    "rag.web.search.concurrent_requests",
-    int(os.getenv("RAG_WEB_SEARCH_CONCURRENT_REQUESTS", "10")),
+SOUGOU_API_SK = PersistentConfig(
+    "SOUGOU_API_SK",
+    "rag.web.search.sougou_api_sk",
+    os.getenv("SOUGOU_API_SK", ""),
 )
 
-RAG_WEB_LOADER_ENGINE = PersistentConfig(
-    "RAG_WEB_LOADER_ENGINE",
-    "rag.web.loader.engine",
-    os.environ.get("RAG_WEB_LOADER_ENGINE", "safe_web"),
+TAVILY_API_KEY = PersistentConfig(
+    "TAVILY_API_KEY",
+    "rag.web.search.tavily_api_key",
+    os.getenv("TAVILY_API_KEY", ""),
 )
 
-RAG_WEB_SEARCH_TRUST_ENV = PersistentConfig(
-    "RAG_WEB_SEARCH_TRUST_ENV",
-    "rag.web.search.trust_env",
-    os.getenv("RAG_WEB_SEARCH_TRUST_ENV", "False").lower() == "true",
+TAVILY_EXTRACT_DEPTH = PersistentConfig(
+    "TAVILY_EXTRACT_DEPTH",
+    "rag.web.search.tavily_extract_depth",
+    os.getenv("TAVILY_EXTRACT_DEPTH", "basic"),
 )
 
-PLAYWRIGHT_WS_URI = PersistentConfig(
-    "PLAYWRIGHT_WS_URI",
-    "rag.web.loader.engine.playwright.ws.uri",
-    os.environ.get("PLAYWRIGHT_WS_URI", None),
+PLAYWRIGHT_WS_URL = PersistentConfig(
+    "PLAYWRIGHT_WS_URL",
+    "rag.web.loader.playwright_ws_url",
+    os.environ.get("PLAYWRIGHT_WS_URL", ""),
+)
+
+PLAYWRIGHT_TIMEOUT = PersistentConfig(
+    "PLAYWRIGHT_TIMEOUT",
+    "rag.web.loader.playwright_timeout",
+    int(os.environ.get("PLAYWRIGHT_TIMEOUT", "10000")),
 )
 
 FIRECRAWL_API_KEY = PersistentConfig(
     "FIRECRAWL_API_KEY",
-    "firecrawl.api_key",
+    "rag.web.loader.firecrawl_api_key",
     os.environ.get("FIRECRAWL_API_KEY", ""),
 )
 
 FIRECRAWL_API_BASE_URL = PersistentConfig(
     "FIRECRAWL_API_BASE_URL",
-    "firecrawl.api_url",
+    "rag.web.loader.firecrawl_api_url",
     os.environ.get("FIRECRAWL_API_BASE_URL", "https://api.firecrawl.dev"),
+)
+
+EXTERNAL_WEB_SEARCH_URL = PersistentConfig(
+    "EXTERNAL_WEB_SEARCH_URL",
+    "rag.web.search.external_web_search_url",
+    os.environ.get("EXTERNAL_WEB_SEARCH_URL", ""),
+)
+
+EXTERNAL_WEB_SEARCH_API_KEY = PersistentConfig(
+    "EXTERNAL_WEB_SEARCH_API_KEY",
+    "rag.web.search.external_web_search_api_key",
+    os.environ.get("EXTERNAL_WEB_SEARCH_API_KEY", ""),
+)
+
+EXTERNAL_WEB_LOADER_URL = PersistentConfig(
+    "EXTERNAL_WEB_LOADER_URL",
+    "rag.web.loader.external_web_loader_url",
+    os.environ.get("EXTERNAL_WEB_LOADER_URL", ""),
+)
+
+EXTERNAL_WEB_LOADER_API_KEY = PersistentConfig(
+    "EXTERNAL_WEB_LOADER_API_KEY",
+    "rag.web.loader.external_web_loader_api_key",
+    os.environ.get("EXTERNAL_WEB_LOADER_API_KEY", ""),
 )
 
 ####################################
@@ -2300,12 +2780,21 @@ WHISPER_MODEL_AUTO_UPDATE = (
     and os.environ.get("WHISPER_MODEL_AUTO_UPDATE", "").lower() == "true"
 )
 
+WHISPER_VAD_FILTER = PersistentConfig(
+    "WHISPER_VAD_FILTER",
+    "audio.stt.whisper_vad_filter",
+    os.getenv("WHISPER_VAD_FILTER", "False").lower() == "true",
+)
+
+WHISPER_LANGUAGE = os.getenv("WHISPER_LANGUAGE", "").lower() or None
+
 # Add Deepgram configuration
 DEEPGRAM_API_KEY = PersistentConfig(
     "DEEPGRAM_API_KEY",
     "audio.stt.deepgram.api_key",
     os.getenv("DEEPGRAM_API_KEY", ""),
 )
+
 
 AUDIO_STT_OPENAI_API_BASE_URL = PersistentConfig(
     "AUDIO_STT_OPENAI_API_BASE_URL",
@@ -2329,6 +2818,36 @@ AUDIO_STT_MODEL = PersistentConfig(
     "AUDIO_STT_MODEL",
     "audio.stt.model",
     os.getenv("AUDIO_STT_MODEL", ""),
+)
+
+AUDIO_STT_AZURE_API_KEY = PersistentConfig(
+    "AUDIO_STT_AZURE_API_KEY",
+    "audio.stt.azure.api_key",
+    os.getenv("AUDIO_STT_AZURE_API_KEY", ""),
+)
+
+AUDIO_STT_AZURE_REGION = PersistentConfig(
+    "AUDIO_STT_AZURE_REGION",
+    "audio.stt.azure.region",
+    os.getenv("AUDIO_STT_AZURE_REGION", ""),
+)
+
+AUDIO_STT_AZURE_LOCALES = PersistentConfig(
+    "AUDIO_STT_AZURE_LOCALES",
+    "audio.stt.azure.locales",
+    os.getenv("AUDIO_STT_AZURE_LOCALES", ""),
+)
+
+AUDIO_STT_AZURE_BASE_URL = PersistentConfig(
+    "AUDIO_STT_AZURE_BASE_URL",
+    "audio.stt.azure.base_url",
+    os.getenv("AUDIO_STT_AZURE_BASE_URL", ""),
+)
+
+AUDIO_STT_AZURE_MAX_SPEAKERS = PersistentConfig(
+    "AUDIO_STT_AZURE_MAX_SPEAKERS",
+    "audio.stt.azure.max_speakers",
+    os.getenv("AUDIO_STT_AZURE_MAX_SPEAKERS", ""),
 )
 
 AUDIO_TTS_OPENAI_API_BASE_URL = PersistentConfig(
@@ -2376,7 +2895,13 @@ AUDIO_TTS_SPLIT_ON = PersistentConfig(
 AUDIO_TTS_AZURE_SPEECH_REGION = PersistentConfig(
     "AUDIO_TTS_AZURE_SPEECH_REGION",
     "audio.tts.azure.speech_region",
-    os.getenv("AUDIO_TTS_AZURE_SPEECH_REGION", "eastus"),
+    os.getenv("AUDIO_TTS_AZURE_SPEECH_REGION", ""),
+)
+
+AUDIO_TTS_AZURE_SPEECH_BASE_URL = PersistentConfig(
+    "AUDIO_TTS_AZURE_SPEECH_BASE_URL",
+    "audio.tts.azure.speech_base_url",
+    os.getenv("AUDIO_TTS_AZURE_SPEECH_BASE_URL", ""),
 )
 
 AUDIO_TTS_AZURE_SPEECH_OUTPUT_FORMAT = PersistentConfig(
@@ -2460,6 +2985,12 @@ LDAP_CA_CERT_FILE = PersistentConfig(
     os.environ.get("LDAP_CA_CERT_FILE", ""),
 )
 
+LDAP_VALIDATE_CERT = PersistentConfig(
+    "LDAP_VALIDATE_CERT",
+    "ldap.server.validate_cert",
+    os.environ.get("LDAP_VALIDATE_CERT", "True").lower() == "true",
+)
+
 LDAP_CIPHERS = PersistentConfig(
     "LDAP_CIPHERS", "ldap.server.ciphers", os.environ.get("LDAP_CIPHERS", "ALL")
 )
@@ -2470,11 +3001,67 @@ LDAP_CIPHERS = PersistentConfig(
 EMPTY_CHAT_WELCOME_MESSAGE = PersistentConfig(
     "EMPTY_CHAT_WELCOME_MESSAGE",
     "customization.empty_chat_welcome_message",
-    os.getenv("EMPTY_CHAT_WELCOME_MESSAGE", "welkom bij GovChat-NL")
+    os.getenv("EMPTY_CHAT_WELCOME_MESSAGE", f"welkom bij {WEBUI_NAME}")
 )
 
 LOGIN_SCREEN_SUBTITLE = PersistentConfig(
     "LOGIN_SCREEN_SUBTITLE",
     "customization.login_screen_subtitle",
     os.getenv("LOGIN_SCREEN_SUBTITLE", None)
+)
+
+B1_DEFAULT_PRESERVED_WORDS = PersistentConfig(
+    "B1_DEFAULT_PRESERVED_WORDS",
+    "b1.default_preserved_words",
+    os.getenv("B1_DEFAULT_PRESERVED_WORDS", json.dumps([
+        'Provinciale Staten', 'Gedeputeerde Staten', 'Directieteam', 'Regulier overleg (RO)',
+        'Fracties', 'Statenleden', 'Statenlid', 'Gedeputeerde', 'Commissaris van de Koning (CdK)',
+        'Gouverneur', 'Subsidie', 'Begroting', 'Interprovinciaal overleg (IPO)',
+        'Provinciefonds', 'verordening', 'Economisch', 'Beleid', 'Fonds'
+        'Informerend stuk', 'Onderwerp', 'Samenvatting', 
+        'Kennisnemen van', 'Aanleiding en bestuurlijke context', 'Bevoegdheid', 'Communicatie', 'Vervolg', 
+        'Bijlage(n)', 'Sonderend stuk', 'Vraag aan PS', 'Context', 'Voorstel', 'Statenvoorstel', 'Geachte', 'Argumenten'
+    ]))
+)
+
+ENABLE_CONTROLS_BUTTON = PersistentConfig(
+    "ENABLE_CONTROLS_BUTTON",
+    "customization.enable_controls_button",
+    os.getenv("ENABLE_CONTROLS_BUTTON", "False").lower() == "true",
+)
+
+SHOW_CHANGE_PASSWORD = PersistentConfig(
+    "SHOW_CHANGE_PASSWORD",
+    "customization.show_change_password",
+    os.getenv("SHOW_CHANGE_PASSWORD", "False").lower() == "true",
+)
+
+ALLOW_USERNAME_EDIT = PersistentConfig(
+    "ALLOW_USERNAME_EDIT",
+    "customization.allow_username_edit",
+    os.getenv("ALLOW_USERNAME_EDIT", "False").lower() == "true",
+)
+
+SHOW_ABOUT_TAB = PersistentConfig(
+    "SHOW_ABOUT_TAB",
+    "customization.show_about_tab",
+    os.getenv("SHOW_ABOUT_TAB", "False").lower() == "true",
+)
+
+SHOW_OVERVIEW_IN_DROPDOWN = PersistentConfig(
+    "SHOW_OVERVIEW_IN_DROPDOWN",
+    "customization.show_overview_in_dropdown",
+    os.getenv("SHOW_OVERVIEW_IN_DROPDOWN", "False").lower() == "true",
+)
+
+SHOW_WIDESCREEN_MODE = PersistentConfig(
+    "SHOW_WIDESCREEN_MODE",
+    "customization.show_widescreen_mode",
+    os.getenv("SHOW_WIDESCREEN_MODE", "False").lower() == "true",
+)
+
+SHOW_ARCHIVED_CHATS = PersistentConfig(
+    "SHOW_ARCHIVED_CHATS",
+    "customization.show_archived_chats",
+    os.getenv("SHOW_ARCHIVED_CHATS", "False").lower() == "true",
 )

@@ -11,10 +11,13 @@
 		showControls,
 		showSidebar,
 		temporaryChatEnabled,
-		user
+		user,
+		config
 	} from '$lib/stores';
 
 	import { slide } from 'svelte/transition';
+	// Govchat
+	import { currentAppContext } from '$lib/stores/appModels';
 	import ShareChatModal from '../chat/ShareChatModal.svelte';
 	import ModelSelector from '../chat/ModelSelector.svelte';
 	import Tooltip from '../common/Tooltip.svelte';
@@ -75,8 +78,13 @@
 			{$showSidebar ? 'ml-1' : ''}
 			"
 			>
+			<!--Govchat-->
 				{#if showModelSelector}
-					<ModelSelector bind:selectedModels showSetDefault={!shareEnabled} />
+					<ModelSelector 
+						bind:selectedModels 
+						showSetDefault={!shareEnabled} 
+						useAppFilter={$currentAppContext !== 'general'}
+					/>
 				{/if}
 			</div>
 
@@ -115,38 +123,38 @@
 							</div>
 						</button>
 					</Menu>
-				{:else if $mobile}
-					<Tooltip content={$i18n.t('Controls')}>
-						<button
-							class=" flex cursor-pointer px-2 py-2 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-850 transition"
-							on:click={async () => {
-								await showControls.set(!$showControls);
-							}}
-							aria-label="Controls"
-						>
-							<div class=" m-auto self-center">
-								<AdjustmentsHorizontal className=" size-5" strokeWidth="0.5" />
-							</div>
-						</button>
-					</Tooltip>
-				{/if}
-
-				{#if !$mobile}
-					<Tooltip content={$i18n.t('Controls')}>
-						<button
-							class=" flex cursor-pointer px-2 py-2 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-850 transition"
-							on:click={async () => {
-								await showControls.set(!$showControls);
-							}}
-							aria-label="Controls"
-						>
-							<div class=" m-auto self-center">
-								<AdjustmentsHorizontal className=" size-5" strokeWidth="0.5" />
-							</div>
-						</button>
-					</Tooltip>
-				{/if}
-
+					{#if $config?.customization?.enable_controls_button}
+						{#if !$mobile}
+							<Tooltip content={$i18n.t('Controls')}>
+								<button
+									class=" flex cursor-pointer px-2 py-2 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-850 transition"
+									on:click={async () => {
+										await showControls.set(!$showControls);
+									}}
+									aria-label="Controls"
+								>
+									<div class=" m-auto self-center">
+										<AdjustmentsHorizontal className=" size-5" strokeWidth="0.5" />
+									</div>
+								</button>
+							</Tooltip>
+						{:else if $mobile}
+							<Tooltip content={$i18n.t('Controls')}>
+								<button
+									class=" flex cursor-pointer px-2 py-2 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-850 transition"
+									on:click={async () => {
+										await showControls.set(!$showControls);
+									}}
+									aria-label="Controls"
+								>
+									<div class=" m-auto self-center">
+										<AdjustmentsHorizontal className=" size-5" strokeWidth="0.5" />
+									</div>
+								</button>
+							</Tooltip>
+						{/if}
+					{/if}
+				{/if}			
 				<Tooltip content={$i18n.t('New Chat')}>
 					<button
 						id="new-chat-button"
@@ -167,7 +175,7 @@
 				{#if $user !== undefined}
 					<UserMenu
 						className="max-w-[200px]"
-						role={$user.role}
+						role={$user?.role}
 						on:show={(e) => {
 							if (e.detail === 'archived-chat') {
 								showArchivedChats.set(true);
@@ -180,7 +188,7 @@
 						>
 							<div class=" self-center">
 								<img
-									src={$user.profile_image_url}
+									src={$user?.profile_image_url}
 									class="size-6 object-cover rounded-full"
 									alt="User profile"
 									draggable="false"

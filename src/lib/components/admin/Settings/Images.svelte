@@ -176,7 +176,7 @@
 	};
 
 	onMount(async () => {
-		if ($user.role === 'admin') {
+		if ($user?.role === 'admin') {
 			const res = await getConfig(localStorage.token).catch((error) => {
 				toast.error(`${error}`);
 				return null;
@@ -191,17 +191,21 @@
 			}
 
 			if (config.comfyui.COMFYUI_WORKFLOW) {
-				config.comfyui.COMFYUI_WORKFLOW = JSON.stringify(
-					JSON.parse(config.comfyui.COMFYUI_WORKFLOW),
-					null,
-					2
-				);
+				try {
+					config.comfyui.COMFYUI_WORKFLOW = JSON.stringify(
+						JSON.parse(config.comfyui.COMFYUI_WORKFLOW),
+						null,
+						2
+					);
+				} catch (e) {
+					console.error(e);
+				}
 			}
 
 			requiredWorkflowNodes = requiredWorkflowNodes.map((node) => {
 				const n = config.comfyui.COMFYUI_WORKFLOW_NODES.find((n) => n.type === node.type) ?? node;
 
-				console.log(n);
+				console.debug(n);
 
 				return {
 					type: n.type,

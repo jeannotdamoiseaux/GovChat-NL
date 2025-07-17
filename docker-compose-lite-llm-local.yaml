@@ -1,11 +1,39 @@
 version: "3.3"
 services:
+
+  # postgres:
+  #   image: postgres:latest
+  #   restart: always
+  #   environment:
+  #     POSTGRES_USER: $[POSTGRES_USER]
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+  #     POSTGRES_DB: litellm
+  #   ports:
+  #     - "5432:5432"
+
+  open-webui:
+    image: ghcr.io/marwinaerden/govchat-nl:sjeng13
+    restart: always
+    ports:
+      - "18462:8080"
+    environment:
+      - "OPENAI_API_BASE_URL=http://litellm:4000"
+    volumes:
+      - ./open-webui:/app/backend/data
+    depends_on:
+      - litellm
+    extra_hosts:
+      - host.docker.internal:host-gateway
+
   litellm:
     image: ghcr.io/berriai/litellm:main-latest
     restart: always
+    # depends_on:
+    #   - postgres
     ports:
       - "4000:4000"
     environment:
+      # - DATABASE_URL=${DATABASE_URL}
       - AZURE_API_KEY=${AZURE_API_KEY}
       - AZURE_API_BASE=${AZURE_API_BASE}
       - AZURE_API_VERSION=${AZURE_API_VERSION}
