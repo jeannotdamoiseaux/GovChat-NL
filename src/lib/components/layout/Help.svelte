@@ -29,8 +29,11 @@
     let isFullScreen = false;
     const i18n = getContext('i18n');
 
-    
-    let activeSection = sections[0].id;
+
+    let activeSection: string | null = null;
+    $: if (sections.length > 0 && !activeSection) {
+        activeSection = sections[0].id;
+    }
     let openSectionId: string | null = null;
     let activeSubsectionId: string | null = null;
     let contentDiv: HTMLDivElement;
