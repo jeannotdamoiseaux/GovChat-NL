@@ -104,6 +104,24 @@ export const playingNotificationSound = writable(false);
 
 export type Model = OpenAIModel | OllamaModel;
 
+// GovChat-NL customization interface
+export interface CustomizationGovChatNL {
+    empty_chat_welcome_message?: string;
+    login_screen_subtitle?: string;
+    b1_default_preserved_words?: string[];
+    enable_controls_button?: boolean;
+    show_change_password?: boolean;
+    allow_username_edit?: boolean;
+    show_about_tab?: boolean;
+    show_overview_in_dropdown?: boolean;
+    show_widescreen_mode?: boolean;
+    show_archived_chats?: boolean;
+    enable_chat_knowledge_attachment?: boolean;
+    enable_chat_reference_chats?: boolean;
+    help_hidden_default_sections?: string[];
+    help_custom_sections?: object[];
+}
+
 export const customization: Writable<CustomizationGovChatNL | undefined> = writable(undefined); // Customization for GovChat-NL
 
 type BaseModel = {

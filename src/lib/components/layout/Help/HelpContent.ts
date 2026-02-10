@@ -11,7 +11,7 @@ export interface HelpSection {
     }[];
 }
 
-export const sections: HelpSection[] = [
+export const defaultSections: HelpSection[] = [
     {
         id: 'sec1',
         emoji: '📖',
@@ -689,3 +689,5 @@ export const sections: HelpSection[] = [
     ]
   }
 ];
+// Alias for backwards compatibility
+export const sections = defaultSections;

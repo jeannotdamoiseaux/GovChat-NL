@@ -6,8 +6,18 @@
     import Tooltip from '../common/Tooltip.svelte';
     import Info from '$lib/components/icons/Info.svelte';
     import Modal from '$lib/components/common/Modal.svelte';
-    import { sections } from './Help/HelpContent';
+    import { defaultSections } from './Help/HelpContent';
     import { WEBUI_NAME } from '$lib/stores';
+
+    // Merge sections: custom (before) + visible defaults + custom (after)
+    $: customSections = $config?.customization?.help_custom_sections ?? [];
+    $: hiddenSections = $config?.customization?.help_hidden_default_sections ?? [];
+    
+    $: sections = [
+        ...customSections.filter((s) => s.position === "before"),
+        ...defaultSections.filter((s) => !hiddenSections.includes(s.id)),
+        ...customSections.filter((s) => s.position === "after")
+    ];
 
     let showShortcuts = false;
     let showHelp = false;

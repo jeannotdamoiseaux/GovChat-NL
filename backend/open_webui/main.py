@@ -458,6 +458,8 @@ from open_webui.config import (
     SHOW_ARCHIVED_CHATS,
     ENABLE_CHAT_KNOWLEDGE_ATTACHMENT,
     ENABLE_CHAT_REFERENCE_CHATS,
+    HELP_HIDDEN_DEFAULT_SECTIONS,
+    HELP_CUSTOM_SECTIONS,
     # App Launcher for GovChat-NL
     VERSIMPELAAR,
 
@@ -1960,6 +1962,8 @@ async def get_app_config(request: Request):
             "show_archived_chats": SHOW_ARCHIVED_CHATS.value,
             "enable_chat_knowledge_attachment": ENABLE_CHAT_KNOWLEDGE_ATTACHMENT.value,
             "enable_chat_reference_chats": ENABLE_CHAT_REFERENCE_CHATS.value,
+            "help_hidden_default_sections": HELP_HIDDEN_DEFAULT_SECTIONS.value,
+            "help_custom_sections": HELP_CUSTOM_SECTIONS.value,
         },
         # App Launcher for GovChat-NL
         "app_launcher": {

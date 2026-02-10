@@ -4145,3 +4145,16 @@ ENABLE_CHAT_REFERENCE_CHATS = PersistentConfig(
   "customization.enable_chat_reference_chats",
   os.getenv("ENABLE_CHAT_REFERENCE_CHATS", "False").lower() == "true",
 )
+# Handleiding configuratie - welke standaard secties zijn verborgen (lege lijst = alle zichtbaar)
+HELP_HIDDEN_DEFAULT_SECTIONS = PersistentConfig(
+    "HELP_HIDDEN_DEFAULT_SECTIONS",
+    "customization.help_hidden_default_sections",
+    os.getenv("HELP_HIDDEN_DEFAULT_SECTIONS", "[]")
+)
+
+# Custom organisatie-specifieke handleiding secties
+HELP_CUSTOM_SECTIONS = PersistentConfig(
+    "HELP_CUSTOM_SECTIONS",
+    "customization.help_custom_sections",
+    os.getenv("HELP_CUSTOM_SECTIONS", "[]")
+)
