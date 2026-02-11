@@ -13,25 +13,32 @@
     $: customSections = $config?.customization?.help_custom_sections ?? [];
     $: hiddenSections = $config?.customization?.help_hidden_default_sections ?? [];
 
-    $: sections = [
-        ...(customSections || []).filter((s) => s.position === "before"),
-        ...(defaultSections || []).filter((s) => !hiddenSections.includes(s.id)),
-        ...(customSections || []).filter((s) => s.position === "after")
-    ] || [];
+    // Initialize sections with defaultSections as fallback
+    let sections: any[] = defaultSections || [];
+    $: {
+        const custom = customSections || [];
+        const hidden = hiddenSections || [];
+        const defaults = defaultSections || [];
+        sections = [
+            ...custom.filter((s: any) => s.position === "before"),
+            ...defaults.filter((s: any) => !hidden.includes(s.id)),
+            ...custom.filter((s: any) => s.position === "after")
+        ];
+    }
 
     let showShortcuts = false;
     let showHelp = false;
     let dontShowOnStartup = false;
-    
-    
+
+
     const TUTORIAL_VERSION_KEY = 'tutorialVersion';
 
     let isFullScreen = false;
     const i18n = getContext('i18n');
 
-
-    let activeSection: string | null = null;
-    $: if (sections && sections.length > 0 && !activeSection) {
+    // Initialize activeSection safely
+    let activeSection: string | null = sections.length > 0 ? sections[0]?.id : null;
+    $: if (sections.length > 0 && !activeSection) {
         activeSection = sections[0]?.id ?? null;
     }
     let openSectionId: string | null = null;
