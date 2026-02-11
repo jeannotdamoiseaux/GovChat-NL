@@ -9,20 +9,29 @@
     import { defaultSections } from './Help/HelpContent';
     import { WEBUI_NAME } from '$lib/stores';
 
+    // Helper function to ensure array
+    function ensureArray(value: any): any[] {
+        if (Array.isArray(value)) return value;
+        if (typeof value === 'string') {
+            try { return JSON.parse(value); } catch { return []; }
+        }
+        return [];
+    }
+
     // Merge sections: custom (before) + visible defaults + custom (after)
-    $: customSections = $config?.customization?.help_custom_sections ?? [];
-    $: hiddenSections = $config?.customization?.help_hidden_default_sections ?? [];
+    $: customSections = ensureArray($config?.customization?.help_custom_sections);
+    $: hiddenSections = ensureArray($config?.customization?.help_hidden_default_sections);
 
     // Initialize sections with defaultSections as fallback
     let sections: any[] = defaultSections || [];
     $: {
-        const custom = customSections || [];
-        const hidden = hiddenSections || [];
+        const custom = ensureArray(customSections);
+        const hidden = ensureArray(hiddenSections);
         const defaults = defaultSections || [];
         sections = [
-            ...custom.filter((s: any) => s.position === "before"),
-            ...defaults.filter((s: any) => !hidden.includes(s.id)),
-            ...custom.filter((s: any) => s.position === "after")
+            ...custom.filter((s: any) => s?.position === "before"),
+            ...defaults.filter((s: any) => !hidden.includes(s?.id)),
+            ...custom.filter((s: any) => s?.position === "after")
         ];
     }
 
