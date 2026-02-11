@@ -12,12 +12,12 @@
     // Merge sections: custom (before) + visible defaults + custom (after)
     $: customSections = $config?.customization?.help_custom_sections ?? [];
     $: hiddenSections = $config?.customization?.help_hidden_default_sections ?? [];
-    
+
     $: sections = [
-        ...customSections.filter((s) => s.position === "before"),
-        ...defaultSections.filter((s) => !hiddenSections.includes(s.id)),
-        ...customSections.filter((s) => s.position === "after")
-    ];
+        ...(customSections || []).filter((s) => s.position === "before"),
+        ...(defaultSections || []).filter((s) => !hiddenSections.includes(s.id)),
+        ...(customSections || []).filter((s) => s.position === "after")
+    ] || [];
 
     let showShortcuts = false;
     let showHelp = false;
@@ -31,8 +31,8 @@
 
 
     let activeSection: string | null = null;
-    $: if (sections.length > 0 && !activeSection) {
-        activeSection = sections[0].id;
+    $: if (sections && sections.length > 0 && !activeSection) {
+        activeSection = sections[0]?.id ?? null;
     }
     let openSectionId: string | null = null;
     let activeSubsectionId: string | null = null;
