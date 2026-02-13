@@ -21,7 +21,7 @@
 	import Evaluations from './Settings/Evaluations.svelte';
 	import CodeExecution from './Settings/CodeExecution.svelte';
 	import Tools from './Settings/Tools.svelte';
-	import GovChatNL from './Settings/GovChatNL.svelte';
+
 
 	import ChartBar from '../icons/ChartBar.svelte';
 	import DocumentChartBar from '../icons/DocumentChartBar.svelte';
@@ -50,7 +50,6 @@
 			'images',
 			'pipelines',
 			'db',
-			'govchat-nl'
 		].includes(tabFromPath)
 			? tabFromPath
 			: 'general';
@@ -246,12 +245,6 @@
 			route: '/admin/settings/db',
 			keywords: ['database', 'export', 'import', 'backup', 'chats', 'users']
 		},
-		{
-			id: 'govchat-nl',
-			title: 'GovChat-NL',
-			route: '/admin/settings/govchat-nl',
-			keywords: ['govchat', 'versimpelaar', 'handleiding', 'b1', 'help', 'gemeente', 'provincie']
-		}
 	];
 
 	const setFilteredSettings = () => {
@@ -591,13 +584,6 @@
 			<Pipelines
 				saveHandler={() => {
 					toast.success($i18n.t('Settings saved successfully!'));
-				}}
-			/>
-		{:else if selectedTab === 'govchat-nl'}
-			<GovChatNL
-				saveHandler={async () => {
-					toast.success($i18n.t('Settings saved successfully!'));
-					await config.set(await getBackendConfig());
 				}}
 			/>
 		{/if}

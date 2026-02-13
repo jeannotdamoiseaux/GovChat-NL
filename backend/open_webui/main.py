@@ -458,8 +458,7 @@ from open_webui.config import (
     SHOW_ARCHIVED_CHATS,
     ENABLE_CHAT_KNOWLEDGE_ATTACHMENT,
     ENABLE_CHAT_REFERENCE_CHATS,
-    HELP_HIDDEN_DEFAULT_SECTIONS,
-    HELP_CUSTOM_SECTIONS,
+    HELP_CONTENT_SET,
     # App Launcher for GovChat-NL
     VERSIMPELAAR,
 
@@ -816,8 +815,7 @@ app.state.config.BANNERS = WEBUI_BANNERS
 
 # GovChat-NL Config
 app.state.config.B1_DEFAULT_PRESERVED_WORDS = B1_DEFAULT_PRESERVED_WORDS
-app.state.config.HELP_HIDDEN_DEFAULT_SECTIONS = HELP_HIDDEN_DEFAULT_SECTIONS
-app.state.config.HELP_CUSTOM_SECTIONS = HELP_CUSTOM_SECTIONS
+app.state.config.HELP_CONTENT_SET = HELP_CONTENT_SET
 
 app.state.config.ENABLE_FOLDERS = ENABLE_FOLDERS
 app.state.config.FOLDER_MAX_FILE_COUNT = FOLDER_MAX_FILE_COUNT
@@ -1966,8 +1964,7 @@ async def get_app_config(request: Request):
             "show_archived_chats": SHOW_ARCHIVED_CHATS.value,
             "enable_chat_knowledge_attachment": ENABLE_CHAT_KNOWLEDGE_ATTACHMENT.value,
             "enable_chat_reference_chats": ENABLE_CHAT_REFERENCE_CHATS.value,
-            "help_hidden_default_sections": HELP_HIDDEN_DEFAULT_SECTIONS.value,
-            "help_custom_sections": HELP_CUSTOM_SECTIONS.value,
+            "help_content_set": HELP_CONTENT_SET,
         },
         # App Launcher for GovChat-NL
         "app_launcher": {

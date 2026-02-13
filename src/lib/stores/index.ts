@@ -118,8 +118,7 @@ export interface CustomizationGovChatNL {
     show_archived_chats?: boolean;
     enable_chat_knowledge_attachment?: boolean;
     enable_chat_reference_chats?: boolean;
-    help_hidden_default_sections?: string[];
-    help_custom_sections?: object[];
+    help_content_set?: string;
 }
 
 export const customization: Writable<CustomizationGovChatNL | undefined> = writable(undefined); // Customization for GovChat-NL

@@ -540,38 +540,3 @@ async def get_banners(
     return request.app.state.config.BANNERS
 
 
-############################
-# GovChat-NL Config
-############################
-
-
-class GovChatNLConfigForm(BaseModel):
-    b1_default_preserved_words: list[str]
-    help_hidden_default_sections: list[str]
-    help_custom_sections: list[dict]
-
-
-@router.get("/govchat-nl")
-async def get_govchat_nl_config(request: Request, user=Depends(get_admin_user)):
-    return {
-        "b1_default_preserved_words": request.app.state.config.B1_DEFAULT_PRESERVED_WORDS,
-        "help_hidden_default_sections": request.app.state.config.HELP_HIDDEN_DEFAULT_SECTIONS,
-        "help_custom_sections": request.app.state.config.HELP_CUSTOM_SECTIONS,
-    }
-
-
-@router.post("/govchat-nl")
-async def set_govchat_nl_config(
-    request: Request,
-    form_data: GovChatNLConfigForm,
-    user=Depends(get_admin_user),
-):
-    request.app.state.config.B1_DEFAULT_PRESERVED_WORDS = form_data.b1_default_preserved_words
-    request.app.state.config.HELP_HIDDEN_DEFAULT_SECTIONS = form_data.help_hidden_default_sections
-    request.app.state.config.HELP_CUSTOM_SECTIONS = form_data.help_custom_sections
-    
-    return {
-        "b1_default_preserved_words": request.app.state.config.B1_DEFAULT_PRESERVED_WORDS,
-        "help_hidden_default_sections": request.app.state.config.HELP_HIDDEN_DEFAULT_SECTIONS,
-        "help_custom_sections": request.app.state.config.HELP_CUSTOM_SECTIONS,
-    }
