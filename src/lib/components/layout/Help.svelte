@@ -6,8 +6,10 @@
     import Tooltip from '../common/Tooltip.svelte';
     import Info from '$lib/components/icons/Info.svelte';
     import Modal from '$lib/components/common/Modal.svelte';
-    import { getHelpContent } from './Help/HelpContent';
+    import { getHelpContent, type HelpContent } from './Help/HelpContent';
     import { WEBUI_NAME } from '$lib/stores';
+
+    let helpContent: HelpContent = getHelpContent();
 
     $: {
         const contentSet = $config?.customization?.help_content_set;
