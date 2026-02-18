@@ -23,5 +23,9 @@ import { helpContent as meierijstad } from './HelpContent.meierijstad';
 const contentSets: Record<string, HelpContent> = { limburg, meierijstad };
 
 export function getHelpContent(contentSet?: string): HelpContent {
-    return contentSets[contentSet || 'limburg'] || contentSets['limburg'];
+    const key = contentSet || 'limburg';
+    const available = Object.keys(contentSets);
+    const found = key in contentSets;
+    console.log(`getHelpContent - requested: "${contentSet}" | resolved key: "${key}" | found: ${found} | available: [${available}]`);
+    return contentSets[key] || contentSets['limburg'];
 }

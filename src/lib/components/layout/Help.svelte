@@ -9,7 +9,13 @@
     import { getHelpContent } from './Help/HelpContent';
     import { WEBUI_NAME } from '$lib/stores';
 
-    $: helpContent = getHelpContent($config?.customization?.help_content_set);
+    $: {
+        const contentSet = $config?.customization?.help_content_set;
+        console.log('Help.svelte - config object:', JSON.stringify($config?.customization));
+        console.log('Help.svelte - help_content_set:', contentSet);
+        helpContent = getHelpContent(contentSet);
+        console.log('Help.svelte - loaded content:', helpContent.title, '| sections:', helpContent.sections.length);
+    }
     $: sections = helpContent.sections;
 
     let showShortcuts = false;
