@@ -159,7 +159,7 @@
         <div class="flex justify-between items-start px-5">
             <div class="text-xl font-semibold flex items-center gap-2">
                 <Info class="w-6 h-6 text-blue-500" />
-                {helpContent.title}
+                {helpContent.title.replace(/{{APP_NAME}}/g, $WEBUI_NAME)}
             </div>
             <div class="flex items-center gap-2">
                 <!-- PRINT-KNOP -->
