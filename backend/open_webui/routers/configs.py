@@ -538,3 +538,5 @@ async def get_banners(
     user=Depends(get_verified_user),
 ):
     return request.app.state.config.BANNERS
+
+

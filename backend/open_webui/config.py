@@ -4145,3 +4145,9 @@ ENABLE_CHAT_REFERENCE_CHATS = PersistentConfig(
   "customization.enable_chat_reference_chats",
   os.getenv("ENABLE_CHAT_REFERENCE_CHATS", "False").lower() == "true",
 )
+# Handleiding content set (opties: limburg, meierijstad)
+HELP_CONTENT_SET = PersistentConfig(
+    "HELP_CONTENT_SET",
+    "govchat.help_content_set",
+    os.getenv("HELP_CONTENT_SET", "limburg"),
+)

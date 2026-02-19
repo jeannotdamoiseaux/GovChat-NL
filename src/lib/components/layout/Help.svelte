@@ -1,59 +1,73 @@
 <script lang="ts">
     import { onMount, getContext } from 'svelte';
-    import { browser } from '$app/environment'; 
+    import { browser } from '$app/environment';
     import { settings, config } from '$lib/stores';
     import ShortcutsModal from '../chat/ShortcutsModal.svelte';
     import Tooltip from '../common/Tooltip.svelte';
     import Info from '$lib/components/icons/Info.svelte';
     import Modal from '$lib/components/common/Modal.svelte';
-    import { sections } from './Help/HelpContent';
+    import { getHelpContent, type HelpContent } from './Help/HelpContent';
     import { WEBUI_NAME } from '$lib/stores';
+
+    let helpContent: HelpContent = getHelpContent();
+
+    $: {
+        const contentSet = $config?.customization?.help_content_set;
+        console.log('Help.svelte - config object:', JSON.stringify($config?.customization));
+        console.log('Help.svelte - help_content_set:', contentSet);
+        helpContent = getHelpContent(contentSet);
+        console.log('Help.svelte - loaded content:', helpContent.title, '| sections:', helpContent.sections.length);
+    }
+    $: sections = helpContent.sections;
 
     let showShortcuts = false;
     let showHelp = false;
     let dontShowOnStartup = false;
-    
-    
+
+
     const TUTORIAL_VERSION_KEY = 'tutorialVersion';
 
     let isFullScreen = false;
     const i18n = getContext('i18n');
 
-    
-    let activeSection = sections[0].id;
+    // Initialize activeSection
+    let activeSection: string | null = null;
     let openSectionId: string | null = null;
     let activeSubsectionId: string | null = null;
     let contentDiv: HTMLDivElement;
 
+    $: if (sections && sections.length > 0 && !activeSection) {
+        activeSection = sections[0]?.id;
+    }
 
     onMount(() => {
         if (browser) {
-            
+
             const storedTutorialVersion = localStorage.getItem(TUTORIAL_VERSION_KEY);
-            
-            
+
+
             if ($config && $config.version) {
                 showHelp = storedTutorialVersion !== $config.version;
-                console.log('Help.svelte - Stored tutorial version:', storedTutorialVersion, 
+                console.log('Help.svelte - Stored tutorial version:', storedTutorialVersion,
                           'Current version:', $config.version, 'Show help:', showHelp);
             }
         }
     });
 
-    
+
     function closeHelp() {
         if (browser && dontShowOnStartup && $config) {
-            
+
             localStorage.setItem(TUTORIAL_VERSION_KEY, $config.version);
-            
-            
+
+
             settings.update(current => ({
                 ...current,
                 showTutorialOnStartup: false
             }));
         }
-        
-        
+
+
         showHelp = false;
     }
 
@@ -136,7 +150,7 @@
 </div>
 
 <Modal bind:show={showHelp} size={isFullScreen ? 'full' : 'lg'} class={isFullScreen ? 'fixed inset-0 z-50' : ''}>
-    <div 
+    <div
      class="px-0 pt-4 dark:text-gray-300 text-gray-700 flex flex-col"
      class:h-[80vh]={!isFullScreen}
      class:h-screen={isFullScreen}
@@ -145,7 +159,7 @@
         <div class="flex justify-between items-start px-5">
             <div class="text-xl font-semibold flex items-center gap-2">
                 <Info class="w-6 h-6 text-blue-500" />
-                Hulp en uitleg
+                {helpContent.title.replace(/{{APP_NAME}}/g, $WEBUI_NAME)}
             </div>
             <div class="flex items-center gap-2">
                 <!-- PRINT-KNOP -->
@@ -173,8 +187,8 @@
                         </svg>
                     {/if}
                 </button>
-            
-                <!-- SLUIT-KNOP -->    
+
+                <!-- SLUIT-KNOP -->
                 <button class="self-center" aria-label="Sluiten" title="Sluiten" on:click={() => showHelp = false}>
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5">
                     <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
@@ -183,7 +197,7 @@
             </div>
         </div>
         <div class="mt-1 text-sm text-gray-500 px-5">
-            Je kunt je vragen ook direct aan LAICA stellen: de chatbot kent de volledige handleiding!
+            {helpContent.subtitle.replace(/{{APP_NAME}}/g, $WEBUI_NAME)}
         </div>
         <div class="flex flex-1 h-0 pt-4 overflow-hidden">
             <!-- Sidebar navigation -->
@@ -246,8 +260,8 @@
                     {/each}
                 </ul>
             </nav>
-        
-            <!-- Rechter kolom: hoofd-content --> 
+
+            <!-- Rechter kolom: hoofd-content -->
             <div class="flex flex-col flex-1 min-w-0">
                 <div bind:this={contentDiv} class="flex-1 overflow-y-scroll px-2 md:px-0 pr-2">
                     {#each sections as sec}

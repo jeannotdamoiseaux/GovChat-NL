@@ -22,6 +22,7 @@
 	import CodeExecution from './Settings/CodeExecution.svelte';
 	import Tools from './Settings/Tools.svelte';
 
+
 	import ChartBar from '../icons/ChartBar.svelte';
 	import DocumentChartBar from '../icons/DocumentChartBar.svelte';
 	import Search from '../icons/Search.svelte';
@@ -48,7 +49,7 @@
 			'audio',
 			'images',
 			'pipelines',
-			'db'
+			'db',
 		].includes(tabFromPath)
 			? tabFromPath
 			: 'general';
@@ -243,7 +244,7 @@
 			title: 'Database',
 			route: '/admin/settings/db',
 			keywords: ['database', 'export', 'import', 'backup', 'chats', 'users']
-		}
+		},
 	];
 
 	const setFilteredSettings = () => {
