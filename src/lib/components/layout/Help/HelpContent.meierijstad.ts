@@ -1,22 +1,22 @@
 import type { HelpSection, HelpContent } from './HelpContent';
 
 export const helpContent: HelpContent = {
-    title: 'Handleiding {{APP_NAME}}',
-    subtitle: 'Stel je vragen gerust ook direct aan {{APP_NAME}} — de chatbot kent deze handleiding.',
+    title: 'Handleiding GAIMS',
+    subtitle: 'Stel je vragen gerust ook direct aan GAIMS — de chatbot kent deze handleiding.',
     sections: [
     {
         id: 'sec1',
         emoji: '',
-        title: 'Wat is {{APP_NAME}}?',
-        content: `<h2 class="help-chapter-title">Wat is {{APP_NAME}}?</h2>`,
+        title: 'Wat is GAIMS?',
+        content: `<h2 class="help-chapter-title">Wat is GAIMS?</h2>`,
         items: [
             {
                 id: 'sec1a',
                 emoji: '',
-                title: 'Over {{APP_NAME}}',
+                title: 'Over GAIMS',
                 content: `
                     <div class="text-sm mb-2">
-                    {{APP_NAME}} staat voor <b>Generatieve AI MeierijStad</b>. Het is de AI-chatassistent van gemeente Meierijstad, waarmee je via tekst vragen kunt stellen en ondersteuning krijgt bij je werk.
+                    GAIMS staat voor <b>Generatieve AI MeierijStad</b>. Het is de AI-chatassistent van gemeente Meierijstad, waarmee je via tekst vragen kunt stellen en ondersteuning krijgt bij je werk.
                     </div>
                     <div class="text-sm mb-2">
                     De assistent kan onder andere informatie opzoeken, uitleg geven, teksten samenvatten of herschrijven, en je helpen bij het opstellen van documenten.
@@ -43,7 +43,7 @@ export const helpContent: HelpContent = {
                 title: 'De kennisgrens',
                 content: `
                     <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-2 rounded">
-                    <b>Let op:</b> De kennis van {{APP_NAME}} reikt tot en met <b>mei 2024</b>.
+                    <b>Let op:</b> De kennis van GAIMS reikt tot en met <b>mei 2024</b>.
                     Informatie of gebeurtenissen na die datum zijn niet bekend bij de chatbot en kunnen onjuist of verzonnen zijn ("hallucineren").
                     Controleer altijd het antwoord, vooral bij actuele of zeer specifieke onderwerpen.
                     </div>
@@ -55,7 +55,7 @@ export const helpContent: HelpContent = {
         id: 'sec2',
         emoji: '',
         title: 'Toegang',
-        content: `<h2 class="help-chapter-title">Toegang tot {{APP_NAME}}</h2>`,
+        content: `<h2 class="help-chapter-title">Toegang tot GAIMS</h2>`,
         items: [
             {
                 id: 'sec2a',
@@ -63,7 +63,7 @@ export const helpContent: HelpContent = {
                 title: 'Voorwaarden',
                 content: `
                     <div class="text-sm mb-2">
-                    Je krijgt toegang tot {{APP_NAME}} na het afronden van de <b>basiscursus AI-geletterdheid</b> in De Samenscholing.
+                    Je krijgt toegang tot GAIMS na het afronden van de <b>basiscursus AI-geletterdheid</b> in De Samenscholing.
                     Zonder afronding van deze cursus is het niet mogelijk om in te loggen.
                     </div>
                 `
@@ -74,8 +74,8 @@ export const helpContent: HelpContent = {
                 title: 'Installatie',
                 content: `
                     <ul class="list-disc pl-5 space-y-1 text-sm mb-2">
-                    <li><b>In je browser:</b> Ga naar de URL van {{APP_NAME}} en log in met je werkaccount.</li>
-                    <li><b>Als app op je pc:</b> Voeg {{APP_NAME}} toe via je browser (bijvoorbeeld Microsoft Edge: Instellingen → Apps → Deze site als app installeren).</li>
+                    <li><b>In je browser:</b> Ga naar de URL van GAIMS en log in met je werkaccount.</li>
+                    <li><b>Als app op je pc:</b> Voeg GAIMS toe via je browser (bijvoorbeeld Microsoft Edge: Instellingen → Apps → Deze site als app installeren).</li>
                     <li><b>Op je telefoon:</b> Open de URL in je browser. Op iPhone via <i>Delen</i> → <i>Zet op beginscherm</i>, op Android via het menu → <i>Toevoegen aan startscherm</i>.</li>
                     </ul>
                 `
@@ -96,7 +96,7 @@ export const helpContent: HelpContent = {
                     <div class="bg-yellow-100 border-l-4 border-yellow-500 p-4 mb-4 rounded">
                         <ol class="list-decimal pl-5 space-y-2 text-sm">
                             <li>
-                                <b>Gebruik {{APP_NAME}} voor je werk</b> — niet openbare chatbots zoals ChatGPT of Copilot.
+                                <b>Gebruik GAIMS voor je werk</b> — niet openbare chatbots zoals ChatGPT of Copilot.
                             </li>
                             <li>
                                 <b>Jij bent verantwoordelijk</b> — AI is een hulpmiddel, niet een vervanging voor je eigen oordeel.
@@ -108,7 +108,7 @@ export const helpContent: HelpContent = {
                                 <b>Deel geen gevoelige informatie met openbare chatbots</b> — de veiligheid daarvan kan niet worden gegarandeerd.
                             </li>
                             <li>
-                                <b>Deel geen bijzondere persoonsgegevens</b> — ook niet in {{APP_NAME}}.
+                                <b>Deel geen bijzondere persoonsgegevens</b> — ook niet in GAIMS.
                             </li>
                         </ol>
                     </div>
@@ -120,7 +120,7 @@ export const helpContent: HelpContent = {
                 title: 'Disclaimer',
                 content: `
                     <div class="text-sm mb-2">
-                    {{APP_NAME}} is een AI-assistent ter ondersteuning van je werk, maar geen vervanging voor menselijke expertise of besluitvorming.
+                    GAIMS is een AI-assistent ter ondersteuning van je werk, maar geen vervanging voor menselijke expertise of besluitvorming.
                     </div>
                 `
             }
@@ -138,7 +138,7 @@ export const helpContent: HelpContent = {
                 title: 'Chatten',
                 content: `
                     <div class="text-sm mb-2">
-                    Stel je vragen direct in het chatveld. Hoe concreter en specifieker je vraag, hoe beter {{APP_NAME}} je kan helpen.
+                    Stel je vragen direct in het chatveld. Hoe concreter en specifieker je vraag, hoe beter GAIMS je kan helpen.
                     </div>
                 `
             },
@@ -188,10 +188,10 @@ export const helpContent: HelpContent = {
             {
                 id: 'sec5a',
                 emoji: '',
-                title: 'Hoe veilig is {{APP_NAME}}?',
+                title: 'Hoe veilig is GAIMS?',
                 content: `
                     <div class="text-sm mb-2">
-                    {{APP_NAME}} draait binnen een beveiligde omgeving. Alle communicatie wordt vertrouwelijk behandeld en voldoet aan de geldende privacy- en beveiligingsrichtlijnen.
+                    GAIMS draait binnen een beveiligde omgeving. Alle communicatie wordt vertrouwelijk behandeld en voldoet aan de geldende privacy- en beveiligingsrichtlijnen.
                     </div>
                 `
             },
@@ -201,17 +201,17 @@ export const helpContent: HelpContent = {
                 title: 'Hoe actueel is de kennis?',
                 content: `
                     <div class="text-sm mb-2">
-                    {{APP_NAME}} kent informatie tot en met mei 2024. Recentere informatie kan ontbreken of onjuist zijn. Controleer altijd het antwoord.
+                    GAIMS kent informatie tot en met mei 2024. Recentere informatie kan ontbreken of onjuist zijn. Controleer altijd het antwoord.
                     </div>
                 `
             },
             {
                 id: 'sec5c',
                 emoji: '',
-                title: 'Is {{APP_NAME}} altijd beschikbaar?',
+                title: 'Is GAIMS altijd beschikbaar?',
                 content: `
                     <div class="text-sm mb-2">
-                    Ja, {{APP_NAME}} is 24 uur per dag, 7 dagen per week beschikbaar.
+                    Ja, GAIMS is 24 uur per dag, 7 dagen per week beschikbaar.
                     </div>
                 `
             },
@@ -238,10 +238,10 @@ export const helpContent: HelpContent = {
             {
                 id: 'sec5f',
                 emoji: '',
-                title: 'Leert {{APP_NAME}} van mijn gesprekken?',
+                title: 'Leert GAIMS van mijn gesprekken?',
                 content: `
                     <div class="text-sm mb-2">
-                    Nee. {{APP_NAME}} onthoudt geen informatie uit eerdere gesprekken. Binnen een chatsessie wordt de gesprekshistorie wel bijgehouden.
+                    Nee. GAIMS onthoudt geen informatie uit eerdere gesprekken. Binnen een chatsessie wordt de gesprekshistorie wel bijgehouden.
                     </div>
                 `
             }
@@ -269,7 +269,7 @@ export const helpContent: HelpContent = {
                 title: 'Contactpersonen',
                 content: `
                     <div class="text-sm mb-2">
-                    Voor vragen over {{APP_NAME}} kun je terecht bij:
+                    Voor vragen over GAIMS kun je terecht bij:
                     </div>
                     <ul class="list-disc pl-5 space-y-1 text-sm mb-2">
                     <li><b>Marjolein van Erp</b></li>
