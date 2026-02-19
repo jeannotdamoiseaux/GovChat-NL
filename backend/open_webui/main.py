@@ -1964,7 +1964,7 @@ async def get_app_config(request: Request):
             "show_archived_chats": SHOW_ARCHIVED_CHATS.value,
             "enable_chat_knowledge_attachment": ENABLE_CHAT_KNOWLEDGE_ATTACHMENT.value,
             "enable_chat_reference_chats": ENABLE_CHAT_REFERENCE_CHATS.value,
-            "help_content_set": HELP_CONTENT_SET,
+            "help_content_set": HELP_CONTENT_SET.value,
         },
         # App Launcher for GovChat-NL
         "app_launcher": {
