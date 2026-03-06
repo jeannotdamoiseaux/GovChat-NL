@@ -208,7 +208,7 @@ GovChat-NL is dus gebouwd op basis van OpenWebUI. Hieronder een overzicht van de
 #### 6.1 Lokale ontwikkelomgeving
 OWUI beschikt over een uitgebreide lokale ontwikkelomgeving. Dankzij hot-reloading worden wijzigingen in de broncode direct doorgevoerd, zonder dat de applicatie handmatig hoeft te worden herstart. Dit versnelt en vereenvoudigt het ontwikkelproces aanzienlijk.  
 
-Meer informatie over het opzetten van de ontwikkelomgeving vind je in de [Local development guide](https://docs.openwebui.com/getting-started/advanced-topics/development/).
+Meer informatie over het opzetten van de ontwikkelomgeving vind je in de [Local development guide](https://docs.openwebui.com/getting-started/development).
 
 #### 6.2 Bijdragen
 Wil je bijdragen aan GovChat-NL? Dien je bijdrage in via een pull request (PR). Elke PR wordt geëvalueerd en bij geschiktheid toegevoegd aan het platform.
