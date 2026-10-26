@@ -485,3 +485,36 @@ export const getFileIndexedText = async (
 	}
 	return (await response.json()).content ?? '';
 };
+
+export type FileChunk = {
+	text: string;
+	page: number | null;
+};
+
+export type FileChunks = {
+	chunks: FileChunk[];
+	settings: {
+		text_splitter: string;
+		chunk_size: number;
+		chunk_overlap: number;
+		markdown_header_splitter: boolean;
+		content_extraction_engine: string;
+		bypass_embedding_and_retrieval: boolean;
+	};
+};
+
+export const getFileChunks = async (
+	token: string,
+	id: string,
+	signal?: AbortSignal
+): Promise<FileChunks> => {
+	const response = await fetch(`${WEBUI_API_BASE_URL}/files/${encodeURIComponent(id)}/chunks`, {
+		headers: { authorization: `Bearer ${token}` },
+		signal
+	});
+	if (!response.ok) {
+		const error = await response.json().catch(() => null);
+		throw new Error(error?.detail || 'Unable to load chunks');
+	}
+	return response.json();
+};

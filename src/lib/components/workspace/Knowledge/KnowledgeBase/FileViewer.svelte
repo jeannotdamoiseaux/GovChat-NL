@@ -11,6 +11,7 @@
 	} from '$lib/apis/files';
 	import FilePreview from '$lib/components/chat/FileNav/FilePreview.svelte';
 	import FileCodeEditor from '$lib/components/chat/FileNav/FileCodeEditor.svelte';
+	import ChunkList from './ChunkList.svelte';
 	import Dropdown from '$lib/components/common/Dropdown.svelte';
 	import DropdownMenu from '$lib/components/common/DropdownMenu.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
@@ -63,7 +64,7 @@
 		!previewError
 	)
 		loadOriginal();
-	$: if (noOriginal) state.mode = 'indexed';
+	$: if (noOriginal && state.mode === 'preview') state.mode = 'indexed';
 
 	const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 	const loadIndexed = async () => {
@@ -240,6 +241,12 @@
 			aria-pressed={state.mode === 'indexed'}
 			on:click={() => (state.mode = 'indexed')}>{$i18n.t('Indexed text')}</button
 		>
+		{#if !state.editing}<button
+				type="button"
+				class="shrink-0 px-1 py-0.5 {state.mode === 'chunks' ? '' : 'text-gray-400'}"
+				aria-pressed={state.mode === 'chunks'}
+				on:click={() => (state.mode = 'chunks')}>{$i18n.t('Chunks')}</button
+			>{/if}
 		{#if writeAccess}
 			{#if state.editing}
 				<button
@@ -303,6 +310,7 @@
 				{selectedExcelSheet}
 				onSheetChange={selectSheet}
 			/>{/if}
+	{:else if state.mode === 'chunks'}<ChunkList fileId={file.id!} />
 	{:else if indexedLoading}<div class="p-4"><Spinner className="size-4" /></div>
 	{:else if indexedError}<div class="p-4 text-xs">
 			<p role="alert">{indexedError}</p>

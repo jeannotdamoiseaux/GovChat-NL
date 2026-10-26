@@ -25,7 +25,7 @@ export type KnowledgeDirectory = {
 	updated_at?: number;
 };
 export type ViewerState = {
-	mode: 'preview' | 'indexed';
+	mode: 'preview' | 'indexed' | 'chunks';
 	indexed: string | null;
 	draft: string;
 	editing: boolean;

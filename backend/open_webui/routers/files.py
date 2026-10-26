@@ -707,6 +707,81 @@ async def get_file_data_content_by_id(
 
 
 ############################
+# Get File Chunks By Id
+############################
+
+
+async def _get_file_vectors(id: str, db: AsyncSession):
+    # Files are indexed into their own collection; fall back to the knowledge
+    # collections that reference the file when that collection is missing.
+    collection_name = f'file-{id}'
+    if await ASYNC_VECTOR_DB_CLIENT.has_collection(collection_name=collection_name):
+        result = await ASYNC_VECTOR_DB_CLIENT.get(collection_name=collection_name)
+        if result and result.ids and result.ids[0]:
+            return result
+
+    for knowledge in await Knowledges.get_knowledges_by_file_id(id, db=db):
+        try:
+            result = await ASYNC_VECTOR_DB_CLIENT.query(collection_name=knowledge.id, filter={'file_id': id})
+        except Exception as e:
+            log.debug(f'Could not query knowledge collection {knowledge.id}: {e}')
+            continue
+        if result and result.ids and result.ids[0]:
+            return result
+    return None
+
+
+@router.get('/{id}/chunks')
+async def get_file_chunks_by_id(
+    id: str, user=Depends(get_verified_user), db: AsyncSession = Depends(get_async_session)
+):
+    file = await Files.get_file_by_id(id, db=db)
+
+    if not file or not (
+        file.user_id == user.id or user.role == 'admin' or await has_access_to_file(id, 'read', user, db=db)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ERROR_MESSAGES.NOT_FOUND,
+        )
+
+    config = await Config.get_many(
+        'rag.text_splitter',
+        'rag.chunk_size',
+        'rag.chunk_overlap',
+        'rag.enable_markdown_header_text_splitter',
+        'rag.content_extraction_engine',
+        'rag.bypass_embedding_and_retrieval',
+    )
+    result = await _get_file_vectors(id, db)
+
+    # The splitters rewrite whitespace (the markdown splitter drops blank lines)
+    # and restart their offsets per page and section, so chunks are ordered by
+    # where their whitespace-normalised text occurs in the indexed text.
+    content = ' '.join((file.data or {}).get('content', '').split())
+    ordered = []
+    if result:
+        for text, metadata in zip(result.documents[0], result.metadatas[0]):
+            metadata = metadata or {}
+            position = content.find(' '.join(text.split())) if content else -1
+            order = (position < 0, position, metadata.get('page') or 0, metadata.get('start_index') or 0)
+            ordered.append((order, {'text': text, 'page': metadata.get('page')}))
+    chunks = [chunk for _, chunk in sorted(ordered, key=lambda item: item[0])]
+
+    return {
+        'chunks': chunks,
+        'settings': {
+            'text_splitter': config.get('rag.text_splitter') or 'character',
+            'chunk_size': config.get('rag.chunk_size'),
+            'chunk_overlap': config.get('rag.chunk_overlap'),
+            'markdown_header_splitter': config.get('rag.enable_markdown_header_text_splitter'),
+            'content_extraction_engine': config.get('rag.content_extraction_engine') or 'default',
+            'bypass_embedding_and_retrieval': config.get('rag.bypass_embedding_and_retrieval'),
+        },
+    }
+
+
+############################
 # Update File Data Content By Id
 ############################
 
