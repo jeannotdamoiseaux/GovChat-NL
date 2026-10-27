@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Request, Depends
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from typing import List, Any
 from pydantic import BaseModel
 import asyncio
@@ -155,6 +155,23 @@ def build_selection_prompt(language_level, preserved_words_text):
 # --- END: Language Level Specific Prompt Data ---
 
 
+async def complete(request: Request, form_data: dict, user: Any) -> str:
+    """Roept het model aan en geeft de tekst van het antwoord terug.
+
+    Een fout van de modelaanbieder komt terug als Response-object in plaats van een dict;
+    die wordt hier omgezet in een exception met de echte foutmelding. Sommige modellen
+    (zoals GPT-5) accepteren alleen de standaard temperature; dan proberen we het opnieuw zonder.
+    """
+    response = await generate_chat_completion(request=request, form_data=form_data, user=user)
+    if isinstance(response, Response):
+        body = response.body.decode(errors='replace') if response.body else ''
+        if 'temperature' in form_data and 'temperature' in body:
+            retry_form_data = {key: value for key, value in form_data.items() if key != 'temperature'}
+            return await complete(request, retry_form_data, user)
+        raise Exception(f'Model gaf HTTP {response.status_code}: {body[:500]}')
+    return response['choices'][0]['message']['content']
+
+
 def split_into_chunks(text: str, max_tokens) -> List[str]:
     """Split text into chunks of approximately max_tokens"""
 
@@ -268,8 +285,7 @@ async def generate_version(
     try:
         # Assuming generate_chat_completion handles potential API errors gracefully
         # and accepts the 'temperature' key in form_data
-        response = await generate_chat_completion(request=request, form_data=form_data, user=user)
-        llm_output = response['choices'][0]['message']['content']
+        llm_output = await complete(request, form_data, user)
 
         # --- REMOVED EXTRACTION LOGIC ---
         # The llm_output now contains the full response, potentially including <<< >>>
@@ -343,8 +359,7 @@ async def select_best_version(
     }
 
     try:
-        response = await generate_chat_completion(request=request, form_data=form_data, user=user)
-        llm_output = response['choices'][0]['message']['content']
+        llm_output = await complete(request, form_data, user)
 
         # Extract text between <<< and >>> for the FINAL output from the selection step
         match = re.search(r'<<<([\s\S]*?)>>>', llm_output, re.DOTALL)

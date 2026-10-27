@@ -143,6 +143,7 @@
 	let chunkResults = [];
 	let totalChunks = 0;
 	let receivedChunks = 0;
+	let failedChunks = 0;
 
 	// Configuration variables - will be loaded from backend
 	let maxWords: number | null = null; // Will be loaded from backend
@@ -165,6 +166,7 @@
 		chunkResults = [];
 		totalChunks = 0;
 		receivedChunks = 0;
+		failedChunks = 0;
 		outputWordCount = 0;
 		wordCountPercentage = 0;
 		showOutput = true; // Show output area immediately
@@ -262,6 +264,11 @@
 							if (parsed.index >= 0 && parsed.index < totalChunks) {
 								chunkResults[parsed.index] = parsed.text;
 								receivedChunks++;
+								// Bij een fout geeft de backend het origineel terug; meld dat aan de gebruiker
+								if (parsed.selection_error) {
+									failedChunks++;
+									console.error('[versimpelaar] Chunk niet vereenvoudigd:', parsed.selection_error);
+								}
 
 								// Update output text by joining received chunks
 								outputText = chunkResults.map((chunk) => chunk ?? '').join('\n'); // Use ?? for nullish coalescing
@@ -284,6 +291,14 @@
 			outputText = chunkResults.map((chunk) => chunk ?? '').join('\n');
 			outputWordCount = countWords(outputText);
 			wordCountPercentage = 100; // Ensure 100% at the end
+
+			if (failedChunks > 0) {
+				toast.error(
+					failedChunks === totalChunks
+						? 'De tekst kon niet worden vereenvoudigd: het model gaf een fout. Probeer een ander model of neem contact op met de beheerder.'
+						: `${failedChunks} van de ${totalChunks} tekstdelen konden niet worden vereenvoudigd en staan er ongewijzigd in.`
+				);
+			}
 		} catch (err) {
 			console.error('Error simplifying text:', err);
 			const errorMessage = err instanceof Error ? err.message : 'Onbekende fout';
