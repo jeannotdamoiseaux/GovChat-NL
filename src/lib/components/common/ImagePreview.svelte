@@ -1,10 +1,14 @@
 <script lang="ts">
-	import { onDestroy, onMount, getContext } from 'svelte';
-	import panzoom, { type PanZoom } from 'panzoom';
+	import { onDestroy, getContext } from 'svelte';
 
+	import { toast } from 'svelte-sonner';
 	import fileSaver from 'file-saver';
 	const { saveAs } = fileSaver;
 
+	import { WEBUI_BASE_URL } from '$lib/constants';
+	import { settings } from '$lib/stores';
+	import { matchKeybinding, Shortcut } from '$lib/shortcuts';
+	import PanzoomContainer from '$lib/components/common/PanzoomContainer.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
 
 	export let show = false;
@@ -13,39 +17,17 @@
 
 	const i18n = getContext('i18n');
 
-	let mounted = false;
-
 	let previewElement = null;
 
-	let instance: PanZoom;
-
-	let sceneParentElement: HTMLElement;
-	let sceneElement: HTMLElement;
-
-	$: if (sceneElement) {
-		instance = panzoom(sceneElement, {
-			bounds: true,
-			boundsPadding: 0.1,
-
-			zoomSpeed: 0.065
-		});
-	}
-	const resetPanZoomViewport = () => {
-		instance.moveTo(0, 0);
-		instance.zoomAbs(0, 0, 1);
-		console.log(instance.getTransform());
-	};
-
 	const handleKeyDown = (event: KeyboardEvent) => {
-		if (event.key === 'Escape') {
+		if (
+			event.key === 'Escape' ||
+			($settings?.keyboardShortcuts !== false && matchKeybinding(event) === Shortcut.CLOSE_MODAL)
+		) {
 			console.log('Escape');
 			show = false;
 		}
 	};
-
-	onMount(() => {
-		mounted = true;
-	});
 
 	$: if (show && previewElement) {
 		document.body.appendChild(previewElement);
@@ -58,11 +40,15 @@
 	}
 
 	onDestroy(() => {
+		window.removeEventListener('keydown', handleKeyDown);
 		show = false;
 
-		if (previewElement) {
+		if (previewElement && previewElement.parentNode === document.body) {
 			document.body.removeChild(previewElement);
 		}
+		// NOTE: If multiple modals can stack in the future, direct "unset" may
+		// re-enable page scroll too early. Consider a shared body-scroll lock manager.
+		document.body.style.overflow = 'unset';
 	});
 </script>
 
@@ -92,6 +78,7 @@
 
 			<div>
 				<button
+					aria-label={$i18n.t('Download')}
 					class=" p-5 z-999"
 					on:click={() => {
 						if (src.startsWith('data:image/')) {
@@ -140,8 +127,21 @@
 							src.startsWith('https://')
 						) {
 							// Handle remote URLs
-							fetch(src)
-								.then((response) => response.blob())
+							const backendOrigin = new URL(WEBUI_BASE_URL || '/', window.location.origin).origin;
+							const isBackendUrl = new URL(src, window.location.origin).origin === backendOrigin;
+
+							fetch(
+								src,
+								isBackendUrl && localStorage.token
+									? { headers: { Authorization: `Bearer ${localStorage.token}` } }
+									: undefined
+							)
+								.then((response) => {
+									if (!response.ok) {
+										throw new Error(`Failed to download image: ${response.status}`);
+									}
+									return response.blob();
+								})
 								.then((blob) => {
 									// detect the MIME type from the blob
 									const mimeType = blob.type || 'image/png';
@@ -160,6 +160,7 @@
 								})
 								.catch((error) => {
 									console.error('Error downloading remote image:', error);
+									toast.error($i18n.t('Failed to download image'));
 								});
 							return;
 						}
@@ -181,14 +182,8 @@
 				</button>
 			</div>
 		</div>
-		<div class="flex h-full max-h-full justify-center items-center z-0">
-			<img
-				bind:this={sceneElement}
-				{src}
-				{alt}
-				class=" mx-auto h-full object-scale-down select-none"
-				draggable="false"
-			/>
-		</div>
+		<PanzoomContainer className="flex h-full max-h-full justify-center items-center z-0">
+			<img {src} {alt} class=" mx-auto h-full object-scale-down select-none" draggable="false" />
+		</PanzoomContainer>
 	</div>
 {/if}

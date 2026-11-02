@@ -2,14 +2,26 @@
 	import DOMPurify from 'dompurify';
 	import { toast } from 'svelte-sonner';
 
-	import type { Token } from 'marked';
+	import type { Token, Tokens } from 'marked';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 
 	const i18n = getContext('i18n');
+	const terminalDocument = getContext<
+		| {
+				localPath: (ref: string) => string | null;
+				resolveImage: (ref: string) => Promise<string | null>;
+		  }
+		| undefined
+	>('terminal-document');
+	const markdown = getContext<
+		| { allowRemoteContent: boolean; document?: boolean; parseInline?: (tokens: Token[]) => string }
+		| undefined
+	>('markdown');
 
 	import { WEBUI_BASE_URL } from '$lib/constants';
-	import { copyToClipboard, unescapeHtml } from '$lib/utils';
+	import { skills, terminalSkills } from '$lib/stores';
+	import { copyToClipboard, safeLinkUrl, unescapeHtml } from '$lib/utils';
 
 	import Image from '$lib/components/common/Image.svelte';
 	import KatexRenderer from './KatexRenderer.svelte';
@@ -45,6 +57,21 @@
 		return null;
 	};
 
+	const getLinkToken = (token: Tokens.Link | Tokens.Generic) => {
+		const isAutolink = !token.raw.startsWith('[');
+		const isBracketed = token.raw.startsWith('<');
+		// Use the source URL: decoding marked's escaped text also changes literal entities.
+		const text = isBracketed ? token.raw.slice(1, -1) : token.raw;
+		const href = isBracketed ? token.href.replace(token.text, () => text) : token.href;
+		return {
+			isAutolink,
+			href,
+			safeHref: safeLinkUrl(href),
+			noteId: getNoteIdFromHref(href),
+			text: isAutolink ? text : token.text
+		};
+	};
+
 	/**
 	 * Handle link clicks - intercept same-origin app URLs for in-app navigation
 	 */
@@ -65,51 +92,71 @@
 			// Invalid URL, let browser handle it
 		}
 	};
+	$: inlineHtml =
+		markdown?.document && tokens.some((token) => token.type === 'html')
+			? DOMPurify.sanitize(markdown.parseInline?.(tokens) ?? '')
+			: null;
 </script>
 
-{#each tokens as token, tokenIdx (tokenIdx)}
+<!-- Keep paired inline HTML tags together; sanitizing individual tags loses their contents. -->
+{#if inlineHtml !== null}
+	{@html inlineHtml}
+{/if}
+{#each inlineHtml === null ? tokens : [] as token, tokenIdx (tokenIdx)}
 	{#if token.type === 'escape'}
 		{unescapeHtml(token.text)}
 	{:else if token.type === 'html'}
 		<HtmlToken {id} {token} {onSourceClick} />
 	{:else if token.type === 'link'}
-		{@const noteId = getNoteIdFromHref(token.href)}
-		{#if noteId}
-			<NoteLinkToken {noteId} href={token.href} />
-		{:else if token.tokens}
+		{@const linkToken = getLinkToken(token)}
+		{#if linkToken.noteId && !markdown?.document && markdown?.allowRemoteContent !== false}
+			<NoteLinkToken noteId={linkToken.noteId} href={linkToken.href} />
+		{:else if token.tokens && !linkToken.isAutolink}
 			<a
-				href={token.href}
+				href={linkToken.safeHref}
 				target="_blank"
 				rel="nofollow"
 				title={token.title}
-				on:click={(e) => handleLinkClick(e, token.href)}
+				on:click={(e) => handleLinkClick(e, linkToken.href)}
 			>
-				<svelte:self id={`${id}-a`} tokens={token.tokens} {onSourceClick} {done} />
+				<svelte:self id={`${id}-a`} tokens={token.tokens} {sourceIds} {onSourceClick} {done} />
 			</a>
 		{:else}
 			<a
-				href={token.href}
+				href={linkToken.safeHref}
 				target="_blank"
 				rel="nofollow"
 				title={token.title}
-				on:click={(e) => handleLinkClick(e, token.href)}>{token.text}</a
+				on:click={(e) => handleLinkClick(e, linkToken.href)}>{linkToken.text}</a
 			>
 		{/if}
 	{:else if token.type === 'image'}
-		<Image src={token.href} alt={token.text} />
+		{#if terminalDocument?.localPath(token.href)}
+			{#await terminalDocument.resolveImage(token.href)}
+				<span class="text-xs text-gray-400">{token.text}</span>
+			{:then url}
+				{#if url}<img src={url} alt={token.text} data-terminal-resolved="true" />{:else}<span
+						class="text-xs text-gray-400">Image unavailable: {token.text}</span
+					>{/if}
+			{/await}
+		{:else}<Image src={token.href} alt={token.text} allowExternal={true} />{/if}
 	{:else if token.type === 'strong'}
-		<strong><svelte:self id={`${id}-strong`} tokens={token.tokens} {onSourceClick} /></strong>
+		<strong
+			><svelte:self id={`${id}-strong`} tokens={token.tokens} {sourceIds} {onSourceClick} /></strong
+		>
 	{:else if token.type === 'em'}
-		<em><svelte:self id={`${id}-em`} tokens={token.tokens} {onSourceClick} /></em>
+		<em><svelte:self id={`${id}-em`} tokens={token.tokens} {sourceIds} {onSourceClick} /></em>
 	{:else if token.type === 'codespan'}
 		<CodespanToken {token} {done} />
 	{:else if token.type === 'br'}
 		<br />
 	{:else if token.type === 'del'}
-		<del><svelte:self id={`${id}-del`} tokens={token.tokens} {onSourceClick} /></del>
+		<del><svelte:self id={`${id}-del`} tokens={token.tokens} {sourceIds} {onSourceClick} /></del>
+	{:else if token.type === 'underline'}
+		<u><svelte:self id={`${id}-underline`} tokens={token.tokens} {sourceIds} {onSourceClick} /></u>
 	{:else if token.type === 'inlineKatex'}
 		{#if token.text}
-			<KatexRenderer content={token.text} displayMode={false} />
+			<KatexRenderer content={token.text} displayMode={token?.displayMode ?? false} />
 		{/if}
 	{:else if token.type === 'iframe'}
 		<iframe
@@ -125,7 +172,11 @@
 			}}
 		></iframe>
 	{:else if token.type === 'mention'}
-		<MentionToken {token} />
+		{#if token.triggerChar === '$' && ![...($skills ?? []), ...($terminalSkills ?? [])].some((skill) => skill.id === token.id && skill.is_active)}
+			{token.raw}
+		{:else}
+			<MentionToken {token} />
+		{/if}
 	{:else if token.type === 'footnote'}
 		{@html DOMPurify.sanitize(
 			`<sup class="footnote-ref footnote-ref-text">${token.escapedText}</sup>`
@@ -137,6 +188,10 @@
 			<TextToken {token} {done} />
 		{/if}
 	{:else if token.type === 'text'}
-		<TextToken {token} {done} />
+		{#if markdown?.document}
+			{unescapeHtml(token.text)}
+		{:else}
+			<TextToken {token} {done} />
+		{/if}
 	{/if}
 {/each}

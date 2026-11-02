@@ -1,457 +1,617 @@
 <script lang="ts">
-	import { toast } from 'svelte-sonner';
-	import { getContext, onDestroy, onMount, tick } from 'svelte';
-	const i18n = getContext('i18n');
-
-	import Modal from '$lib/components/common/Modal.svelte';
-	import SearchInput from './Sidebar/SearchInput.svelte';
-	import { getChatById, getChatList, getChatListBySearchText } from '$lib/apis/chats';
-	import Spinner from '../common/Spinner.svelte';
-
-	import dayjs from '$lib/dayjs';
-	import localizedFormat from 'dayjs/plugin/localizedFormat';
-	import calendar from 'dayjs/plugin/calendar';
-	import Loader from '../common/Loader.svelte';
-	import { createMessagesList } from '$lib/utils';
-	import { config, user } from '$lib/stores';
-	import Messages from '../chat/Messages.svelte';
+	import { getContext, onDestroy, tick } from 'svelte';
 	import { goto } from '$app/navigation';
-	import PencilSquare from '../icons/PencilSquare.svelte';
-	import PageEdit from '../icons/PageEdit.svelte';
-	dayjs.extend(calendar);
-	dayjs.extend(localizedFormat);
+	import { toast } from 'svelte-sonner';
+	import { settings } from '$lib/stores';
+	import DropdownMenu from '$lib/components/common/DropdownMenu.svelte';
+	import DropdownSub from '$lib/components/common/DropdownSub.svelte';
+	import Check from '$lib/components/icons/Check.svelte';
+	import ChevronRight from '$lib/components/icons/ChevronRight.svelte';
+	import Spinner from '$lib/components/common/Spinner.svelte';
+	import Loader from '$lib/components/common/Loader.svelte';
+	import {
+		searchWorkspace,
+		type SearchResult,
+		type SearchScope,
+		type SearchKind
+	} from '$lib/apis/search';
+	import Modal from '$lib/components/common/Modal.svelte';
+	import Search from '$lib/components/icons/Search.svelte';
+	import ChatBubble from '$lib/components/icons/ChatBubble.svelte';
+	import Hashtag from '$lib/components/icons/Hashtag.svelte';
+	import Document from '$lib/components/icons/Document.svelte';
+	import Adjustments from '$lib/components/icons/AdjustmentsHorizontal.svelte';
+	import ChevronDown from '$lib/components/icons/ChevronDown.svelte';
+	import XMark from '$lib/components/icons/XMark.svelte';
+	import Eye from '$lib/components/icons/Eye.svelte';
+	import ArrowLeft from '$lib/components/icons/ArrowLeft.svelte';
+	import Pin from '$lib/components/icons/Pin.svelte';
+	import HighlightedText from './Search/HighlightedText.svelte';
+	import ChatPreview from './Sidebar/ChatPreview.svelte';
+	import NotePreview from './Search/NotePreview.svelte';
+	import PreviewMarkdown from './Search/PreviewMarkdown.svelte';
 
+	const i18n: any = getContext('i18n');
+	// Preserve translations from the former chat search and preview during extraction.
+	// $i18n.t('Failed to load chat'); $i18n.t('Select a conversation to preview');
 	export let show = false;
 	export let onClose = () => {};
-
-	let actions = [
-		{
-			label: $i18n.t('Start a new conversation'),
-			onClick: async () => {
-				await goto(`/${query ? `?q=${query}` : ''}`);
-				show = false;
-				onClose();
-			},
-			icon: PencilSquare
-		}
-	];
-
 	let query = '';
+	let kind: 'all' | SearchKind = 'all';
+	let sharing = 'all';
+	let scope = '';
+	let kinds: SearchKind[] = ['chat'];
+	let scopes: SearchScope[] = [];
+	let results: SearchResult[] = [];
+	let selectedIndex = 0;
+	let loading = false;
+	let error = '';
 	let page = 1;
+	let hasMore = false;
+	let preview = false;
+	let panel: 'filters' | 'actions' | 'types' | null = null;
+	let input: HTMLInputElement;
+	let list: HTMLDivElement;
+	let request: AbortController | undefined;
+	let timer: ReturnType<typeof setTimeout>;
+	let generation = 0;
+	const icons = { chat: ChatBubble, message: Hashtag, note: Document };
+	const labels = { chat: 'Chats', message: 'Messages', note: 'Notes' };
+	$: selected = results[selectedIndex];
+	$: scopeName = scopes.find((item) => item.id === scope)?.name ?? '';
+	$: canCreateNote = kinds.includes('note');
+	$: selectionClass = $settings?.highContrastMode
+		? 'bg-gray-200 dark:bg-gray-800'
+		: 'bg-gray-50/70 dark:bg-gray-800/60';
+	const quietButton =
+		'focus-ring flex h-[1.6875rem] shrink-0 items-center justify-center gap-1 rounded-lg px-1.5 text-[0.6875rem] font-normal text-gray-500 hover:bg-gray-50/60 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800/60 dark:hover:text-gray-200';
+	$: if (show && typeof window !== 'undefined') {
+		preview =
+			window.matchMedia('(min-width: 1024px)').matches &&
+			localStorage.getItem('searchPreview') !== 'false';
+	}
+	$: schedule(show, query, kind, sharing, scope);
 
-	let chatList = null;
-
-	let chatListLoading = false;
-	let allChatsLoaded = false;
-
-	let searchDebounceTimeout;
-
-	let selectedIdx = null;
-	let selectedChat = null;
-
-	let selectedModels = [''];
-	let history = null;
-	let messages = null;
-
-	$: if (!chatListLoading && chatList) {
-		loadChatPreview(selectedIdx);
+	function setPreview(value: boolean) {
+		preview = value;
+		localStorage.setItem('searchPreview', String(value));
 	}
 
-	const loadChatPreview = async (selectedIdx) => {
-		if (!chatList || chatList.length === 0 || selectedIdx === null) {
-			selectedChat = null;
-			messages = null;
-			history = null;
-			selectedModels = [''];
-			return;
-		}
-
-		const selectedChatIdx = selectedIdx - actions.length;
-		if (selectedChatIdx < 0 || selectedChatIdx >= chatList.length) {
-			selectedChat = null;
-			messages = null;
-			history = null;
-			selectedModels = [''];
-			return;
-		}
-
-		const chatId = chatList[selectedChatIdx].id;
-
-		const chat = await getChatById(localStorage.token, chatId).catch(async (error) => {
-			return null;
-		});
-
-		if (chat) {
-			if (chat?.chat?.history) {
-				selectedModels =
-					(chat?.chat?.models ?? undefined) !== undefined
-						? chat?.chat?.models
-						: [chat?.chat?.models ?? ''];
-
-				history = chat?.chat?.history;
-				messages = createMessagesList(chat?.chat?.history, chat?.chat?.history?.currentId);
-
-				// scroll to the bottom of the messages container
-				await tick();
-				const messagesContainerElement = document.getElementById('chat-preview');
-				if (messagesContainerElement) {
-					messagesContainerElement.scrollTop = messagesContainerElement.scrollHeight;
-				}
-			} else {
-				messages = [];
-			}
-		} else {
-			toast.error($i18n.t('Failed to load chat preview'));
-			selectedChat = null;
-			messages = null;
-			history = null;
-			selectedModels = [''];
-			return;
-		}
-	};
-
-	const searchHandler = async () => {
-		if (!show) {
-			return;
-		}
-
-		if (searchDebounceTimeout) {
-			clearTimeout(searchDebounceTimeout);
-		}
-
+	function schedule(visible: boolean, q: string, type: string, share: string, location: string) {
+		clearTimeout(timer);
+		request?.abort();
+		generation += 1;
+		if (!visible) return;
+		loading = true;
+		error = '';
+		results = [];
+		selectedIndex = 0;
+		hasMore = false;
 		page = 1;
-		chatList = null;
-		if (query === '') {
-			chatList = await getChatList(localStorage.token, page);
-		} else {
-			searchDebounceTimeout = setTimeout(async () => {
-				chatList = await getChatListBySearchText(localStorage.token, query, page);
-
-				if ((chatList ?? []).length === 0) {
-					allChatsLoaded = true;
-				} else {
-					allChatsLoaded = false;
-				}
-			}, 500);
-		}
-
-		selectedChat = null;
-		messages = null;
-		history = null;
-		selectedModels = [''];
-
-		if ((chatList ?? []).length === 0) {
-			allChatsLoaded = true;
-		} else {
-			allChatsLoaded = false;
-		}
-	};
-
-	const loadMoreChats = async () => {
-		chatListLoading = true;
-		page += 1;
-
-		let newChatList = [];
-
-		if (query) {
-			newChatList = await getChatListBySearchText(localStorage.token, query, page);
-		} else {
-			newChatList = await getChatList(localStorage.token, page);
-		}
-
-		// once the bottom of the list has been reached (no results) there is no need to continue querying
-		allChatsLoaded = newChatList.length === 0;
-
-		if (newChatList.length > 0) {
-			const existingIds = new Set(chatList.map((c) => c.id));
-			const uniqueNewChats = newChatList.filter((c) => !existingIds.has(c.id));
-			chatList = [...chatList, ...uniqueNewChats];
-		}
-
-		chatListLoading = false;
-	};
-
-	$: if (show) {
-		searchHandler();
+		timer = setTimeout(() => fetchResults(1), q.trim() ? 180 : 0);
 	}
 
-	const onKeyDown = (e) => {
-		const searchOptions = document.getElementById('search-options-container');
-		if (searchOptions || !show) {
+	async function fetchResults(nextPage: number) {
+		request?.abort();
+		const controller = new AbortController();
+		request = controller;
+		const version = ++generation;
+		loading = true;
+		error = '';
+		try {
+			const response = await searchWorkspace(
+				localStorage.token,
+				{ q: query, kind, sharing, scope, page: nextPage },
+				controller.signal
+			);
+			if (version !== generation || !show) return;
+			const existingIds = new Set(results.map((item) => item.id));
+			results =
+				nextPage === 1
+					? response.items
+					: [...results, ...response.items.filter((item) => !existingIds.has(item.id))];
+			scopes = response.scopes;
+			kinds = response.kinds;
+			hasMore = response.has_more;
+			page = nextPage;
+		} catch (cause) {
+			if (version === generation && !controller.signal.aborted)
+				error = $i18n.t('Search is unavailable. Please try again.');
+		} finally {
+			if (version === generation) loading = false;
+		}
+	}
+
+	function close() {
+		show = false;
+		panel = null;
+		preview = false;
+		onClose();
+	}
+
+	async function open(result = selected) {
+		if (!result) return;
+		await goto(result.url);
+		close();
+	}
+
+	async function select(index: number) {
+		selectedIndex = Math.max(0, Math.min(results.length - 1, index));
+		await tick();
+		list?.querySelector(`[data-index="${selectedIndex}"]`)?.scrollIntoView({ block: 'nearest' });
+	}
+
+	function keydown(event: KeyboardEvent) {
+		if (!show || event.isComposing || event.key === 'Escape') return;
+		if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+			event.preventDefault();
+			event.stopPropagation();
+			panel = panel === 'actions' ? null : 'actions';
 			return;
 		}
-
-		if (e.code === 'Escape') {
-			show = false;
-			onClose();
-		} else if (e.code === 'Enter') {
-			const item = document.querySelector(`[data-arrow-selected="true"]`);
-			if (item) {
-				item?.click();
-				show = false;
-			}
-
-			return;
-		} else if (e.code === 'ArrowDown') {
-			const searchInput = document.getElementById('search-input');
-
-			if (searchInput) {
-				// check if focused on the search input
-				if (document.activeElement === searchInput) {
-					searchInput.blur();
-					selectedIdx = 0;
-					return;
-				}
-			}
-
-			selectedIdx = Math.min(selectedIdx + 1, (chatList ?? []).length - 1 + actions.length);
-		} else if (e.code === 'ArrowUp') {
-			if (selectedIdx === 0) {
-				const searchInput = document.getElementById('search-input');
-
-				if (searchInput) {
-					// check if focused on the search input
-					if (document.activeElement !== searchInput) {
-						searchInput.focus();
-						selectedIdx = 0;
-						return;
-					}
-				}
-			}
-
-			selectedIdx = Math.max(selectedIdx - 1, 0);
+		if (panel || (event.target !== input && event.target !== list)) return;
+		if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+			event.preventDefault();
+			select(selectedIndex + (event.key === 'ArrowDown' ? 1 : -1));
+		} else if (event.key === 'Enter' && selected) {
+			event.preventDefault();
+			if (event.metaKey || event.ctrlKey) setPreview(!preview);
+			else open();
 		}
+	}
 
-		const item = document.querySelector(`[data-arrow-selected="true"]`);
-		item?.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
-	};
+	function formatSearchDate(seconds: number) {
+		if (!Number.isFinite(seconds) || seconds <= 0) return '';
+		const date = new Date(seconds * 1000);
+		return Number.isFinite(date.getTime())
+			? date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+			: '';
+	}
 
-	onMount(() => {
-		actions = [
-			...actions,
-			...(($config?.features?.enable_notes ?? false) &&
-			($user?.role === 'admin' || ($user?.permissions?.features?.notes ?? true))
-				? [
-						{
-							label: $i18n.t('Create a new note'),
-							onClick: async () => {
-								await goto(`/notes?content=${query}`);
-								show = false;
-								onClose();
-							},
-							icon: PageEdit
-						}
-					]
-				: [])
-		];
+	async function copyLink() {
+		if (!selected) return;
+		try {
+			await navigator.clipboard.writeText(new URL(selected.url, location.origin).href);
+			toast.success($i18n.t('Link copied to clipboard'));
+			panel = null;
+		} catch {
+			toast.error($i18n.t('Unable to copy link'));
+		}
+	}
 
-		document.addEventListener('keydown', onKeyDown);
-	});
+	async function create(type: 'chat' | 'note') {
+		await goto(
+			type === 'chat'
+				? `/?q=${encodeURIComponent(query)}`
+				: `/notes/new?content=${encodeURIComponent(query)}`
+		);
+		close();
+	}
 
+	function resetFilters() {
+		kind = 'all';
+		sharing = 'all';
+		scope = '';
+		panel = null;
+		input?.focus();
+	}
 	onDestroy(() => {
-		if (searchDebounceTimeout) {
-			clearTimeout(searchDebounceTimeout);
-		}
-		document.removeEventListener('keydown', onKeyDown);
+		clearTimeout(timer);
+		request?.abort();
+		generation += 1;
 	});
 </script>
 
-<Modal size="xl" bind:show>
-	<div class="py-3 dark:text-gray-300 text-gray-700">
-		<div class="px-4 pb-1.5">
-			<SearchInput
+<svelte:window
+	on:click={(event) => {
+		if (panel && event.target instanceof Element && !event.target.closest('[data-search-panel]'))
+			panel = null;
+	}}
+/>
+
+<Modal
+	bind:show
+	size={preview ? 'xl' : 'lg'}
+	ariaLabel={$i18n.t('Search workspace')}
+	onRequestClose={close}
+	className="bg-white dark:bg-gray-850 rounded-2xl !border-gray-100 dark:!border-gray-800"
+>
+	<!-- svelte-ignore a11y-no-static-element-interactions -->
+	<div
+		class="relative flex max-h-[85dvh] flex-col font-normal text-[0.8125rem] text-gray-700 dark:text-gray-100"
+		on:keydown={keydown}
+	>
+		<div class="flex h-11 shrink-0 items-center gap-2 px-3">
+			<Search className="size-3.5 shrink-0 text-gray-500 dark:text-gray-400" strokeWidth="2" />
+			<input
+				bind:this={input}
 				bind:value={query}
-				on:input={searchHandler}
-				placeholder={$i18n.t('Search')}
-				showClearButton={true}
-				onFocus={() => {
-					selectedIdx = null;
-					messages = null;
-				}}
-				onKeydown={(e) => {
-					console.log('e', e);
-
-					if (e.code === 'Enter' && (chatList ?? []).length > 0) {
-						const item = document.querySelector(`[data-arrow-selected="true"]`);
-						if (item) {
-							item?.click();
-						}
-
-						show = false;
-						return;
-					} else if (e.code === 'ArrowDown') {
-						selectedIdx = Math.min(selectedIdx + 1, (chatList ?? []).length - 1 + actions.length);
-					} else if (e.code === 'ArrowUp') {
-						selectedIdx = Math.max(selectedIdx - 1, 0);
-					} else {
-						selectedIdx = 0;
-					}
-
-					const item = document.querySelector(`[data-arrow-selected="true"]`);
-					item?.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
-				}}
+				class="h-8 min-w-0 flex-1 bg-transparent text-[0.8125rem] font-normal outline-hidden placeholder:text-gray-400 dark:placeholder:text-gray-500"
+				placeholder={$i18n.t('Search workspace…')}
+				aria-label={$i18n.t('Search your workspace')}
+				role="combobox"
+				aria-autocomplete="list"
+				aria-expanded={results.length > 0}
+				aria-controls="workspace-search-results"
+				aria-activedescendant={selected ? `search-result-${selectedIndex}` : undefined}
+				autocomplete="off"
+				spellcheck="false"
+				maxlength="500"
 			/>
-		</div>
-
-		<!-- <hr class="border-gray-50 dark:border-gray-850/30 my-1" /> -->
-
-		<div class="flex px-4 pb-1">
-			<div
-				class="flex flex-col overflow-y-auto h-96 md:h-[40rem] max-h-full scrollbar-hidden w-full flex-1 pr-2"
+			{#if query}<button
+					class={quietButton}
+					aria-label={$i18n.t('Clear search')}
+					on:click={() => {
+						query = '';
+						input.focus();
+					}}><XMark className="size-3" /></button
+				>{/if}
+			<button
+				class={quietButton}
+				aria-label={$i18n.t('Content type')}
+				data-search-panel
+				aria-expanded={panel === 'types'}
+				on:click={() => (panel = panel === 'types' ? null : 'types')}
+				>{$i18n.t(kind === 'all' ? 'Everything' : labels[kind])}<ChevronDown
+					className="size-2.5"
+				/></button
 			>
-				<div class="w-full text-xs text-gray-500 dark:text-gray-500 font-medium pb-2 px-2">
-					{$i18n.t('Actions')}
+			<button
+				class={quietButton}
+				aria-label={$i18n.t('Filters')}
+				data-search-panel
+				aria-expanded={panel === 'filters'}
+				on:click={() => (panel = panel === 'filters' ? null : 'filters')}
+				><Adjustments className="size-3.5" /></button
+			>
+			<button class={quietButton} aria-label={$i18n.t('Close search')} on:click={close}
+				><XMark className="size-3.5" /></button
+			>
+		</div>
+		{#if sharing !== 'all' || scope}
+			<div class="flex flex-wrap items-center gap-1 px-3 pb-1.5">
+				{#if sharing !== 'all'}<button
+						class="{quietButton} !h-[1.375rem] bg-gray-50/60 dark:bg-gray-800/40"
+						on:click={() => (sharing = 'all')}
+						aria-label={$i18n.t('Remove sharing filter')}
+						>{$i18n.t(sharing === 'mine' ? 'Created by you' : 'Shared with you')}<XMark
+							className="size-2.5"
+						/></button
+					>{/if}
+				{#if scope}<button
+						class="{quietButton} !h-[1.375rem] max-w-48 bg-gray-50/60 dark:bg-gray-800/40"
+						on:click={() => (scope = '')}
+						aria-label={$i18n.t('Remove location filter')}
+						><span class="truncate">{scopeName}</span><XMark
+							className="size-2.5 shrink-0"
+						/></button
+					>{/if}
+			</div>
+		{/if}
+		{#if panel === 'types'}
+			<div class="absolute top-10 right-12 z-10" data-search-panel>
+				<DropdownMenu className="min-w-32 font-normal"
+					><button
+						on:click={() => {
+							kind = 'all';
+							panel = null;
+							input.focus();
+						}}>{$i18n.t('Everything')}</button
+					>{#each kinds as type}<button
+							on:click={() => {
+								kind = type;
+								panel = null;
+								input.focus();
+							}}
+							><svelte:component this={icons[type]} className="size-3.5" />{$i18n.t(
+								labels[type]
+							)}</button
+						>{/each}</DropdownMenu
+				>
+			</div>
+		{/if}
+		{#if panel === 'filters'}
+			<div class="absolute right-2 top-10 z-10 w-52 max-w-[calc(100%-1rem)]" data-search-panel>
+				<DropdownMenu>
+					<DropdownSub maxWidth={208} contentClass="w-52 font-normal">
+						<button
+							slot="trigger"
+							class="focus-ring flex h-[1.6875rem] w-full items-center gap-2 rounded-xl px-2 text-[0.8125rem] font-normal"
+						>
+							<span>{$i18n.t('View')}</span>
+							<span class="ml-auto truncate text-gray-500 dark:text-gray-400"
+								>{$i18n.t(
+									sharing === 'all'
+										? 'All'
+										: sharing === 'mine'
+											? 'Created by you'
+											: 'Shared with you'
+								)}</span
+							>
+							<ChevronRight className="size-3.5 shrink-0 text-gray-400" />
+						</button>
+						{#each [{ value: 'all', label: 'All' }, { value: 'mine', label: 'Created by you' }, { value: 'shared', label: 'Shared with you' }] as option}
+							<button
+								data-search-panel
+								aria-pressed={sharing === option.value}
+								on:click={() => {
+									sharing = option.value;
+									panel = null;
+									input.focus();
+								}}
+							>
+								{$i18n.t(option.label)}
+								{#if sharing === option.value}<Check className="ml-auto size-3.5" />{/if}
+							</button>
+						{/each}
+					</DropdownSub>
+					<DropdownSub
+						maxWidth={208}
+						contentClass="w-52 max-h-64 overflow-y-auto scrollbar-hover font-normal"
+					>
+						<button
+							slot="trigger"
+							class="focus-ring flex h-[1.6875rem] w-full items-center gap-2 rounded-xl px-2 text-[0.8125rem] font-normal"
+						>
+							<span>{$i18n.t('Location')}</span>
+							<span class="ml-auto truncate text-gray-500 dark:text-gray-400"
+								>{scopeName || $i18n.t('Everywhere')}</span
+							>
+							<ChevronRight className="size-3.5 shrink-0 text-gray-400" />
+						</button>
+						<button
+							data-search-panel
+							aria-pressed={!scope}
+							on:click={() => {
+								scope = '';
+								panel = null;
+								input.focus();
+							}}
+						>
+							{$i18n.t('Everywhere')}{#if !scope}<Check className="ml-auto size-3.5" />{/if}
+						</button>
+						{#each [{ kind: 'folder', label: 'Folders' }, { kind: 'channel', label: 'Channels' }] as group}
+							{#if scopes.some((item) => item.kind === group.kind)}
+								<div
+									data-search-panel
+									class="px-2 pb-1 pt-2 text-[0.6875rem] text-gray-500 dark:text-gray-400"
+								>
+									{$i18n.t(group.label)}
+								</div>
+								{#each scopes.filter((item) => item.kind === group.kind) as item}
+									<button
+										data-search-panel
+										aria-pressed={scope === item.id}
+										on:click={() => {
+											scope = item.id;
+											panel = null;
+											input.focus();
+										}}
+									>
+										<span class="min-w-0 truncate">{item.name}</span>{#if scope === item.id}<Check
+												className="ml-auto size-3.5 shrink-0"
+											/>{/if}
+									</button>
+								{/each}
+							{/if}
+						{/each}
+					</DropdownSub>
+					{#if kind !== 'all' || sharing !== 'all' || scope}
+						<hr class="border-gray-100 dark:border-gray-800" />
+						<button on:click={resetFilters}>{$i18n.t('Reset')}</button>
+					{/if}
+				</DropdownMenu>
+			</div>
+		{/if}
+		<div
+			class="flex h-[min(36rem,70dvh)] min-h-40 border-t border-gray-100/60 dark:border-gray-800/40"
+			aria-busy={loading}
+		>
+			<div
+				class="min-w-0 flex-1 flex-col overflow-y-auto p-1 scrollbar-hidden {preview && selected
+					? 'hidden sm:flex'
+					: 'flex'}"
+			>
+				<div
+					class="flex h-6 shrink-0 items-center justify-between px-2 text-[0.6875rem] text-gray-500 dark:text-gray-400"
+				>
+					<span>{$i18n.t(query.trim() ? 'Results' : 'Pinned & recent')}</span><span
+						aria-live="polite"
+						>{loading
+							? $i18n.t('Searching…')
+							: results.length
+								? `${results.length}${hasMore ? '+' : ''}`
+								: ''}</span
+					>
 				</div>
-
-				{#each actions as action, idx (action.label)}
-					<button
-						class=" w-full flex items-center rounded-xl text-sm py-2 px-3 hover:bg-gray-50 dark:hover:bg-gray-850 {selectedIdx ===
-						idx
-							? 'bg-gray-50 dark:bg-gray-850'
-							: ''}"
-						data-arrow-selected={selectedIdx === idx ? 'true' : undefined}
-						dragabble="false"
-						on:mouseenter={() => {
-							selectedIdx = idx;
-						}}
-						on:click={async () => {
-							await action.onClick();
+				<div
+					bind:this={list}
+					id="workspace-search-results"
+					role="listbox"
+					aria-label={$i18n.t('Search results')}
+					tabindex="-1"
+					class="outline-hidden"
+				>
+					{#each results as result, index (result.id)}
+						<!-- svelte-ignore a11y-click-events-have-key-events -->
+						<div
+							id="search-result-{index}"
+							role="option"
+							aria-selected={selectedIndex === index}
+							tabindex="-1"
+							data-index={index}
+							class="flex min-h-8 cursor-pointer items-center gap-2 rounded-xl px-2 py-1 text-left font-normal transition-colors duration-75 {selectedIndex ===
+							index
+								? selectionClass
+								: 'hover:bg-gray-50/40 dark:hover:bg-gray-800/40'}"
+							on:mouseenter={() => (selectedIndex = index)}
+							on:click={() => {
+								selectedIndex = index;
+								if (preview) input?.focus();
+								else open(result);
+							}}
+							on:dblclick={() => open(result)}
+						>
+							<svelte:component
+								this={icons[result.kind]}
+								className="size-3.5 shrink-0 text-gray-500 dark:text-gray-400"
+							/>
+							<div class="min-w-0 flex-1">
+								<div class="flex items-center gap-2 leading-5">
+									<span class="min-w-0 flex-1 truncate"
+										><HighlightedText text={result.title} {query} /></span
+									><span
+										class="hidden max-w-[35%] truncate text-[0.6875rem] text-gray-500 dark:text-gray-400 sm:block"
+										>{result.context}</span
+									>{#if result.pinned}<Pin className="size-2.5 shrink-0 text-gray-400" />{/if}
+								</div>
+								{#if query.trim() && result.snippet}<div
+										class="truncate text-xs leading-4 text-gray-500 dark:text-gray-400"
+									>
+										<HighlightedText text={result.snippet} {query} />
+									</div>{/if}
+							</div>
+						</div>
+					{/each}
+				</div>
+				{#if loading && !results.length}<div
+						class="flex flex-1 items-center justify-center text-gray-400"
+						aria-label={$i18n.t('Searching')}
+					>
+						<Spinner className="size-4" />
+					</div>{/if}
+				{#if error}<div
+						class="m-auto px-5 py-6 text-center text-xs text-gray-500 dark:text-gray-400"
+						role="alert"
+					>
+						<p>{error}</p>
+						<button
+							class="mt-2 underline underline-offset-2"
+							on:click={() => fetchResults(results.length ? page + 1 : 1)}
+							>{$i18n.t('Try again')}</button
+						>
+					</div>
+				{:else if !loading && !results.length}<div
+						class="m-auto px-5 py-6 text-center text-xs text-gray-500 dark:text-gray-400"
+					>
+						<p>{$i18n.t(query ? 'No matches found' : 'Nothing here yet')}</p>
+						<p class="mt-1 text-[0.6875rem]">
+							{$i18n.t('Try another word or broaden your filters.')}
+						</p>
+						{#if kind !== 'all' || sharing !== 'all' || scope}<button
+								class="mt-2 underline underline-offset-2"
+								on:click={resetFilters}>{$i18n.t('Clear filters')}</button
+							>{/if}
+					</div>{/if}
+				{#if hasMore && !error}
+					<Loader
+						on:visible={() => {
+							if (!loading) fetchResults(page + 1);
 						}}
 					>
-						<div class="pr-2">
-							<svelte:component this={action.icon} />
-						</div>
-						<div class=" flex-1 text-left">
-							<div class="text-ellipsis line-clamp-1 w-full">
-								{$i18n.t(action.label)}
-							</div>
-						</div>
-					</button>
-				{/each}
-
-				{#if chatList}
-					<hr class="border-gray-50 dark:border-gray-850/30 my-3" />
-
-					{#if chatList.length === 0}
-						<div class="text-xs text-gray-500 dark:text-gray-400 text-center px-5 py-4">
-							{$i18n.t('No results found')}
-						</div>
-					{/if}
-
-					{#each chatList as chat, idx (chat.id)}
-						{#if idx === 0 || (idx > 0 && chat.time_range !== chatList[idx - 1].time_range)}
-							<div
-								class="w-full text-xs text-gray-500 dark:text-gray-500 font-medium {idx === 0
-									? ''
-									: 'pt-5'} pb-2 px-2"
-							>
-								{$i18n.t(chat.time_range)}
-								<!-- localisation keys for time_range to be recognized from the i18next parser (so they don't get automatically removed):
-							{$i18n.t('Today')}
-							{$i18n.t('Yesterday')}
-							{$i18n.t('Previous 7 days')}
-							{$i18n.t('Previous 30 days')}
-							{$i18n.t('January')}
-							{$i18n.t('February')}
-							{$i18n.t('March')}
-							{$i18n.t('April')}
-							{$i18n.t('May')}
-							{$i18n.t('June')}
-							{$i18n.t('July')}
-							{$i18n.t('August')}
-							{$i18n.t('September')}
-							{$i18n.t('October')}
-							{$i18n.t('November')}
-							{$i18n.t('December')}
-							-->
-							</div>
-						{/if}
-
-						<a
-							class=" w-full flex justify-between items-center rounded-xl text-sm py-2 px-3 hover:bg-gray-50 dark:hover:bg-gray-850 {selectedIdx ===
-							idx + actions.length
-								? 'bg-gray-50 dark:bg-gray-850'
-								: ''}"
-							href="/c/{chat.id}"
-							draggable="false"
-							data-arrow-selected={selectedIdx === idx + actions.length ? 'true' : undefined}
-							on:mouseenter={() => {
-								selectedIdx = idx + actions.length;
-							}}
-							on:click={async () => {
-								await goto(`/c/${chat.id}`);
-								show = false;
-								onClose();
-							}}
+						<div
+							class="flex h-7 items-center justify-center text-gray-400"
+							role="status"
+							aria-label={$i18n.t('Loading more results')}
 						>
-							<div class=" flex-1">
-								<div class="text-ellipsis line-clamp-1 w-full">
-									{chat?.title}
-								</div>
-							</div>
-
-							<div class=" pl-3 shrink-0 text-gray-500 dark:text-gray-400 text-xs">
-								{$i18n.t(
-									dayjs(chat?.updated_at * 1000).calendar(null, {
-										sameDay: '[Today]',
-										nextDay: '[Tomorrow]',
-										nextWeek: 'dddd',
-										lastDay: '[Yesterday]',
-										lastWeek: '[Last] dddd',
-										sameElse: 'L' // use localized format, otherwise dayjs.calendar() defaults to DD/MM/YYYY
-									})
-								)}
-							</div>
-						</a>
-					{/each}
-
-					{#if !allChatsLoaded}
-						<Loader
-							on:visible={(e) => {
-								if (!chatListLoading) {
-									loadMoreChats();
-								}
-							}}
-						>
-							<div class="w-full flex justify-center py-4 text-xs animate-pulse items-center gap-2">
-								<Spinner className=" size-4" />
-								<div class=" ">{$i18n.t('Loading...')}</div>
-							</div>
-						</Loader>
-					{/if}
-				{:else}
-					<div class="w-full h-full flex justify-center items-center">
-						<Spinner className="size-5" />
-					</div>
+							<Spinner className="size-3" />
+						</div>
+					</Loader>
 				{/if}
 			</div>
-			<div
-				id="chat-preview"
-				class="hidden md:flex md:flex-1 w-full overflow-y-auto h-96 md:h-[40rem] scrollbar-hidden @container"
-			>
-				{#if messages === null}
+			{#if preview && selected}
+				<section
+					class="flex w-full min-w-0 flex-col border-gray-100/60 sm:w-[45%] sm:border-l dark:border-gray-800/40"
+					aria-label={$i18n.t('Result preview')}
+				>
 					<div
-						class="w-full h-full flex justify-center items-center text-gray-500 dark:text-gray-400 text-sm"
+						class="flex h-8 shrink-0 items-center justify-between px-2 text-[0.6875rem] text-gray-500 dark:text-gray-400"
 					>
-						{$i18n.t('Select a conversation to preview')}
+						<button
+							class={quietButton}
+							on:click={() => {
+								preview = false;
+								input.focus();
+							}}><ArrowLeft className="size-3" /><span>{$i18n.t('Back')}</span></button
+						><span>{$i18n.t(labels[selected.kind])}</span>
 					</div>
-				{:else}
-					<div class="w-full h-full flex flex-col">
-						<Messages
-							className="h-full flex pt-4 pb-8 w-full"
-							chatId={`chat-preview-${selectedChat?.id ?? ''}`}
-							user={$user}
-							readOnly={true}
-							{selectedModels}
-							bind:history
-							bind:messages
-							autoScroll={true}
-							sendMessage={() => {}}
-							continueResponse={() => {}}
-							regenerateResponse={() => {}}
-						/>
-					</div>
-				{/if}
+					{#if selected.kind === 'chat'}
+						<div class="truncate px-3 pb-1 text-[0.8125rem] font-normal">{selected.title}</div>
+						<div class="min-h-0 flex-1">
+							<ChatPreview
+								chatId={selected.id.startsWith('chat:') ? selected.id.slice(5) : ''}
+								shareId={selected.id.startsWith('shared:') ? selected.id.slice(7) : ''}
+								messageId={new URL(selected.url, 'http://localhost').searchParams.get('message') ??
+									''}
+							/>
+						</div>
+					{:else}
+						<div class="min-h-0 flex-1 overflow-y-auto px-3 pb-3 scrollbar-hidden">
+							<h2 class="text-[0.8125rem] font-normal leading-5 break-words">{selected.title}</h2>
+							<div class="mt-1 text-[0.6875rem] text-gray-500 dark:text-gray-400">
+								{selected.context} · {formatSearchDate(selected.updated_at)}
+							</div>
+							<div class="mt-3 break-words text-xs leading-snug text-gray-600 dark:text-gray-300">
+								{#if selected.kind === 'note'}
+									<NotePreview id={selected.id.slice(5)} {query} />
+								{:else}
+									<PreviewMarkdown
+										id={`message-preview-${selected.id}`}
+										content={selected.preview}
+									/>
+								{/if}
+							</div>
+						</div>
+					{/if}
+				</section>
+			{/if}
+		</div>
+		{#if panel === 'actions'}<div class="absolute bottom-9 right-1 z-10" data-search-panel>
+				<DropdownMenu className="min-w-56 font-normal"
+					>{#if selected}<button
+							on:click={() => {
+								panel = null;
+								open();
+							}}
+							>{$i18n.t('Open result')}<span class="ml-auto text-xs text-gray-400">↵</span></button
+						><button
+							on:click={() => {
+								setPreview(!preview);
+								panel = null;
+								input.focus();
+							}}>{$i18n.t(preview ? 'Hide preview' : 'Show preview')}</button
+						><button on:click={copyLink}>{$i18n.t('Copy link')}</button>
+						<hr class="border-gray-100 dark:border-gray-800" />{/if}<button
+						on:click={() => create('chat')}>{$i18n.t('Start a new conversation')}</button
+					>{#if canCreateNote}<button on:click={() => create('note')}
+							>{$i18n.t('Create a new note')}</button
+						>{/if}</DropdownMenu
+				>
+			</div>{/if}
+		<div
+			class="flex h-8 shrink-0 items-center justify-between gap-2 border-t border-gray-100/60 px-2 dark:border-gray-800/40"
+		>
+			<span class="min-w-0 truncate pl-1 text-[0.6875rem] text-gray-500 dark:text-gray-400"
+				>{selected ? selected.context : $i18n.t('Workspace search')}</span
+			>
+			<div class="flex shrink-0 items-center gap-0.5">
+				<button class={quietButton} disabled={!selected} on:click={() => open()}
+					>{$i18n.t('Open')}<span class="text-gray-400">↵</span></button
+				><button
+					class={quietButton}
+					disabled={!selected}
+					on:click={() => setPreview(!preview)}
+					aria-pressed={preview}
+					title={$i18n.t('Preview (Ctrl/Cmd + Enter)')}
+					><Eye className="size-3" /><span class="hidden sm:inline">{$i18n.t('Preview')}</span
+					></button
+				><button
+					class={quietButton}
+					data-search-panel
+					aria-expanded={panel === 'actions'}
+					on:click={() => (panel = panel === 'actions' ? null : 'actions')}
+					>{$i18n.t('Actions')}<span class="text-[0.625rem] text-gray-400">⌘K</span></button
+				>
 			</div>
 		</div>
 	</div>

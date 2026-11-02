@@ -2,28 +2,34 @@
 NOTE: This vector database integration is community-supported and maintained on a best-effort basis.
 """
 
-from elasticsearch import Elasticsearch, BadRequestError
-from typing import Optional
 import ssl
-from elasticsearch.helpers import bulk, scan
+from typing import Any, Optional
 
-from open_webui.retrieval.vector.utils import process_metadata
-from open_webui.retrieval.vector.main import (
-    VectorDBBase,
-    VectorItem,
-    SearchResult,
-    GetResult,
-)
+from elasticsearch import BadRequestError, Elasticsearch
+from elasticsearch.helpers import bulk, scan
 from open_webui.config import (
-    ELASTICSEARCH_URL,
-    ELASTICSEARCH_CA_CERTS,
     ELASTICSEARCH_API_KEY,
-    ELASTICSEARCH_USERNAME,
-    ELASTICSEARCH_PASSWORD,
+    ELASTICSEARCH_CA_CERTS,
     ELASTICSEARCH_CLOUD_ID,
     ELASTICSEARCH_INDEX_PREFIX,
+    ELASTICSEARCH_PASSWORD,
+    ELASTICSEARCH_URL,
+    ELASTICSEARCH_USERNAME,
     SSL_ASSERT_FINGERPRINT,
 )
+from open_webui.retrieval.vector.main import (
+    GetResult,
+    SearchResult,
+    VectorDBBase,
+    VectorItem,
+)
+from open_webui.retrieval.vector.utils import iter_filter_conditions, process_metadata
+
+
+def _metadata_filter(key: str, op: str, value: Any) -> dict:
+    if op == '$in':
+        return {'terms': {f'metadata.{key}': value}}
+    return {'term': {f'metadata.{key}': value}}
 
 
 class ElasticsearchClient(VectorDBBase):
@@ -161,12 +167,16 @@ class ElasticsearchClient(VectorDBBase):
         filter: Optional[dict] = None,
         limit: int = 10,
     ) -> Optional[SearchResult]:
+        filters = [{'term': {'collection': collection_name}}]
+        if filter:
+            filters.extend(_metadata_filter(key, op, value) for key, op, value in iter_filter_conditions(filter))
+
         query = {
             'size': limit,
             '_source': ['text', 'metadata'],
             'query': {
                 'script_score': {
-                    'query': {'bool': {'filter': [{'term': {'collection': collection_name}}]}},
+                    'query': {'bool': {'filter': filters}},
                     'script': {
                         'source': "cosineSimilarity(params.vector, 'vector') + 1.0",
                         'params': {'vector': vectors[0]},  # Assuming single query vector
@@ -190,9 +200,9 @@ class ElasticsearchClient(VectorDBBase):
         }
 
         for field, value in filter.items():
-            query_body['query']['bool']['filter'].append({'term': {field: value}})
+            query_body['query']['bool']['filter'].append({'term': {f'metadata.{field}': value}})
         query_body['query']['bool']['filter'].append({'term': {'collection': collection_name}})
-        size = limit if limit else 10
+        size = limit if limit else 10000
 
         try:
             result = self.client.search(

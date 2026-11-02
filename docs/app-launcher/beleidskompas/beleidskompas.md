@@ -5,6 +5,7 @@ De **Beleidskompas Assistent** ondersteunt medewerkers bij het gestructureerd do
 **Dit project wordt ontwikkeld in samenwerking met CGI Smartlab.**
 
 ## Features
+
 - Stapsgewijze navigatie door het beleidsproces
 - Invoer en begeleiding per processtap
 - AI-gestuurde suggesties en checkvragen
@@ -12,6 +13,7 @@ De **Beleidskompas Assistent** ondersteunt medewerkers bij het gestructureerd do
 - Mogelijkheid om provinciale termen en kaders in te stellen
 
 ## Werkwijze
+
 1. **Start een nieuwe casus**  
    Voer de casusinformatie in en doorloop de beleidsstappen.
 2. **Doorloop het proces**  
@@ -28,4 +30,3 @@ De **Beleidskompas Assistent** ondersteunt medewerkers bij het gestructureerd do
 ## AI Workflow visualisatie
 
 <img alt="AI Workflow Visualisatie" src="visualisatie.png" />
-

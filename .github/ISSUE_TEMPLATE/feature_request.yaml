@@ -1,82 +1,73 @@
 name: Feature Request
-description: Suggest an idea for this project
+description: Describe what you would like Open WebUI to support.
 title: 'feat: '
 labels: ['triage']
 body:
   - type: markdown
     attributes:
       value: |
-        ## Important Notes
-        ### Before submitting
-        
-        Please check the **open AND closed** [Issues](https://github.com/open-webui/open-webui/issues) AND [Discussions](https://github.com/open-webui/open-webui/discussions) to see if a similar request has been posted.
-        It's likely we're already tracking it! If you’re unsure, start a discussion post first.
+        # Feature Request
 
-        #### Scope
+        Describe the requested behavior, the problem it solves, and any examples, mockups, screenshots, or workflows that clarify the request. A clear issue or discussion is the most useful contribution.
 
-        If your feature request is likely to take more than a quick coding session to implement, test and verify, then open it in the **Ideas** section of the [Discussions](https://github.com/open-webui/open-webui/discussions) instead.
-        **We will close and force move your feature request to the Ideas section, if we believe your feature request is not trivial/quick to implement.**
-        This is to ensure the issues tab is used only for issues, quickly addressable feature requests and tracking tickets by the maintainers.
-        Other feature requests belong in the **Ideas** section of the [Discussions](https://github.com/open-webui/open-webui/discussions).
-        
-        If your feature request might impact others in the community, definitely open a discussion instead and evaluate whether and how to implement it.
-        
-        This will help us efficiently focus on improving the project.
-        
-        ### Collaborate respectfully
-        We value a **constructive attitude**, so please be mindful of your communication. If negativity is part of your approach, our capacity to engage may be limited. We're here to help if you're **open to learning** and **communicating positively**.
+        Search open and closed [Issues](https://github.com/open-webui/open-webui/issues) and [Discussions](https://github.com/open-webui/open-webui/discussions) before submitting. If the request needs broad product, UX, architecture, compatibility, or maintenance discussion, please start in [Discussions](https://github.com/open-webui/open-webui/discussions) so the community can weigh in.
 
-        Remember:
-        - Open WebUI is a **volunteer-driven project**
-        - It's managed by a **single maintainer**
-        - It's supported by contributors who also have **full-time jobs**
+        Please do not open a code pull request for this request unless a maintainer asks for one, or the change is only i18n/localization. If you want to share code as reference, include it here as a local diff or patch. Clear product context is the most useful next step.
 
-        We appreciate your time and ask that you **respect ours**.
-
-        ### Contributing
-        If you encounter an issue, we highly encourage you to submit a pull request or fork the project. We actively work to prevent contributor burnout to maintain the quality and continuity of Open WebUI.
-
-        ### Bug reproducibility
-        If a bug cannot be reproduced with a `:main` or `:dev` Docker setup, or a `pip install` with Python 3.11, it may require additional help from the community. In such cases, we will move it to the "[issues](https://github.com/open-webui/open-webui/discussions/categories/issues)" Discussions section due to our limited resources. We encourage the community to assist with these issues. Remember, it’s not that the issue doesn’t exist; we need your help!
+        Security vulnerabilities must not be reported publicly. Use the [GitHub security page](https://github.com/open-webui/open-webui/security) instead.
 
   - type: checkboxes
-    id: existing-issue
+    id: existing-request
     attributes:
-      label: Check Existing Issues
-      description: Please confirm that you've checked for existing similar requests
+      label: Before Submitting
       options:
-        - label: I have searched for all existing **open AND closed** issues and discussions for similar requests. I have found none that is comparable to my request.
+        - label: I searched open and closed issues and discussions for an existing request.
           required: true
-  - type: checkboxes
-    id: feature-scope
-    attributes:
-      label: Verify Feature Scope
-      description: Please confirm the feature's scope is within the described scope
-      options:
-        - label: I have read through and understood the scope definition for feature requests in the Issues section. I believe my feature request meets the definition and belongs in the Issues section instead of the Discussions.
+        - label: I checked whether this already exists on the `dev` branch or latest source.
           required: true
+        - label: I understand that maintainers want a well-written issue or discussion before any code pull request.
+          required: true
+        - label: This request is not a security vulnerability.
+          required: true
+
   - type: textarea
     id: problem-description
     attributes:
-      label: Problem Description
-      description: Is your feature request related to a problem? Please provide a clear and concise description of what the problem is.
-      placeholder: "Ex. I'm always frustrated when... / Not related to a problem"
+      label: Problem
+      description: What is missing, frustrating, confusing, or unnecessarily hard today?
+      placeholder: "I'm trying to..., but..."
     validations:
       required: true
+
   - type: textarea
-    id: solution-description
+    id: desired-behavior
     attributes:
-      label: Desired Solution you'd like
-      description: Clearly describe what you want to happen.
+      label: Desired Behavior
+      description: What would you like to happen instead?
+      placeholder: "I would like Open WebUI to..."
     validations:
       required: true
+
+  - type: textarea
+    id: why-it-matters
+    attributes:
+      label: Why This Matters
+      description: Who benefits, and what workflow does this unlock or improve?
+    validations:
+      required: true
+
+  - type: textarea
+    id: examples
+    attributes:
+      label: Examples or References
+      description: Add mockups, screenshots, links, prompts, workflows, or examples from other tools.
+    validations:
+      required: false
+
   - type: textarea
     id: alternatives-considered
     attributes:
-      label: Alternatives Considered
-      description: A clear and concise description of any alternative solutions or features you've considered.
-  - type: textarea
-    id: additional-context
-    attributes:
-      label: Additional Context
-      description: Add any other context or screenshots about the feature request here.
+      label: Alternatives or Workarounds
+      description: What have you tried instead, if anything?
+    validations:
+      required: false

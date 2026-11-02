@@ -18,18 +18,27 @@
 	import { WEBUI_API_BASE_URL } from '$lib/constants';
 	import { formatNumber } from '$lib/utils';
 	import { goto } from '$app/navigation';
+	import type { Instance } from 'tippy.js';
 
 	const i18n = getContext('i18n');
 
 	// Time period - persist in localStorage
 	let selectedPeriod =
 		(typeof localStorage !== 'undefined' && localStorage.getItem('analyticsPeriod')) || '7d';
+
+	// Custom date range (YYYY-MM-DD) - persist in localStorage
+	let customStart =
+		(typeof localStorage !== 'undefined' && localStorage.getItem('analyticsCustomStart')) || '';
+	let customEnd =
+		(typeof localStorage !== 'undefined' && localStorage.getItem('analyticsCustomEnd')) || '';
+
 	$: periods = [
 		{ value: '24h', label: $i18n.t('Last 24 hours') },
 		{ value: '7d', label: $i18n.t('Last 7 days') },
 		{ value: '30d', label: $i18n.t('Last 30 days') },
 		{ value: '90d', label: $i18n.t('Last 90 days') },
-		{ value: 'all', label: $i18n.t('All time') }
+		{ value: 'all', label: $i18n.t('All time') },
+		{ value: 'custom', label: $i18n.t('Custom range') }
 	];
 
 	// User group filter
@@ -48,21 +57,44 @@
 				return { start: now - 30 * day, end: now };
 			case '90d':
 				return { start: now - 90 * day, end: now };
+			case 'custom': {
+				// Parse YYYY-MM-DD inputs; end date is inclusive (covers the full day)
+				const start = customStart ? Math.floor(new Date(customStart).getTime() / 1000) : null;
+				const end = customEnd ? Math.floor(new Date(customEnd).getTime() / 1000) + day - 1 : null;
+				return { start, end };
+			}
 			default:
 				return { start: null, end: null };
 		}
 	};
 
+	type TokenUsage = { input_tokens: number; output_tokens: number; total_tokens: number };
+	$: tokenColumns = [
+		// $i18n.t('Input Tokens')
+		{ key: 'input_tokens', label: $i18n.t('Input') },
+		// $i18n.t('Output Tokens')
+		{ key: 'output_tokens', label: $i18n.t('Output') },
+		// $i18n.t('Total Tokens')
+		{ key: 'total_tokens', label: $i18n.t('Total') }
+	] as const;
+	let selectedLeaderboard = 'models';
+
 	// Data
 	let summary = { total_messages: 0, total_chats: 0, total_models: 0, total_users: 0 };
-	let modelStats: Array<{ model_id: string; count: number; name?: string }> = [];
-	let userStats: Array<{ user_id: string; name?: string; email?: string; count: number }> = [];
+	let modelStats: Array<{
+		model_id: string;
+		count: number;
+		unique_users?: number;
+		unique_chats?: number;
+		name?: string;
+	}> = [];
+	let userStats: Array<
+		{ user_id: string; name?: string; email?: string; count: number } & Partial<TokenUsage>
+	> = [];
 	let dailyStats: Array<{ date: string; models: Record<string, number> }> = [];
-	let tokenStats: Record<
-		string,
-		{ input_tokens: number; output_tokens: number; total_tokens: number }
-	> = {};
+	let tokenStats: Record<string, TokenUsage> = {};
 	let totalTokens = { input: 0, output: 0, total: 0 };
+	let tokenTooltip: Instance | null = null;
 
 	let loading = true;
 
@@ -140,7 +172,15 @@
 		loading = false;
 	};
 
-	$: if (selectedPeriod || selectedGroupId !== undefined) {
+	// Reload when the period, group, or custom range changes.
+	// In custom mode, wait until both dates are set to avoid a half-specified query.
+	$: if (selectedPeriod === 'custom' && !(customStart && customEnd)) {
+		loading = false;
+	} else if (selectedPeriod) {
+		// reference customStart/customEnd so this block reruns when they change
+		customStart;
+		customEnd;
+		selectedGroupId;
 		loadDashboard();
 	}
 
@@ -158,10 +198,24 @@
 		if (modelOrderBy === 'name') {
 			return modelDirection === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
 		}
-		if (modelOrderBy === 'tokens') {
-			const aTokens = tokenStats[a.model_id]?.total_tokens ?? 0;
-			const bTokens = tokenStats[b.model_id]?.total_tokens ?? 0;
+		if (
+			modelOrderBy === 'input_tokens' ||
+			modelOrderBy === 'output_tokens' ||
+			modelOrderBy === 'total_tokens'
+		) {
+			const aTokens = tokenStats[a.model_id]?.[modelOrderBy] ?? 0;
+			const bTokens = tokenStats[b.model_id]?.[modelOrderBy] ?? 0;
 			return modelDirection === 'asc' ? aTokens - bTokens : bTokens - aTokens;
+		}
+		if (modelOrderBy === 'users') {
+			const aUsers = a.unique_users ?? 0;
+			const bUsers = b.unique_users ?? 0;
+			return modelDirection === 'asc' ? aUsers - bUsers : bUsers - aUsers;
+		}
+		if (modelOrderBy === 'chats') {
+			const aChats = a.unique_chats ?? 0;
+			const bChats = b.unique_chats ?? 0;
+			return modelDirection === 'asc' ? aChats - bChats : bChats - aChats;
 		}
 		return modelDirection === 'asc' ? a.count - b.count : b.count - a.count;
 	});
@@ -172,9 +226,13 @@
 			const nameB = b.name || b.user_id;
 			return userDirection === 'asc' ? nameA.localeCompare(nameB) : nameB.localeCompare(nameA);
 		}
-		if (userOrderBy === 'tokens') {
-			const aTokens = a.total_tokens ?? 0;
-			const bTokens = b.total_tokens ?? 0;
+		if (
+			userOrderBy === 'input_tokens' ||
+			userOrderBy === 'output_tokens' ||
+			userOrderBy === 'total_tokens'
+		) {
+			const aTokens = a[userOrderBy] ?? 0;
+			const bTokens = b[userOrderBy] ?? 0;
 			return userDirection === 'asc' ? aTokens - bTokens : bTokens - aTokens;
 		}
 		return userDirection === 'asc' ? a.count - b.count : b.count - a.count;
@@ -187,17 +245,24 @@
 		localStorage.setItem('analyticsPeriod', selectedPeriod);
 	}
 
-	onMount(loadDashboard);
+	// Persist custom date range
+	$: if (typeof localStorage !== 'undefined') {
+		localStorage.setItem('analyticsCustomStart', customStart);
+		localStorage.setItem('analyticsCustomEnd', customEnd);
+	}
 </script>
 
-<!-- Header with title and period selector -->
-<div
-	class="pt-0.5 pb-1 gap-1 flex flex-row justify-between items-center sticky top-0 z-10 bg-white dark:bg-gray-900"
->
-	<div class="text-lg font-medium px-0.5">
+<svelte:window
+	on:keydown={(event) => {
+		if (event.key === 'Escape') tokenTooltip?.hide();
+	}}
+/>
+
+<div class="flex items-center justify-between mb-2 gap-2">
+	<h2 class="text-sm font-medium text-gray-900 dark:text-white shrink-0">
 		{$i18n.t('Analytics')}
-	</div>
-	<div class="flex items-center gap-2">
+	</h2>
+	<div class="flex items-center gap-2 flex-wrap justify-end min-w-0">
 		{#if groups.length > 0}
 			<select
 				bind:value={selectedGroupId}
@@ -208,6 +273,21 @@
 					<option value={group.id}>{group.name}</option>
 				{/each}
 			</select>
+		{/if}
+		{#if selectedPeriod === 'custom'}
+			<input
+				type="date"
+				bind:value={customStart}
+				max={customEnd || undefined}
+				class="w-fit rounded-sm px-2 text-xs bg-transparent outline-none dark:scheme-dark"
+			/>
+			<span class="text-xs text-gray-400">–</span>
+			<input
+				type="date"
+				bind:value={customEnd}
+				min={customStart || undefined}
+				class="w-fit rounded-sm px-2 text-xs bg-transparent outline-none dark:scheme-dark"
+			/>
 		{/if}
 		<select
 			bind:value={selectedPeriod}
@@ -232,27 +312,44 @@
 {#if !loading}
 	<div class="flex gap-3 text-xs text-gray-500 dark:text-gray-400 px-0.5 pb-2">
 		<span
-			><span class="font-medium text-gray-900 dark:text-gray-300"
+			><span class="font-normal text-gray-900 dark:text-gray-300"
 				>{summary.total_messages.toLocaleString()}</span
 			>
 			{$i18n.t('messages')}</span
 		>
-		<Tooltip content={$i18n.t('Token counts are estimates and may not reflect actual API usage')}>
-			<span class="cursor-help"
-				><span class="font-medium text-gray-900 dark:text-gray-300"
+		<Tooltip
+			as="button"
+			className="whitespace-nowrap rounded-sm cursor-pointer hover:underline decoration-dotted underline-offset-4 focus-visible:outline focus-visible:outline-offset-2"
+			placement="bottom"
+			interactive
+			tippyOptions={{
+				trigger: 'mouseenter focus click',
+				appendTo: () => document.body,
+				aria: { content: 'describedby', expanded: true },
+				onCreate: (instance) => (tokenTooltip = instance),
+				onDestroy: () => (tokenTooltip = null)
+			}}
+			content={`<div class="p-1 text-left">
+				<div class="flex justify-between gap-6"><span>${$i18n.t('Input')}</span><span class="tabular-nums">${totalTokens.input.toLocaleString()}</span></div>
+				<div class="flex justify-between gap-6 mt-1"><span>${$i18n.t('Output')}</span><span class="tabular-nums">${totalTokens.output.toLocaleString()}</span></div>
+				<div class="mt-2 max-w-56 text-gray-400">${$i18n.t('Token counts are estimates and may not reflect actual API usage')}</div>
+			</div>`}
+		>
+			<span
+				><span class="font-normal text-gray-900 dark:text-gray-300"
 					>{formatNumber(totalTokens.total)}</span
 				>
 				{$i18n.t('tokens')}</span
 			>
 		</Tooltip>
 		<span
-			><span class="font-medium text-gray-900 dark:text-gray-300"
+			><span class="font-normal text-gray-900 dark:text-gray-300"
 				>{summary.total_chats.toLocaleString()}</span
 			>
 			{$i18n.t('chats')}</span
 		>
 		<span
-			><span class="font-medium text-gray-900 dark:text-gray-300">{summary.total_users}</span>
+			><span class="font-normal text-gray-900 dark:text-gray-300">{summary.total_users}</span>
 			{$i18n.t('users')}</span
 		>
 	</div>
@@ -273,7 +370,7 @@
 		]}
 		{@const periodMap = { '24h': 'hour', '7d': 'week', '30d': 'month', '90d': 'year', all: 'all' }}
 		<div class="mb-4">
-			<div class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 px-0.5">
+			<div class="text-xs font-normal text-gray-600 dark:text-gray-400 mb-2 px-0.5">
 				{selectedPeriod === '24h' ? $i18n.t('Hourly Messages') : $i18n.t('Daily Messages')}
 			</div>
 			<ChartLine
@@ -292,237 +389,303 @@
 		<Spinner className="size-5" />
 	</div>
 {:else}
-	<div class="grid md:grid-cols-2 gap-4">
-		<!-- Model Usage Table -->
-		<div>
-			<div class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1 px-0.5">
-				{$i18n.t('Model Usage')}
-			</div>
-			<div class="scrollbar-hidden relative whitespace-nowrap overflow-x-auto max-w-full">
-				<table class="w-full text-sm text-left text-gray-500 dark:text-gray-400 table-auto">
-					<thead class="text-xs text-gray-800 uppercase bg-transparent dark:text-gray-200">
-						<tr class="border-b-[1.5px] border-gray-50 dark:border-gray-850/30">
-							<th scope="col" class="px-2.5 py-2 w-8">#</th>
-							<th
-								scope="col"
-								class="px-2.5 py-2 cursor-pointer select-none"
-								on:click={() => toggleModelSort('name')}
-							>
-								<div class="flex gap-1.5 items-center">
-									{$i18n.t('Model')}
-									{#if modelOrderBy === 'name'}
-										<span class="font-normal">
-											{#if modelDirection === 'asc'}<ChevronUp
-													className="size-2"
-												/>{:else}<ChevronDown className="size-2" />{/if}
-										</span>
-									{:else}
-										<span class="invisible"><ChevronUp className="size-2" /></span>
-									{/if}
-								</div>
-							</th>
-							<th
-								scope="col"
-								class="px-2.5 py-2 cursor-pointer select-none text-right"
-								on:click={() => toggleModelSort('count')}
-							>
-								<div class="flex gap-1.5 items-center justify-end">
-									{$i18n.t('Messages')}
-									{#if modelOrderBy === 'count'}
-										<span class="font-normal">
-											{#if modelDirection === 'asc'}<ChevronUp
-													className="size-2"
-												/>{:else}<ChevronDown className="size-2" />{/if}
-										</span>
-									{:else}
-										<span class="invisible"><ChevronUp className="size-2" /></span>
-									{/if}
-								</div>
-							</th>
-							<th
-								scope="col"
-								class="px-2.5 py-2 cursor-pointer select-none text-right"
-								on:click={() => toggleModelSort('tokens')}
-							>
-								<div class="flex gap-1.5 items-center justify-end">
-									{$i18n.t('Tokens')}
-									{#if modelOrderBy === 'tokens'}
-										<span class="font-normal">
-											{#if modelDirection === 'asc'}<ChevronUp
-													className="size-2"
-												/>{:else}<ChevronDown className="size-2" />{/if}
-										</span>
-									{:else}
-										<span class="invisible"><ChevronUp className="size-2" /></span>
-									{/if}
-								</div>
-							</th>
-							<th
-								scope="col"
-								class="px-2.5 py-2 cursor-pointer select-none text-right w-16"
-								on:click={() => toggleModelSort('percentage')}
-							>
-								<div class="flex gap-1.5 items-center justify-end">
-									%
-									{#if modelOrderBy === 'percentage'}
-										<span class="font-normal">
-											{#if modelDirection === 'asc'}<ChevronUp
-													className="size-2"
-												/>{:else}<ChevronDown className="size-2" />{/if}
-										</span>
-									{:else}
-										<span class="invisible"><ChevronUp className="size-2" /></span>
-									{/if}
-								</div>
-							</th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each sortedModels as model, idx (model.model_id)}
-							<tr
-								class="bg-white dark:bg-gray-900 dark:border-gray-850 text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-								on:click={() => {
-									selectedModel = { id: model.model_id, name: model.name };
-									showModelModal = true;
-								}}
-							>
-								<td class="px-3 py-1 text-gray-400">{idx + 1}</td>
-								<td class="px-3 py-1 font-medium text-gray-900 dark:text-white">
-									<div class="flex items-center gap-2">
-										<img
-											src="{WEBUI_API_BASE_URL}/models/model/profile/image?id={model.model_id}"
-											alt={model.name}
-											class="size-5 rounded-full object-cover shrink-0"
-											on:error={(e) => {
-												e.target.src = '/favicon.png';
-											}}
-										/>
-										<span class="truncate max-w-[150px]">{model.name}</span>
-									</div>
-								</td>
-								<td class="px-3 py-1 text-right">{model.count.toLocaleString()}</td>
-								<td class="px-3 py-1 text-right"
-									>{formatNumber(tokenStats[model.model_id]?.total_tokens ?? 0)}</td
+	<div class="mb-2">
+		<div class="inline-flex rounded-full bg-gray-100/80 p-0.5 dark:bg-gray-800/80 backdrop-blur-sm">
+			{#each [{ key: 'models', label: $i18n.t('Models') }, { key: 'users', label: $i18n.t('Users') }] as tab}
+				<button
+					type="button"
+					aria-pressed={selectedLeaderboard === tab.key}
+					class="rounded-full transition-all duration-200 px-2.5 py-0.5 text-xs font-normal {selectedLeaderboard ===
+					tab.key
+						? 'bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-white'
+						: 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}"
+					on:click={() => (selectedLeaderboard = tab.key)}>{tab.label}</button
+				>
+			{/each}
+		</div>
+	</div>
+	<div class="min-w-0">
+		{#if selectedLeaderboard === 'models'}
+			<!-- Model Usage Table -->
+			<!-- {$i18n.t('Model Usage')} -->
+			<div>
+				<div class="scrollbar-hidden relative whitespace-nowrap overflow-x-auto max-w-full">
+					<table class="w-full text-sm text-left text-gray-500 dark:text-gray-400 table-auto">
+						<thead class="text-xs text-gray-800 uppercase bg-transparent dark:text-gray-200">
+							<tr class="border-b-[1.5px] border-gray-50 dark:border-gray-850/30">
+								<th scope="col" class="px-2.5 py-2 w-8">#</th>
+								<th
+									scope="col"
+									class="px-2.5 py-2 cursor-pointer select-none"
+									on:click={() => toggleModelSort('name')}
 								>
-								<td class="px-3 py-1 text-right text-gray-400">
-									{totalModelMessages > 0
-										? ((model.count / totalModelMessages) * 100).toFixed(1)
-										: 0}%
-								</td>
-							</tr>
-						{/each}
-						{#if sortedModels.length === 0}
-							<tr
-								><td colspan="5" class="px-3 py-2 text-center text-gray-400"
-									>{$i18n.t('No data')}</td
-								></tr
-							>
-						{/if}
-					</tbody>
-				</table>
-			</div>
-		</div>
-
-		<!-- User Activity Table -->
-		<div>
-			<div class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1 px-0.5">
-				{$i18n.t('User Activity')}
-			</div>
-			<div class="scrollbar-hidden relative whitespace-nowrap overflow-x-auto max-w-full">
-				<table class="w-full text-sm text-left text-gray-500 dark:text-gray-400 table-auto">
-					<thead class="text-xs text-gray-800 uppercase bg-transparent dark:text-gray-200">
-						<tr class="border-b-[1.5px] border-gray-50 dark:border-gray-850/30">
-							<th scope="col" class="px-2.5 py-2 w-8">#</th>
-							<th
-								scope="col"
-								class="px-2.5 py-2 cursor-pointer select-none"
-								on:click={() => toggleUserSort('name')}
-							>
-								<div class="flex gap-1.5 items-center">
-									{$i18n.t('User')}
-									{#if userOrderBy === 'name'}
-										<span class="font-normal">
-											{#if userDirection === 'asc'}<ChevronUp
-													className="size-2"
-												/>{:else}<ChevronDown className="size-2" />{/if}
-										</span>
-									{:else}
-										<span class="invisible"><ChevronUp className="size-2" /></span>
-									{/if}
-								</div>
-							</th>
-							<th
-								scope="col"
-								class="px-2.5 py-2 cursor-pointer select-none text-right"
-								on:click={() => toggleUserSort('count')}
-							>
-								<div class="flex gap-1.5 items-center justify-end">
-									{$i18n.t('Messages')}
-									{#if userOrderBy === 'count'}
-										<span class="font-normal">
-											{#if userDirection === 'asc'}<ChevronUp
-													className="size-2"
-												/>{:else}<ChevronDown className="size-2" />{/if}
-										</span>
-									{:else}
-										<span class="invisible"><ChevronUp className="size-2" /></span>
-									{/if}
-								</div>
-							</th>
-							<th
-								scope="col"
-								class="px-2.5 py-2 cursor-pointer select-none text-right"
-								on:click={() => toggleUserSort('tokens')}
-							>
-								<div class="flex gap-1.5 items-center justify-end">
-									{$i18n.t('Tokens')}
-									{#if userOrderBy === 'tokens'}
-										<span class="font-normal">
-											{#if userDirection === 'asc'}<ChevronUp
-													className="size-2"
-												/>{:else}<ChevronDown className="size-2" />{/if}
-										</span>
-									{:else}
-										<span class="invisible"><ChevronUp className="size-2" /></span>
-									{/if}
-								</div>
-							</th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each sortedUsers as user, idx (user.user_id)}
-							<tr class="bg-white dark:bg-gray-900 dark:border-gray-850 text-xs">
-								<td class="px-3 py-1 text-gray-400">{idx + 1}</td>
-								<td class="px-3 py-1 font-medium text-gray-900 dark:text-white">
-									<div class="flex items-center gap-2">
-										<img
-											src="{WEBUI_API_BASE_URL}/users/{user.user_id}/profile/image"
-											alt={user.name || 'User'}
-											class="size-5 rounded-full object-cover shrink-0"
-											on:error={(e) => {
-												e.target.src = '/user.png';
-											}}
-										/>
-										<span class="truncate max-w-[150px]"
-											>{user.name || user.email || user.user_id.substring(0, 8)}</span
-										>
+									<div class="flex gap-1.5 items-center">
+										{$i18n.t('Model')}
+										{#if modelOrderBy === 'name'}
+											<span class="font-normal">
+												{#if modelDirection === 'asc'}<ChevronUp
+														className="size-2"
+													/>{:else}<ChevronDown className="size-2" />{/if}
+											</span>
+										{:else}
+											<span class="invisible"><ChevronUp className="size-2" /></span>
+										{/if}
 									</div>
-								</td>
-								<td class="px-3 py-1 text-right">{user.count.toLocaleString()}</td>
-								<td class="px-3 py-1 text-right">{formatNumber(user.total_tokens ?? 0)}</td>
+								</th>
+								<th
+									scope="col"
+									class="px-2.5 py-2 cursor-pointer select-none text-right"
+									on:click={() => toggleModelSort('count')}
+								>
+									<div class="flex gap-1.5 items-center justify-end">
+										{$i18n.t('Messages')}
+										{#if modelOrderBy === 'count'}
+											<span class="font-normal">
+												{#if modelDirection === 'asc'}<ChevronUp
+														className="size-2"
+													/>{:else}<ChevronDown className="size-2" />{/if}
+											</span>
+										{:else}
+											<span class="invisible"><ChevronUp className="size-2" /></span>
+										{/if}
+									</div>
+								</th>
+								<th
+									scope="col"
+									class="px-2.5 py-2 cursor-pointer select-none text-right"
+									on:click={() => toggleModelSort('users')}
+								>
+									<div class="flex gap-1.5 items-center justify-end">
+										{$i18n.t('Users')}
+										{#if modelOrderBy === 'users'}
+											<span class="font-normal">
+												{#if modelDirection === 'asc'}<ChevronUp
+														className="size-2"
+													/>{:else}<ChevronDown className="size-2" />{/if}
+											</span>
+										{:else}
+											<span class="invisible"><ChevronUp className="size-2" /></span>
+										{/if}
+									</div>
+								</th>
+								<th
+									scope="col"
+									class="px-2.5 py-2 cursor-pointer select-none text-right"
+									on:click={() => toggleModelSort('chats')}
+								>
+									<div class="flex gap-1.5 items-center justify-end">
+										{$i18n.t('Chats')}
+										{#if modelOrderBy === 'chats'}
+											<span class="font-normal">
+												{#if modelDirection === 'asc'}<ChevronUp
+														className="size-2"
+													/>{:else}<ChevronDown className="size-2" />{/if}
+											</span>
+										{:else}
+											<span class="invisible"><ChevronUp className="size-2" /></span>
+										{/if}
+									</div>
+								</th>
+								<!-- {$i18n.t('Tokens')} -->
+								{#each tokenColumns as column}
+									<th
+										scope="col"
+										title={`${column.label} ${$i18n.t('tokens')}`}
+										class="px-2.5 py-2 cursor-pointer select-none text-right"
+										on:click={() => toggleModelSort(column.key)}
+									>
+										<div class="flex gap-1.5 items-center justify-end">
+											{column.label}
+											{#if modelOrderBy === column.key}
+												<span class="font-normal">
+													{#if modelDirection === 'asc'}<ChevronUp
+															className="size-2"
+														/>{:else}<ChevronDown className="size-2" />{/if}
+												</span>
+											{:else}
+												<span class="invisible"><ChevronUp className="size-2" /></span>
+											{/if}
+										</div>
+									</th>
+								{/each}
+								<th
+									scope="col"
+									class="px-2.5 py-2 cursor-pointer select-none text-right w-16"
+									on:click={() => toggleModelSort('percentage')}
+								>
+									<div class="flex gap-1.5 items-center justify-end">
+										%
+										{#if modelOrderBy === 'percentage'}
+											<span class="font-normal">
+												{#if modelDirection === 'asc'}<ChevronUp
+														className="size-2"
+													/>{:else}<ChevronDown className="size-2" />{/if}
+											</span>
+										{:else}
+											<span class="invisible"><ChevronUp className="size-2" /></span>
+										{/if}
+									</div>
+								</th>
 							</tr>
-						{/each}
-						{#if sortedUsers.length === 0}
-							<tr
-								><td colspan="4" class="px-3 py-2 text-center text-gray-400"
-									>{$i18n.t('No data')}</td
-								></tr
-							>
-						{/if}
-					</tbody>
-				</table>
+						</thead>
+						<tbody>
+							{#each sortedModels as model, idx (model.model_id)}
+								<tr
+									class="dark:border-gray-850 text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+									on:click={() => {
+										selectedModel = { id: model.model_id, name: model.name };
+										showModelModal = true;
+									}}
+								>
+									<td class="px-3 py-1 text-gray-400">{idx + 1}</td>
+									<td class="px-3 py-1 font-normal text-gray-900 dark:text-white">
+										<div class="flex items-center gap-2">
+											<img
+												src="{WEBUI_API_BASE_URL}/models/model/profile/image?id={model.model_id}"
+												alt={model.name}
+												class="size-5 rounded-full object-cover shrink-0"
+												on:error={(e) => {
+													// LICENSE covers this Open WebUI fallback logo.
+													// Do not alter, remove, obscure, or replace it except as LICENSE permits:
+													// https://docs.openwebui.com/license.
+													e.target.src = '/favicon.png';
+												}}
+											/>
+											<span class="truncate max-w-[9.375rem]">{model.name}</span>
+										</div>
+									</td>
+									<td class="px-3 py-1 text-right">{model.count.toLocaleString()}</td>
+									<td class="px-3 py-1 text-right">{(model.unique_users ?? 0).toLocaleString()}</td>
+									<td class="px-3 py-1 text-right">{(model.unique_chats ?? 0).toLocaleString()}</td>
+									{#each tokenColumns as column}
+										<td class="px-3 py-1 text-right"
+											>{formatNumber(tokenStats[model.model_id]?.[column.key] ?? 0)}</td
+										>
+									{/each}
+									<td class="px-3 py-1 text-right text-gray-400">
+										{totalModelMessages > 0
+											? ((model.count / totalModelMessages) * 100).toFixed(1)
+											: 0}%
+									</td>
+								</tr>
+							{/each}
+							{#if sortedModels.length === 0}
+								<tr
+									><td colspan="9" class="px-3 py-2 text-center text-gray-400"
+										>{$i18n.t('No data')}</td
+									></tr
+								>
+							{/if}
+						</tbody>
+					</table>
+				</div>
 			</div>
-		</div>
+		{:else}
+			<!-- User Activity Table -->
+			<!-- {$i18n.t('User Activity')} -->
+			<div>
+				<div class="scrollbar-hidden relative whitespace-nowrap overflow-x-auto max-w-full">
+					<table class="w-full text-sm text-left text-gray-500 dark:text-gray-400 table-auto">
+						<thead class="text-xs text-gray-800 uppercase bg-transparent dark:text-gray-200">
+							<tr class="border-b-[1.5px] border-gray-50 dark:border-gray-850/30">
+								<th scope="col" class="px-2.5 py-2 w-8">#</th>
+								<th
+									scope="col"
+									class="px-2.5 py-2 cursor-pointer select-none"
+									on:click={() => toggleUserSort('name')}
+								>
+									<div class="flex gap-1.5 items-center">
+										{$i18n.t('User')}
+										{#if userOrderBy === 'name'}
+											<span class="font-normal">
+												{#if userDirection === 'asc'}<ChevronUp
+														className="size-2"
+													/>{:else}<ChevronDown className="size-2" />{/if}
+											</span>
+										{:else}
+											<span class="invisible"><ChevronUp className="size-2" /></span>
+										{/if}
+									</div>
+								</th>
+								<th
+									scope="col"
+									class="px-2.5 py-2 cursor-pointer select-none text-right"
+									on:click={() => toggleUserSort('count')}
+								>
+									<div class="flex gap-1.5 items-center justify-end">
+										{$i18n.t('Messages')}
+										{#if userOrderBy === 'count'}
+											<span class="font-normal">
+												{#if userDirection === 'asc'}<ChevronUp
+														className="size-2"
+													/>{:else}<ChevronDown className="size-2" />{/if}
+											</span>
+										{:else}
+											<span class="invisible"><ChevronUp className="size-2" /></span>
+										{/if}
+									</div>
+								</th>
+								<!-- {$i18n.t('Tokens')} -->
+								{#each tokenColumns as column}
+									<th
+										scope="col"
+										title={`${column.label} ${$i18n.t('tokens')}`}
+										class="px-2.5 py-2 cursor-pointer select-none text-right"
+										on:click={() => toggleUserSort(column.key)}
+									>
+										<div class="flex gap-1.5 items-center justify-end">
+											{column.label}
+											{#if userOrderBy === column.key}
+												<span class="font-normal">
+													{#if userDirection === 'asc'}<ChevronUp
+															className="size-2"
+														/>{:else}<ChevronDown className="size-2" />{/if}
+												</span>
+											{:else}
+												<span class="invisible"><ChevronUp className="size-2" /></span>
+											{/if}
+										</div>
+									</th>
+								{/each}
+							</tr>
+						</thead>
+						<tbody>
+							{#each sortedUsers as user, idx (user.user_id)}
+								<tr class="dark:border-gray-850 text-xs">
+									<td class="px-3 py-1 text-gray-400">{idx + 1}</td>
+									<td class="px-3 py-1 font-normal text-gray-900 dark:text-white">
+										<div class="flex items-center gap-2">
+											<img
+												src="{WEBUI_API_BASE_URL}/users/{user.user_id}/profile/image"
+												alt={user.name || 'User'}
+												class="size-5 rounded-full object-cover shrink-0"
+												on:error={(e) => {
+													e.target.src = '/user.png';
+												}}
+											/>
+											<span class="truncate max-w-[9.375rem]"
+												>{user.name || user.email || user.user_id.substring(0, 8)}</span
+											>
+										</div>
+									</td>
+									<td class="px-3 py-1 text-right">{user.count.toLocaleString()}</td>
+									{#each tokenColumns as column}
+										<td class="px-3 py-1 text-right">{formatNumber(user[column.key] ?? 0)}</td>
+									{/each}
+								</tr>
+							{/each}
+							{#if sortedUsers.length === 0}
+								<tr
+									><td colspan="6" class="px-3 py-2 text-center text-gray-400"
+										>{$i18n.t('No data')}</td
+									></tr
+								>
+							{/if}
+						</tbody>
+					</table>
+				</div>
+			</div>
+		{/if}
 	</div>
 
 	<div class="text-gray-500 text-xs mt-1.5 text-right">

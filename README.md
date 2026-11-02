@@ -15,7 +15,7 @@ Dankzij de ingebouwde App Launcher hebben gebruikers direct toegang tot relevant
   <img alt="Beginscherm (dark theme)" src="docs/implementaties/screenshots/home-dark-theme.png" width="49%" />
 </p>
 
-## 2. Waarom GovChat-NL? 
+## 2. Waarom GovChat-NL?
 
 GovChat-NL biedt verschillende voordelen voor Nederlandse overheidsorganisaties:
 
@@ -53,6 +53,9 @@ De **App Launcher** is het centrale startpunt binnen het GovChat-NL platform, wa
 **Toegangscontrole per app (uitgebreidere RBAC)**
 Bovenop de standaard Role-Based Access Control (RBAC) van OpenWebUI biedt GovChat-NL de mogelijkheid om per app in de App Launcher te bepalen wie toegang heeft tot welke applicatie of workflow. Zo kun je bijvoorbeeld instellen dat alleen subsidieverleners gebruik mogen maken van gevoelige toepassingen zoals de ToeKenner (voor subsidieaanvragen), terwijl de Versimpelaar juist voor alle medewerkers toegankelijk blijft. Dit bevordert informatiebeveiliging en zorgt ervoor dat medewerkers alleen toegang hebben tot relevante AI-tools.
 
+**Eigen apps toevoegen via de interface**
+Beheerders kunnen zonder code een eigen app toevoegen aan de App Launcher. Maak in de Workspace een model aan (met bijvoorbeeld een systeemprompt en gekoppelde kennis) en vink de optie "Toon als app in de App Launcher" aan. Het model verschijnt dan als eigen tegel in de App Launcher. Wie de tegel ziet volgt automatisch uit de toegangsrechten van het model.
+
 **Beheer van taalmodellen per app**
 Daarnaast is in GovChat-NL een extra beheermogelijkheid toegevoegd waarmee je per applicatie in de App Launcher het meest geschikte taalmodel kunt selecteren. Zo kun je voor iedere app een model kiezen dat past bij het beoogde gebruik, bijvoorbeeld een efficiënt en snel taalmodel voor de Versimpelaar en een krachtiger model voor juridische analyse-tools. Bovendien kun je de LLM-workload verdelen over verschillende modellen of providers. Hiermee voorkom je dat één model of leverancier overbelast raakt of zijn quota overschrijdt.
 
@@ -63,12 +66,11 @@ Daarnaast is in GovChat-NL een extra beheermogelijkheid toegevoegd waarmee je pe
 
 Via de App Launcher zijn momenteel de volgende AI-applicaties (of plannen daarvoor) beschikbaar:
 
-| **App**            | **Beschrijving**                                      | **Status**       | **Initiatiefnemer**       | **Meer informatie**         |
-|---------------------|------------------------------------------------------|------------------|---------------------------|-----------------------------|
-| **Versimpelaar**   | Vereenvoudigt teksten naar B1- of B2 taalniveau.            | Beschikbaar | Provincie Limburg       | [Meer informatie](docs/app-launcher/versimpelaar/versimpelaar.md) |
-| **Beleidskompas**    | Ondersteunt bij het gestructureerd en onderbouwvoorbereiden van beleidsadviezen en beleidskeuzes                | In ontwikkeling          | Provincie Limburg                         | [Meer informatie](docs/app-launcher/beleidskompas/beleidskompas.md)     |
-| **ToeKenner**       | Beoordeelt subsidieaanvragen en genereert rapportages.| Backlog | Provincie Limburg      | [Meer informatie](docs/app-launcher/toekenner/toekenner.md)     |
-
+| **App**           | **Beschrijving**                                                                                 | **Status**      | **Initiatiefnemer** | **Meer informatie**                                                 |
+| ----------------- | ------------------------------------------------------------------------------------------------ | --------------- | ------------------- | ------------------------------------------------------------------- |
+| **Versimpelaar**  | Vereenvoudigt teksten naar B1- of B2 taalniveau.                                                 | Beschikbaar     | Provincie Limburg   | [Meer informatie](docs/app-launcher/versimpelaar/versimpelaar.md)   |
+| **Beleidskompas** | Ondersteunt bij het gestructureerd en onderbouwvoorbereiden van beleidsadviezen en beleidskeuzes | In ontwikkeling | Provincie Limburg   | [Meer informatie](docs/app-launcher/beleidskompas/beleidskompas.md) |
+| **ToeKenner**     | Beoordeelt subsidieaanvragen en genereert rapportages.                                           | Backlog         | Provincie Limburg   | [Meer informatie](docs/app-launcher/toekenner/toekenner.md)         |
 
 **Voorbeeld applicatie: Versimpelaar**
 
@@ -84,19 +86,19 @@ Via de App Launcher zijn momenteel de volgende AI-applicaties (of plannen daarvo
 GovChat-NL kan op verschillende manieren worden geïmplementeerd, zodat het platform aansluit op de wensen en infrastructuur van de organisatie. Er zijn daarbij twee hoofdkeuzes:
 
 1. **Keuze van implementatievorm:**
-   - **Docker-image**  
+   - **Docker-image**
      - Gebruiksklaar en gemakkelijk te implementeren.
      - Ideaal bij standaardinrichtingen met beperkte aanpassingen.
      - Beschikbaar als package via deze GitHub-repository.
-   - **Via broncode**  
+   - **Via broncode**
      - Geschikt voor uitgebreide of onverwachte aanpassingen.
      - Volledige controle en flexibiliteit.
      - Beschikbaar in deze repository.
 
 2. **Keuze van hostingomgeving:**
-   - **Lokale servers**  
+   - **Lokale servers**
      - Volledige controle over data, infrastructuur en beveiliging binnen de eigen organisatie.
-   - **Cloudomgeving**  
+   - **Cloudomgeving**
      - Schaalbaar, flexibel en doorgaans sneller of eenvoudiger te implementeren.
 
 Deze twee keuzes kunnen naar wens worden gecombineerd. Zo kan GovChat-NL bijvoorbeeld als custom-implementatie draaien op lokale servers, of als Docker-image ingezet worden in de cloud. Zo blijft het platform flexibel en altijd af te stemmen op de bestaande IT-voorzieningen en eisen van de organisatie.
@@ -115,24 +117,31 @@ Voor deze implementatie is een uitgebreide **Data Protection Impact Assessment (
 GovChat-NL maakt gebruik van diverse krachtige open-source technologieën. Hieronder volgt een overzicht van de belangrijkste componenten:
 
 ### [OpenWebUI](https://github.com/open-webui/open-webui)
+
 OpenWebUI is een open-source chatinterface die de basis vormt van GovChat-NL. Belangrijke eigenschappen zijn:
+
 - **Uitgebreide chatbot-interface** functionaliteit en gebruikerservaring vergelijkbaar met ChatGPT.
 - **Ingebouwde authenticatie en beheermogelijkheden**, inclusief ondersteuning voor Role-Based Access Control (RBAC) voor het beheren van gebruikersrechten en -rollen.
 - **Schaalbare architectuur** biedt diverse mogelijkheden voor uitrol, zowel lokaal als in de cloud.
 
 ### [n8n](https://github.com/n8n-io/n8n)
+
 n8n is een open-source workflow automation platform waarmee processen en integraties tussen verschillende systemen eenvoudig te automatiseren zijn, zonder diepgaande programmeerkennis. Belangrijke kenmerken:
+
 - **Automatisering van processen**: taken en acties kunnen automatisch worden uitgevoerd.
 - **Visuele workflow-editor**: processen en koppelingen kunnen zonder programmeerkennis worden opgebouwd en beheerd.
 - **Flexibele integraties**: honderden standaardkoppelingen (API’s) met veelgebruikte applicaties en databronnen zorgen voor maximale connectiviteit.
 
 ### [LiteLLM](https://github.com/BerriAI/litellm)
+
 LiteLLM biedt een flexibele manier om Large Language Models (LLM’s) te integreren. Enkele voordelen:
+
 - **Uniforme interface voor LLM-providers**, eenvoudige koppeling met vrijwel alle gangbare LLM’s.
 - **Gebruik van meerdere aanbieders en modellen tegelijkertijd**, ondersteuning van o.a. Microsoft Azure, Google Vertex AI, Mistral en meer.
 - **Monitoring en limietinstellingen** centraal beheer van gebruik, limieten en monitoring, bijvoorbeeld per model of team.
 
 ### 5.1 Architectuuroverzicht
+
 Onderstaande diagram laat de relatie en samenwerking tussen de verschillende repositories en systeemonderdelen visueel zien.
 
 ```mermaid
@@ -196,24 +205,42 @@ flowchart TB
 ```
 
 ## 5.2 Versiehistorie
+
 GovChat-NL is dus gebouwd op basis van OpenWebUI. Hieronder een overzicht van de releases van GovChat-NL met specifieke versies van OpenWebUI:
 
-| GovChat-NL Versie | Releasedatum     | OpenWebUI Versie | Status  |
-|-------------------|------------------|------------------|---------|
-| **v0.1.1**        | 26 januari 2026  | v0.7.2           | Current |
-| v0.1.0            | 18 juli 2025     | v0.6.13          | Legacy  |
+| GovChat-NL Versie | Releasedatum    | OpenWebUI Versie | Status  |
+| ----------------- | --------------- | ---------------- | ------- |
+| **v0.2.0**        | 19 oktober 2026 | v0.12.3          | Current |
+| v0.1.1            | 26 januari 2026 | v0.7.2           | Legacy  |
+| v0.1.0            | 18 juli 2025    | v0.6.13          | Legacy  |
+
+#### Wat is er nieuw in v0.2.0
+
+Naast de update van OpenWebUI (van v0.7.2 via v0.11.3 naar v0.12.3, met alle verbeteringen en beveiligingsupdates uit die releases) bevat deze versie de volgende GovChat-NL-toevoegingen:
+
+- **Persoonsgegevensfilter**: controleert berichten vóór het versturen op persoonsgegevens, zoals BSN (11-proef), IBAN, geboortedatum, namen, telefoonnummer, e-mailadres, adres, paspoort- en rijbewijsnummer en kenteken. De gebruiker krijgt de vraag "Weet je zeker dat je dit wil delen?" en kan de gegevens met één klik laten vervangen door labels zoals `[BSN]` en `[NAAM 1]`. Bij bijzondere persoonsgegevens (zoals gezondheid) volgt een waarschuwing. De herkenning draait volledig op de eigen server, met een lokaal Nederlands taalmodel voor namen. Beheerders zetten het filter aan of uit onder Admin → Settings → Persoonsgegevens; per agent en per chat is het in te stellen, en de modus "Altijd filteren" wordt ook op de server afgedwongen.
+- **Eigen apps in de App Launcher**: elk workspace-model kan zonder code als eigen app-tegel verschijnen, met toegang via de rechten van het model (zie hoofdstuk 3).
+- **Meeluister-agents in de Call-modus**: de spraakmodus blijft luisteren na een antwoord zonder voorleesbare tekst. Daarmee kan een agent stil meeluisteren met een overleg en schriftelijk feedback en actiepunten geven.
+- **Gepseudonimiseerde gebruikersgegevens naar AI-gateways**: per verbinding kunnen headers en een `body`-template de placeholders `{{USER_ID_HASH}}` en `{{USER_EMAIL_HASH}}` meesturen (instelbaar via `FORWARD_USER_INFO_PSEUDONYM_SECRET`). Zo kan een gateway, zoals Databricks, het gebruik per gebruiker toerekenen zonder direct herleidbare gegevens te ontvangen.
+- **Standaardmodel GPT-5.6 Luna**, met `reasoning_effort` op `none` voor snelle antwoorden, en bijgewerkte helpteksten.
+- **Lichtere build**: sourcemaps staan standaard uit, wat het geheugengebruik van `npm run build` beperkt.
+
+De huidige ontwikkelversie (main) draait op OpenWebUI v0.12.3.
 
 ### 6. Hoe verloopt de doornontwikkeling van GovChat-NL?
 
 #### 6.1 Lokale ontwikkelomgeving
-OWUI beschikt over een uitgebreide lokale ontwikkelomgeving. Dankzij hot-reloading worden wijzigingen in de broncode direct doorgevoerd, zonder dat de applicatie handmatig hoeft te worden herstart. Dit versnelt en vereenvoudigt het ontwikkelproces aanzienlijk.  
+
+OWUI beschikt over een uitgebreide lokale ontwikkelomgeving. Dankzij hot-reloading worden wijzigingen in de broncode direct doorgevoerd, zonder dat de applicatie handmatig hoeft te worden herstart. Dit versnelt en vereenvoudigt het ontwikkelproces aanzienlijk.
 
 Meer informatie over het opzetten van de ontwikkelomgeving vind je in de [Local development guide](https://docs.openwebui.com/getting-started/advanced-topics/development/).
 
 #### 6.2 Bijdragen
+
 Wil je bijdragen aan GovChat-NL? Dien je bijdrage in via een pull request (PR). Elke PR wordt geëvalueerd en bij geschiktheid toegevoegd aan het platform.
 
 #### 6.3 Community meeting
+
 Er is een tweewekelijks digitaal overleg met verschillende overheden, waaronder de provincies Overijssel, Flevoland, Utrecht en de Gemeente Meierijstad. Heb je interesse om deel te nemen of wil je meer informatie? Neem dan gerust contact met ons op, bijvoorbeeld via LinkedIn.
 
 <img alt="GovChat-NL Banner" src="docs\govchat-nl\GovChat-NL banner blauw 6000x350.jpg" />

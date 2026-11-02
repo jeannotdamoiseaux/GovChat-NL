@@ -1,32 +1,31 @@
+import inspect
 import logging
 import sys
-import inspect
-
 from typing import Any
 
 from fastapi import Request
-
-from open_webui.models.users import UserModel
+from open_webui.env import ENABLE_FUNCTIONS, GLOBAL_LOG_LEVEL
 from open_webui.models.functions import Functions
-
+from open_webui.models.users import UserModel
 from open_webui.socket.main import get_event_call, get_event_emitter
-from open_webui.utils.plugin import get_function_module_from_cache
-from open_webui.utils.models import get_all_models
 from open_webui.utils.middleware import process_tool_result
-
-from open_webui.env import GLOBAL_LOG_LEVEL
+from open_webui.utils.models import check_model_access, get_all_models
+from open_webui.utils.plugin import get_function_module_from_cache
 
 logging.basicConfig(stream=sys.stdout, level=GLOBAL_LOG_LEVEL)
 log = logging.getLogger(__name__)
 
 
 async def chat_action(request: Request, action_id: str, form_data: dict, user: Any):
+    if not ENABLE_FUNCTIONS:
+        raise Exception('Functions are disabled by ENABLE_PLUGINS or ENABLE_FUNCTIONS')
+
     if '.' in action_id:
         action_id, sub_action_id = action_id.split('.')
     else:
         sub_action_id = None
 
-    action = Functions.get_function_by_id(action_id)
+    action = await Functions.get_function_by_id(action_id)
     if not action:
         raise Exception(f'Action not found: {action_id}')
 
@@ -47,7 +46,24 @@ async def chat_action(request: Request, action_id: str, form_data: dict, user: A
         raise Exception('Model not found')
     model = models[model_id]
 
-    __event_emitter__ = get_event_emitter(
+    # Availability gate — keep this route consistent with the actions a model
+    # actually surfaces to the client. Executing admin-authored Function code is
+    # intended; this only stops a disabled, unassigned, or access-restricted
+    # action from being reached by calling the route with a raw action_id.
+    if action.type != 'action' or not action.is_active:
+        raise Exception(f'Action not available: {action_id}')
+
+    # Direct connections carry a client-supplied model the caller already owns,
+    # so scope the model-bound checks to server-resolved models.
+    if not getattr(request.state, 'direct', False) and user.role != 'admin':
+        await check_model_access(user, model)
+        # model['actions'] entries are '<function_id>' or '<function_id>.<sub_id>';
+        # the function id is always the prefix.
+        surfaced_action_ids = {item.get('id', '').split('.', 1)[0] for item in model.get('actions', [])}
+        if action_id not in surfaced_action_ids:
+            raise Exception(f'Action not available: {action_id}')
+
+    __event_emitter__ = await get_event_emitter(
         {
             'chat_id': data['chat_id'],
             'message_id': data['id'],
@@ -55,7 +71,7 @@ async def chat_action(request: Request, action_id: str, form_data: dict, user: A
             'user_id': user.id,
         }
     )
-    __event_call__ = get_event_call(
+    __event_call__ = await get_event_call(
         {
             'chat_id': data['chat_id'],
             'message_id': data['id'],
@@ -64,10 +80,10 @@ async def chat_action(request: Request, action_id: str, form_data: dict, user: A
         }
     )
 
-    function_module, _, _ = get_function_module_from_cache(request, action_id)
+    function_module, _, _ = await get_function_module_from_cache(request, action_id)
 
     if hasattr(function_module, 'valves') and hasattr(function_module, 'Valves'):
-        valves = Functions.get_function_valves_by_id(action_id)
+        valves = await Functions.get_function_valves_by_id(action_id)
         function_module.valves = function_module.Valves(**(valves if valves else {}))
 
     if hasattr(function_module, 'action'):
@@ -98,7 +114,7 @@ async def chat_action(request: Request, action_id: str, form_data: dict, user: A
                 try:
                     if hasattr(function_module, 'UserValves'):
                         __user__['valves'] = function_module.UserValves(
-                            **Functions.get_user_valves_by_id_and_user_id(action_id, user.id)
+                            **await Functions.get_user_valves_by_id_and_user_id(action_id, user.id)
                         )
                 except Exception as e:
                     log.exception(f'Failed to get user values: {e}')
@@ -111,7 +127,7 @@ async def chat_action(request: Request, action_id: str, form_data: dict, user: A
                 data = action(**params)
 
             # Process action result for Rich UI embeds (HTMLResponse, tuple with headers)
-            processed_result, _, action_embeds = process_tool_result(
+            processed_result, _, action_embeds = await process_tool_result(
                 request,
                 action_id,
                 data,

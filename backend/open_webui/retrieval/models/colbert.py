@@ -1,19 +1,35 @@
-import os
 import logging
-import torch
+import os
+
 import numpy as np
+import torch
 from colbert.infra import ColBERTConfig
+from colbert.modeling import base_colbert, hf_colbert
 from colbert.modeling.checkpoint import Checkpoint
-
-
 from open_webui.retrieval.models.base_reranker import BaseReranker
+from transformers import PretrainedConfig
 
 log = logging.getLogger(__name__)
 
 
+def class_factory(name_or_path: str) -> type:
+    hf_colbert_class = hf_colbert.class_factory(name_or_path)
+
+    # colbert-ai never calls post_init, which transformers 5 needs to finish setting up the model
+    class HF_ColBERT(hf_colbert_class):
+        def __init__(self, config: PretrainedConfig, colbert_config: ColBERTConfig) -> None:
+            super().__init__(config, colbert_config)
+            self.post_init()
+
+    return HF_ColBERT
+
+
+base_colbert.class_factory = class_factory
+
+
 class ColBERT(BaseReranker):
     def __init__(self, name, **kwargs) -> None:
-        log.info('ColBERT: Loading model', name)
+        log.info('ColBERT: Loading model %s', name)
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
         DOCKER = kwargs.get('env') == 'docker'
@@ -59,14 +75,14 @@ class ColBERT(BaseReranker):
 
         return normalized_scores.detach().cpu().numpy().astype(np.float32)
 
-    def predict(self, sentences):
+    def predict(self, sentences, batch_size=32):
         query = sentences[0][0]
         docs = [i[1] for i in sentences]
 
         # Embedding the documents
-        embedded_docs = self.ckpt.docFromText(docs, bsize=32)[0]
+        embedded_docs = self.ckpt.docFromText(docs, bsize=batch_size)[0]
         # Embedding the queries
-        embedded_queries = self.ckpt.queryFromText([query], bsize=32)
+        embedded_queries = self.ckpt.queryFromText([query], bsize=batch_size)
         embedded_query = embedded_queries[0]
 
         # Calculate retrieval scores for the query against all documents

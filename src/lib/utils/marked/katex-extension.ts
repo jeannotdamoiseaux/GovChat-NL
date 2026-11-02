@@ -10,7 +10,7 @@ const DELIMITER_LIST = [
 
 // Defines characters that are allowed to immediately precede or follow a math delimiter.
 const ALLOWED_SURROUNDING_CHARS =
-	'\\s。，、､;；„“‘’“”（）「」『』［］《》【】‹›«»…⋯:：？！～⇒?!-\\/:-@\\[-`{-~\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}\\p{Script=Hangul}';
+	'\\s。，、､;；„“‘’“”（）「」『』［］《》【】‹›«»…⋯–—:：？！～⇒?!-\\/:-@\\[-`{-~\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}\\p{Script=Hangul}';
 // Modified to fit more formats in different languages. Originally: '\\s?。，、；!-\\/:-@\\[-`{-~\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}\\p{Script=Hangul}';
 
 // Pre-compile the surrounding character regex once at module load time.
@@ -66,6 +66,49 @@ function generateRegexRules(delimiters) {
 
 const { inlineRule, blockRule } = generateRegexRules(DELIMITER_LIST);
 
+const isAllowedTrailing = (src: string, i: number): boolean =>
+	i >= src.length || ALLOWED_SURROUNDING_CHARS_REGEX.test(src.charAt(i));
+
+const isBlockBoundary = (src: string, i: number): boolean =>
+	/^(?:[ \t]*\r?\n|$)/.test(src.slice(i));
+
+const findClosingDelimiter = (src: string, i: number): number => {
+	const len = src.length - 1;
+	while (i < len) {
+		if (src[i] === '\\') {
+			i += 2;
+		} else if (src[i] === '$' && src[i + 1] === '$') {
+			return i;
+		} else {
+			i++;
+		}
+	}
+	return -1;
+};
+
+export const tokenizeDisplayMath = (
+	src: string,
+	type: 'inlineKatex' | 'blockKatex',
+	requireBlockBoundary = false
+) => {
+	if (!src.startsWith('$$')) return;
+
+	const endIndex = findClosingDelimiter(src, 2);
+	if (endIndex === -1) return;
+
+	const raw = src.slice(0, endIndex + 2);
+	const text = raw.slice(2, -2);
+	const afterClose = endIndex + 2;
+
+	const validators: Array<() => boolean> = [
+		() => text.trim().length > 0,
+		() => isAllowedTrailing(src, afterClose),
+		() => !requireBlockBoundary || isBlockBoundary(src, afterClose)
+	];
+
+	return validators.every((v) => v()) ? { type, raw, text, displayMode: true } : undefined;
+};
+
 export default function (options = {}) {
 	return {
 		extensions: [inlineKatex(options), blockKatex(options)]
@@ -102,6 +145,17 @@ function katexStart(src, displayMode: boolean) {
 }
 
 function katexTokenizer(src, tokens, displayMode: boolean) {
+	if (src.startsWith('$$')) {
+		const displayToken = tokenizeDisplayMath(
+			src,
+			displayMode ? 'blockKatex' : 'inlineKatex',
+			displayMode
+		);
+		if (displayToken) {
+			return displayToken;
+		}
+	}
+
 	const ruleReg = displayMode ? blockRule : inlineRule;
 	const type = displayMode ? 'blockKatex' : 'inlineKatex';
 

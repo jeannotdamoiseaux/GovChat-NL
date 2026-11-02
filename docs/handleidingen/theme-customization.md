@@ -1,9 +1,9 @@
 # GovChat-NL: Specifieke Environment-variabelen
 
-Als organisatie kun je GovChat-NL eenvoudig aanpassen aan de eigen wensen en uitstraling. Dat doe je met ‘environment-variabelen’: instellingen waarmee je bepaalt hoe de chatbot eruitziet en wat gebruikers kunnen. 
-Deze variabelen stel je in voordat je de applicatie start, meestal in een configuratiebestand of via de beheeromgeving. 
+Als organisatie kun je GovChat-NL eenvoudig aanpassen aan de eigen wensen en uitstraling. Dat doe je met ‘environment-variabelen’: instellingen waarmee je bepaalt hoe de chatbot eruitziet en wat gebruikers kunnen.
+Deze variabelen stel je in voordat je de applicatie start, meestal in een configuratiebestand of via de beheeromgeving.
 
-Hieronder vind je een overzicht van alle specifieke environment-variabelen voor GovChat-NL, met uitleg over wat ze doen en hoe je ze gebruikt. 
+Hieronder vind je een overzicht van alle specifieke environment-variabelen voor GovChat-NL, met uitleg over wat ze doen en hoe je ze gebruikt.
 Zo kun je GovChat-NL beter laten aansluiten bij de behoefte van jouw organisatie.
 
 ---
@@ -15,10 +15,10 @@ Zo kun je GovChat-NL beter laten aansluiten bij de behoefte van jouw organisatie
 - **Beschrijving:**  
   Deze variabele bepaalt het standaard welkomstbericht wanneer een nieuwe, lege chat gestart wordt.  
   Het bericht wordt als volgt getoond:
-    - Gebruiker met voornaam:  
-      `Hallo <voornaam>, <EMPTY_CHAT_WELCOME_MESSAGE>`
-    - Gebruiker zonder voornaam:  
-      `Hallo, <EMPTY_CHAT_WELCOME_MESSAGE>`
+  - Gebruiker met voornaam:  
+    `Hallo <voornaam>, <EMPTY_CHAT_WELCOME_MESSAGE>`
+  - Gebruiker zonder voornaam:  
+    `Hallo, <EMPTY_CHAT_WELCOME_MESSAGE>`
 - **Persistentie:** Wordt geladen tijdens opstarten van GovChat-NL.
 
 ---

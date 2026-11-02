@@ -1,25 +1,24 @@
 import base64
 import io
-import json
 import logging
 import os
-from typing import Optional, List
-
-import requests
-
-from fastapi import Request
-
-from open_webui.retrieval.web.main import SearchResult, get_filtered_results
-from open_webui.utils.headers import include_user_info_headers
-from open_webui.env import FORWARD_SESSION_INFO_HEADER_CHAT_ID
-
+from typing import List, Optional
 from xml.etree import ElementTree as ET
 from xml.etree.ElementTree import Element
+
+import requests
+from fastapi import Request
+from open_webui.env import FORWARD_SESSION_INFO_HEADER_CHAT_ID
+from open_webui.retrieval.web.main import SearchResult, get_filtered_results
+from open_webui.utils.headers import include_user_info_headers
+from open_webui.utils.json_codec import JSONCodec
 
 log = logging.getLogger(__name__)
 
 
 def xml_element_contents_to_string(element: Element) -> str:
+    if element is None:
+        return ''
     buffer = [element.text if element.text else '']
 
     for child in element:
@@ -42,6 +41,9 @@ def search_yandex(
 ) -> List[SearchResult]:
     try:
         headers = {
+            # LICENSE covers this Open WebUI user-agent identifier.
+            # Do not alter, remove, obscure, or replace it except as LICENSE permits:
+            # https://docs.openwebui.com/license.
             'User-Agent': 'Open WebUI (https://github.com/open-webui/open-webui) RAG Bot',
             'Authorization': f'Api-Key {yandex_search_api_key}',
         }
@@ -53,7 +55,7 @@ def search_yandex(
         if chat_id:
             headers[FORWARD_SESSION_INFO_HEADER_CHAT_ID] = str(chat_id)
 
-        payload = {} if yandex_search_config == '' else json.loads(yandex_search_config)
+        payload = {} if yandex_search_config == '' else JSONCodec.loads(yandex_search_config)
 
         if type(payload.get('query', None)) != dict:
             payload['query'] = {}
@@ -110,7 +112,7 @@ def search_yandex(
             for result in results[:count]
         ]
 
-        log.info(f'Yandex search results: {results}')
+        log.info('Yandex search results: %s', results)
 
         return results
     except Exception as e:
@@ -120,8 +122,8 @@ def search_yandex(
 
 
 if __name__ == '__main__':
-    from starlette.datastructures import Headers
     from fastapi import FastAPI
+    from starlette.datastructures import Headers
 
     result = search_yandex(
         Request(

@@ -1,7 +1,7 @@
-import requests
 import logging
 from typing import Iterator, List, Union
 
+import requests
 from langchain_core.document_loaders import BaseLoader
 from langchain_core.documents import Document
 
@@ -30,6 +30,9 @@ class ExternalWebLoader(BaseLoader):
                 response = requests.post(
                     self.external_url,
                     headers={
+                        # LICENSE covers this Open WebUI user-agent identifier.
+                        # Do not alter, remove, obscure, or replace it except as LICENSE permits:
+                        # https://docs.openwebui.com/license.
                         'User-Agent': 'Open WebUI (https://github.com/open-webui/open-webui) External Web Loader',
                         'Authorization': f'Bearer {self.external_api_key}',
                     },

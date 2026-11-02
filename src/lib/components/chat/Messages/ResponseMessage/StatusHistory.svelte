@@ -3,6 +3,7 @@
 	const i18n = getContext('i18n');
 
 	import StatusItem from './StatusHistory/StatusItem.svelte';
+	import equal from 'fast-deep-equal';
 	export let statusHistory = [];
 	export let expand = false;
 
@@ -21,17 +22,14 @@
 		status = history.at(-1);
 	}
 
-	$: if (
-		statusHistory.length !== history.length ||
-		JSON.stringify(statusHistory) !== JSON.stringify(history)
-	) {
+	$: if (!equal(statusHistory, history)) {
 		history = statusHistory;
 	}
 </script>
 
 {#if history && history.length > 0}
 	{#if status?.hidden !== true}
-		<div class="text-sm flex flex-col w-full">
+		<div class="text-[0.9375rem] flex flex-col w-full">
 			<button
 				class="w-full"
 				aria-label={$i18n.t('Toggle status history')}
@@ -41,7 +39,7 @@
 				}}
 			>
 				<div class="flex items-start gap-2">
-					<StatusItem {status} />
+					<StatusItem {status} clamp={!showHistory || history.length > 1} />
 				</div>
 			</button>
 
@@ -61,12 +59,12 @@
 										</div>
 										{#if idx !== history.length - 1}
 											<div
-												class="w-[0.5px] ml-[6.5px] h-[calc(100%-14px)] bg-gray-300 dark:bg-gray-700"
+												class="w-[0.03125rem] ml-[0.40625rem] h-[calc(100%-14px)] bg-gray-300 dark:bg-gray-700"
 											/>
 										{/if}
 									</div>
 
-									<StatusItem {status} done={true} />
+									<StatusItem {status} done={true} clamp={false} />
 								</div>
 							{/each}
 						</div>

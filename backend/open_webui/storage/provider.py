@@ -1,38 +1,43 @@
-import os
-import shutil
-import json
 import logging
+import os
 import re
+import shutil
 from abc import ABC, abstractmethod
-from typing import BinaryIO, Tuple, Dict
+from typing import BinaryIO, Dict, Tuple
 
 import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
+
 from open_webui.config import (
+    AZURE_STORAGE_CONTAINER_NAME,
+    AZURE_STORAGE_ENDPOINT,
+    AZURE_STORAGE_KEY,
+    GCS_BUCKET_NAME,
+    GOOGLE_APPLICATION_CREDENTIALS_JSON,
     S3_ACCESS_KEY_ID,
+    S3_ADDRESSING_STYLE,
     S3_BUCKET_NAME,
+    S3_ENABLE_TAGGING,
     S3_ENDPOINT_URL,
     S3_KEY_PREFIX,
     S3_REGION_NAME,
     S3_SECRET_ACCESS_KEY,
     S3_USE_ACCELERATE_ENDPOINT,
-    S3_ADDRESSING_STYLE,
-    S3_ENABLE_TAGGING,
-    GCS_BUCKET_NAME,
-    GOOGLE_APPLICATION_CREDENTIALS_JSON,
-    AZURE_STORAGE_ENDPOINT,
-    AZURE_STORAGE_CONTAINER_NAME,
-    AZURE_STORAGE_KEY,
     STORAGE_PROVIDER,
     UPLOAD_DIR,
 )
-from google.cloud import storage
-from google.cloud.exceptions import GoogleCloudError, NotFound
 from open_webui.constants import ERROR_MESSAGES
-from azure.identity import DefaultAzureCredential
-from azure.storage.blob import BlobServiceClient
-from azure.core.exceptions import ResourceNotFoundError
+from open_webui.utils.json_codec import JSONCodec
+
+from open_webui.env import USE_SLIM
+
+if not USE_SLIM:
+    from azure.core.exceptions import ResourceNotFoundError
+    from azure.identity import DefaultAzureCredential
+    from azure.storage.blob import BlobServiceClient
+    from google.cloud import storage
+    from google.cloud.exceptions import GoogleCloudError, NotFound
 
 log = logging.getLogger(__name__)
 
@@ -61,7 +66,7 @@ class LocalStorageProvider(StorageProvider):
         contents = file.read()
         if not contents:
             raise ValueError(ERROR_MESSAGES.EMPTY_CONTENT)
-        file_path = f'{UPLOAD_DIR}/{filename}'
+        file_path = os.path.join(UPLOAD_DIR, filename)
         with open(file_path, 'wb') as f:
             f.write(contents)
         return contents, file_path
@@ -74,8 +79,8 @@ class LocalStorageProvider(StorageProvider):
     @staticmethod
     def delete_file(file_path: str) -> None:
         """Handles deletion of the file from local storage."""
-        filename = file_path.split('/')[-1]
-        file_path = f'{UPLOAD_DIR}/{filename}'
+        filename = os.path.basename(file_path)
+        file_path = os.path.join(UPLOAD_DIR, filename)
         if os.path.isfile(file_path):
             os.remove(file_path)
         else:
@@ -140,7 +145,7 @@ class S3StorageProvider(StorageProvider):
 
     def upload_file(self, file: BinaryIO, filename: str, tags: Dict[str, str]) -> Tuple[bytes, str]:
         """Handles uploading of the file to S3 storage."""
-        _, file_path = LocalStorageProvider.upload_file(file, filename, tags)
+        contents, file_path = LocalStorageProvider.upload_file(file, filename, tags)
         s3_key = os.path.join(self.key_prefix, filename)
         try:
             self.s3_client.upload_file(file_path, self.bucket_name, s3_key)
@@ -153,7 +158,7 @@ class S3StorageProvider(StorageProvider):
                     Tagging=tagging,
                 )
             return (
-                open(file_path, 'rb').read(),
+                contents,
                 f's3://{self.bucket_name}/{s3_key}',
             )
         except ClientError as e:
@@ -164,7 +169,9 @@ class S3StorageProvider(StorageProvider):
         try:
             s3_key = self._extract_s3_key(file_path)
             local_file_path = self._get_local_file_path(s3_key)
-            self.s3_client.download_file(self.bucket_name, s3_key, local_file_path)
+            # download_file's temp name caps characters, not bytes, so non-ASCII names can exceed NAME_MAX
+            with open(local_file_path, 'wb') as local_file:
+                self.s3_client.download_fileobj(self.bucket_name, s3_key, local_file)
             return local_file_path
         except ClientError as e:
             raise RuntimeError(f'Error downloading file from S3: {e}')
@@ -202,7 +209,7 @@ class S3StorageProvider(StorageProvider):
         return '/'.join(full_file_path.split('//')[1].split('/')[1:])
 
     def _get_local_file_path(self, s3_key: str) -> str:
-        return f'{UPLOAD_DIR}/{s3_key.split("/")[-1]}'
+        return os.path.join(UPLOAD_DIR, s3_key.split('/')[-1])
 
 
 class GCSStorageProvider(StorageProvider):
@@ -211,7 +218,7 @@ class GCSStorageProvider(StorageProvider):
 
         if GOOGLE_APPLICATION_CREDENTIALS_JSON:
             self.gcs_client = storage.Client.from_service_account_info(
-                info=json.loads(GOOGLE_APPLICATION_CREDENTIALS_JSON)
+                info=JSONCodec.loads(GOOGLE_APPLICATION_CREDENTIALS_JSON)
             )
         else:
             # if no credentials json is provided, credentials will be picked up from the environment
@@ -234,7 +241,7 @@ class GCSStorageProvider(StorageProvider):
         """Handles downloading of the file from GCS storage."""
         try:
             filename = file_path.removeprefix('gs://').split('/')[1]
-            local_file_path = f'{UPLOAD_DIR}/{filename}'
+            local_file_path = os.path.join(UPLOAD_DIR, filename)
             blob = self.bucket.get_blob(filename)
             blob.download_to_filename(local_file_path)
 
@@ -298,7 +305,7 @@ class AzureStorageProvider(StorageProvider):
         """Handles downloading of the file from Azure Blob Storage."""
         try:
             filename = file_path.split('/')[-1]
-            local_file_path = f'{UPLOAD_DIR}/{filename}'
+            local_file_path = os.path.join(UPLOAD_DIR, filename)
             blob_client = self.container_client.get_blob_client(filename)
             with open(local_file_path, 'wb') as download_file:
                 download_file.write(blob_client.download_blob().readall())
@@ -332,6 +339,11 @@ class AzureStorageProvider(StorageProvider):
 
 
 def get_storage_provider(storage_provider: str):
+    if USE_SLIM and storage_provider not in ('local', 's3'):
+        raise RuntimeError(
+            'Slim supports local and S3 file storage. Set STORAGE_PROVIDER=local or s3, '
+            'or use the standard image for other storage providers.'
+        )
     if storage_provider == 'local':
         Storage = LocalStorageProvider()
     elif storage_provider == 's3':

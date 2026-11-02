@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
-	const i18n = getContext('i18n');
+	const i18n = getContext<typeof import('$lib/i18n').default>('i18n');
 
 	import Modal from '$lib/components/common/Modal.svelte';
 	import AccessControl from './AccessControl.svelte';
@@ -8,48 +8,56 @@
 
 	type AccessGrant = {
 		id?: string;
-		principal_type: 'user' | 'group';
+		principal_type: 'user' | 'group' | 'anyone';
 		principal_id: string;
 		permission: 'read' | 'write';
 	};
 
 	export let show = false;
+	export let disabled = false;
 	export let accessGrants: AccessGrant[] = [];
 	export let accessControl: any = undefined;
 	export let accessRoles = ['read'];
+	export let labels: Partial<Record<'title' | 'public' | 'private' | 'read' | 'empty', string>> =
+		{};
 
 	export let share = true;
 	export let sharePublic = true;
+	export let shareOpen = false;
 	export let shareUsers = true;
+	export let allowGroups = true;
 
-	export let onChange = () => {};
+	export let onChange: (grants: AccessGrant[]) => void | Promise<void> = () => {};
 </script>
 
-<Modal size="sm" bind:show>
+<Modal size="sm" bind:show className="rounded-2xl bg-white dark:bg-gray-900">
 	<div>
-		<div class=" flex justify-between dark:text-gray-100 px-5 pt-3 pb-1">
-			<div class=" text-lg font-medium self-center font-primary">
-				{$i18n.t('Access Control')}
+		<div class="flex justify-between dark:text-gray-100 px-4 pt-3 pb-2">
+			<div class="text-sm font-medium self-center">
+				{labels.title ?? $i18n.t('Access Control')}
 			</div>
 			<button
-				class="self-center"
+				class="self-center rounded-lg p-1 text-gray-500 transition hover:bg-gray-50 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
 				on:click={() => {
 					show = false;
 				}}
 			>
-				<XMark className={'size-5'} />
+				<XMark className={'size-4'} />
 			</button>
 		</div>
 
-		<div class="w-full px-5 pb-4 dark:text-white">
+		<div class="w-full px-4 pb-3 dark:text-white" inert={disabled} aria-busy={disabled}>
 			<AccessControl
 				bind:accessGrants
 				bind:accessControl
 				{onChange}
 				{accessRoles}
+				{labels}
 				{share}
 				{sharePublic}
+				{shareOpen}
 				{shareUsers}
+				{allowGroups}
 			/>
 		</div>
 	</div>

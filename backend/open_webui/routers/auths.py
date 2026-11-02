@@ -1,178 +1,196 @@
+from __future__ import annotations
+
 import asyncio
-import re
-import uuid
-import time
 import datetime
 import logging
-from aiohttp import ClientSession
+import re
+import time
 import urllib
+import uuid
+from ssl import CERT_NONE, CERT_REQUIRED, PROTOCOL_TLS
 
-
-from open_webui.models.auths import (
-    AddUserForm,
-    ApiKey,
-    Auths,
-    Token,
-    LdapForm,
-    SigninForm,
-    SigninResponse,
-    SignupForm,
-    UpdatePasswordForm,
+import jwt
+from aiohttp import BasicAuth, ClientSession
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import JSONResponse, Response
+from ldap3 import NONE, Connection, Server, Tls
+from ldap3.utils.conv import escape_filter_chars
+from ldap3.utils.dn import parse_dn
+from open_webui.config import (
+    ENABLE_PASSWORD_AUTH,
+    OAUTH_PROVIDERS,
 )
-from open_webui.models.users import (
-    UserModel,
-    UserProfileImageResponse,
-    Users,
-    UpdateProfileForm,
-    UserStatus,
-)
-from open_webui.models.groups import Groups
-from open_webui.models.oauth_sessions import OAuthSessions
-
-from open_webui.constants import ERROR_MESSAGES, WEBHOOK_MESSAGES
+from open_webui.constants import ERROR_MESSAGES
 from open_webui.env import (
+    AIOHTTP_CLIENT_SESSION_SSL,
+    ENABLE_INITIAL_ADMIN_SIGNUP,
+    ENABLE_OAUTH_TOKEN_EXCHANGE,
+    OAUTH_TOKEN_EXCHANGE_RATE_LIMIT,
+    OAUTH_TOKEN_EXCHANGE_RATE_LIMIT_WINDOW,
+    OAUTH_TOKEN_EXCHANGE_TRUSTED_CLIENT_IDS,
     WEBUI_AUTH,
-    WEBUI_AUTH_TRUSTED_EMAIL_HEADER,
-    WEBUI_AUTH_TRUSTED_NAME_HEADER,
-    WEBUI_AUTH_TRUSTED_GROUPS_HEADER,
-    WEBUI_AUTH_TRUSTED_ROLE_HEADER,
     WEBUI_AUTH_COOKIE_SAME_SITE,
     WEBUI_AUTH_COOKIE_SECURE,
     WEBUI_AUTH_SIGNOUT_REDIRECT_URL,
-    ENABLE_INITIAL_ADMIN_SIGNUP,
-    ENABLE_OAUTH_TOKEN_EXCHANGE,
-    AIOHTTP_CLIENT_SESSION_SSL,
+    WEBUI_AUTH_TRUSTED_EMAIL_HEADER,
+    WEBUI_AUTH_TRUSTED_GROUPS_HEADER,
+    WEBUI_AUTH_TRUSTED_NAME_HEADER,
+    WEBUI_AUTH_TRUSTED_ROLE_HEADER,
 )
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import RedirectResponse, Response, JSONResponse
-from open_webui.config import (
-    OPENID_PROVIDER_URL,
-    OPENID_END_SESSION_ENDPOINT,
-    ENABLE_OAUTH_SIGNUP,
-    ENABLE_LDAP,
-    ENABLE_PASSWORD_AUTH,
-    OAUTH_PROVIDERS,
-    OAUTH_MERGE_ACCOUNTS_BY_EMAIL,
+from open_webui.events import EVENTS, publish_event
+from open_webui.internal.db import get_async_session
+from open_webui.models.auths import (
+    AddUserForm,
+    AddUserResponse,
+    ApiKey,
+    Auths,
+    LdapForm,
+    SessionUserInfoResponse,
+    SigninForm,
+    SigninResult,
+    SignupForm,
+    UpdatePasswordForm,
 )
-from pydantic import BaseModel
-
-from open_webui.utils.misc import parse_duration, validate_email_format
+from open_webui.models.config import Config
+from open_webui.models.groups import Groups
+from open_webui.models.oauth_sessions import OAuthSessions
+from open_webui.models.users import (
+    UpdateProfileForm,
+    UserModel,
+    UserProfileImageResponse,
+    Users,
+)
+from open_webui.routers.mfa import MfaRoute
+from open_webui.utils.access_control import get_permissions, has_permission
 from open_webui.utils.auth import (
+    create_api_key,
+    create_signin_response,
+    create_token,
+    decode_token,
+    get_admin_user,
+    get_current_user,
+    get_http_authorization_cred,
+    get_human_user,
+    get_password_hash,
+    get_verified_user,
+    invalidate_token,
     validate_password,
     verify_password,
-    decode_token,
-    invalidate_token,
-    create_api_key,
-    create_token,
-    get_admin_user,
-    get_verified_user,
-    get_current_user,
-    get_password_hash,
-    get_http_authorization_cred,
 )
-from open_webui.internal.db import get_session
-from sqlalchemy.orm import Session
-from open_webui.utils.webhook import post_webhook
-from open_webui.utils.access_control import get_permissions, has_permission
 from open_webui.utils.groups import apply_default_group_assignment
-
-from open_webui.utils.redis import get_redis_client
+from open_webui.utils.json_codec import JSONCodec
+from open_webui.utils.mfa import MFA_CONFIG_KEYS, MfaConfigForm, get_mfa_config, limit_account, update_mfa_config
+from open_webui.utils.misc import parse_duration, validate_email_format
 from open_webui.utils.rate_limit import RateLimiter
+from pydantic import BaseModel, Field, StrictStr, field_validator
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
-
-from typing import Optional, List
-
-from ssl import CERT_NONE, CERT_REQUIRED, PROTOCOL_TLS
-
-from ldap3 import Server, Connection, NONE, Tls
-from ldap3.utils.conv import escape_filter_chars
-
-router = APIRouter()
+router = APIRouter(route_class=MfaRoute)
 
 log = logging.getLogger(__name__)
 
 # Forgive us our failed attempts, as we forgive those
 # who exceed their allotted rate against this gate.
-signin_rate_limiter = RateLimiter(redis_client=get_redis_client(), limit=5 * 3, window=60 * 3)
-
-
-def create_session_response(request: Request, user, db, response: Response = None, set_cookie: bool = False) -> dict:
-    """
-    Create JWT token and build session response for a user.
-    Shared helper for signin, signup, ldap_auth, add_user, and token_exchange endpoints.
-
-    Args:
-        request: FastAPI request object
-        user: User object
-        db: Database session
-        response: FastAPI response object (required if set_cookie is True)
-        set_cookie: Whether to set the auth cookie on the response
-    """
-    expires_delta = parse_duration(request.app.state.config.JWT_EXPIRES_IN)
-    expires_at = None
-    if expires_delta:
-        expires_at = int(time.time()) + int(expires_delta.total_seconds())
-
-    token = create_token(
-        data={'id': user.id},
-        expires_delta=expires_delta,
+signin_rate_limiter = RateLimiter(limit=5 * 3, window=60 * 3)
+# Best-effort throttle only: there is no caller identity before the provider answers,
+# and deployments may derive request.client from proxy headers.
+token_exchange_rate_limiter = (
+    RateLimiter(
+        limit=OAUTH_TOKEN_EXCHANGE_RATE_LIMIT,
+        window=OAUTH_TOKEN_EXCHANGE_RATE_LIMIT_WINDOW,
     )
-
-    if set_cookie and response:
-        datetime_expires_at = datetime.datetime.fromtimestamp(expires_at, datetime.timezone.utc) if expires_at else None
-        max_age = int(expires_delta.total_seconds()) if expires_delta else None
-        response.set_cookie(
-            key='token',
-            value=token,
-            expires=datetime_expires_at,
-            httponly=True,
-            samesite=WEBUI_AUTH_COOKIE_SAME_SITE,
-            secure=WEBUI_AUTH_COOKIE_SECURE,
-            **({'max_age': max_age} if max_age is not None else {}),
-        )
-
-    user_permissions = get_permissions(user.id, request.app.state.config.USER_PERMISSIONS, db=db)
-
-    return {
-        'token': token,
-        'token_type': 'Bearer',
-        'expires_at': expires_at,
-        'id': user.id,
-        'email': user.email,
-        'name': user.name,
-        'role': user.role,
-        'profile_image_url': f'/api/v1/users/{user.id}/profile/image',
-        'permissions': user_permissions,
-    }
+    if OAUTH_TOKEN_EXCHANGE_RATE_LIMIT is not None
+    else None
+)
 
 
-############################
-# GetSessionUser
-############################
+ADMIN_CONFIG_KEYS = {
+    **MFA_CONFIG_KEYS,
+    'SHOW_ADMIN_DETAILS': 'auth.admin.show',
+    'ADMIN_EMAIL': 'auth.admin.email',
+    'WEBUI_URL': 'webui.url',
+    'ENABLE_LOGIN_FORM': 'ui.enable_login_form',
+    'ENABLE_SIGNUP': 'ui.enable_signup',
+    'ENABLE_API_KEYS': 'auth.enable_api_keys',
+    'ENABLE_API_KEYS_ENDPOINT_RESTRICTIONS': 'auth.api_key.endpoint_restrictions',
+    'API_KEYS_ALLOWED_ENDPOINTS': 'auth.api_key.allowed_endpoints',
+    'DEFAULT_USER_ROLE': 'ui.default_user_role',
+    'DEFAULT_GROUP_ID': 'ui.default_group_id',
+    'DEFAULT_INTERFACE_SETTINGS': 'ui.default_interface_settings',
+    'I18N': 'ui.i18n',
+    'JWT_EXPIRES_IN': 'auth.jwt_expiry',
+    'ENABLE_COMMUNITY_SHARING': 'ui.enable_community_sharing',
+    'ENABLE_MESSAGE_RATING': 'ui.enable_message_rating',
+    'ENABLE_FOLDERS': 'folders.enable',
+    'FOLDER_MAX_FILE_COUNT': 'folders.max_file_count',
+    'AUTOMATION_MAX_COUNT': 'automations.max_count',
+    'AUTOMATION_MIN_INTERVAL': 'automations.min_interval',
+    'ENABLE_AUTOMATIONS': 'automations.enable',
+    'ENABLE_CHANNELS': 'channels.enable',
+    'ENABLE_ENCRYPTED_CHANNELS': 'channels.encryption.enable',
+    'ENABLE_APPS': 'apps.enable',
+    'CHANNEL_MODEL_RESPONSE_MODE': 'channels.model_response_mode',
+    'ENABLE_CALENDAR': 'calendar.enable',
+    'ENABLE_MEMORIES': 'memories.enable',
+    'ENABLE_MEMORY_SYSTEM_CONTEXT': 'memories.system_context.enable',
+    'SKILL_CONTENT_MAX_CHARS': 'skills.content_max_chars',
+    'SKILL_PREVIEW_MAX_CHARS': 'skills.preview_max_chars',
+    'ENABLE_NOTES': 'notes.enable',
+    'ENABLE_USER_WEBHOOKS': 'ui.enable_user_webhooks',
+    'ENABLE_USER_STATUS': 'users.enable_status',
+    'PENDING_USER_OVERLAY_TITLE': 'ui.pending_user_overlay_title',
+    'PENDING_USER_OVERLAY_CONTENT': 'ui.pending_user_overlay_content',
+    'RESPONSE_WATERMARK': 'ui.watermark',
+}
+
+LDAP_SERVER_CONFIG_KEYS = {
+    'label': 'ldap.server.label',
+    'host': 'ldap.server.host',
+    'port': 'ldap.server.port',
+    'attribute_for_mail': 'ldap.server.attribute_for_mail',
+    'attribute_for_username': 'ldap.server.attribute_for_username',
+    'app_dn': 'ldap.server.app_dn',
+    'app_dn_password': 'ldap.server.app_password',
+    'search_base': 'ldap.server.users_dn',
+    'search_filters': 'ldap.server.search_filter',
+    'use_tls': 'ldap.server.use_tls',
+    'certificate_path': 'ldap.server.ca_cert_file',
+    'validate_cert': 'ldap.server.validate_cert',
+    'ciphers': 'ldap.server.ciphers',
+    'enable_group_management': 'ldap.group.enable_management',
+    'enable_group_creation': 'ldap.group.enable_creation',
+    'attribute_for_groups': 'ldap.server.attribute_for_groups',
+}
 
 
-class SessionUserResponse(Token, UserProfileImageResponse):
-    expires_at: Optional[int] = None
-    permissions: Optional[dict] = None
+async def get_config_values(key_map: dict[str, str]) -> dict:
+    values = await Config.get_many(*key_map.values())
+    return {field: values[storage_key] for field, storage_key in key_map.items() if storage_key in values}
 
 
-class SessionUserInfoResponse(SessionUserResponse, UserStatus):
-    bio: Optional[str] = None
-    gender: Optional[str] = None
-    date_of_birth: Optional[datetime.date] = None
+def config_updates(data: dict, key_map: dict[str, str]) -> dict:
+    return {key_map[field]: value for field, value in data.items() if field in key_map}
 
 
 @router.get('/', response_model=SessionUserInfoResponse)
 async def get_session_user(
     request: Request,
     response: Response,
-    user=Depends(get_current_user),
-    db: Session = Depends(get_session),
+    user=Depends(get_human_user),
+    db: AsyncSession = Depends(get_async_session),
 ):
+    token = None
     auth_header = request.headers.get('Authorization')
-    auth_token = get_http_authorization_cred(auth_header)
-    token = auth_token.credentials
-    data = decode_token(token)
+    if auth_header:
+        auth_token = get_http_authorization_cred(auth_header)
+        if auth_token is not None:
+            token = auth_token.credentials
+    if token is None:
+        token = request.cookies.get('token')
+    if token is None and getattr(request.state, 'token', None):
+        token = request.state.token.credentials
+    data = decode_token(token) if token else None
 
     expires_at = None
 
@@ -197,9 +215,9 @@ async def get_session_user(
             **({'max_age': max_age} if max_age is not None else {}),
         )
 
-    user_permissions = get_permissions(user.id, request.app.state.config.USER_PERMISSIONS, db=db)
+    user_permissions = await get_permissions(user.id, await Config.get('user.permissions'), db=db)
 
-    return {
+    response_data = {
         'token': token,
         'token_type': 'Bearer',
         'expires_at': expires_at,
@@ -217,6 +235,8 @@ async def get_session_user(
         'permissions': user_permissions,
     }
 
+    return response_data
+
 
 ############################
 # Update Profile
@@ -225,17 +245,25 @@ async def get_session_user(
 
 @router.post('/update/profile', response_model=UserProfileImageResponse)
 async def update_profile(
+    request: Request,
     form_data: UpdateProfileForm,
     session_user=Depends(get_verified_user),
-    db: Session = Depends(get_session),
+    db: AsyncSession = Depends(get_async_session),
 ):
     if session_user:
-        user = Users.update_user_by_id(
+        user = await Users.update_user_by_id(
             session_user.id,
             form_data.model_dump(),
             db=db,
         )
         if user:
+            await publish_event(
+                request,
+                EVENTS.USER_PROFILE_UPDATED,
+                actor=session_user,
+                subject_id=session_user.id,
+                data={'updated_fields': list(form_data.model_dump().keys())},
+            )
             return user
         else:
             raise HTTPException(400, detail=ERROR_MESSAGES.DEFAULT())
@@ -254,15 +282,23 @@ class UpdateTimezoneForm(BaseModel):
 
 @router.post('/update/timezone')
 async def update_timezone(
+    request: Request,
     form_data: UpdateTimezoneForm,
     session_user=Depends(get_current_user),
-    db: Session = Depends(get_session),
+    db: AsyncSession = Depends(get_async_session),
 ):
     if session_user:
-        Users.update_user_by_id(
+        await Users.update_user_by_id(
             session_user.id,
             {'timezone': form_data.timezone},
             db=db,
+        )
+        await publish_event(
+            request,
+            EVENTS.USER_UPDATED,
+            actor=session_user,
+            subject_id=session_user.id,
+            data={'updated_fields': ['timezone']},
         )
         return {'status': True}
     else:
@@ -276,44 +312,108 @@ async def update_timezone(
 
 @router.post('/update/password', response_model=bool)
 async def update_password(
+    request: Request,
     form_data: UpdatePasswordForm,
     session_user=Depends(get_current_user),
-    db: Session = Depends(get_session),
+    db: AsyncSession = Depends(get_async_session),
 ):
+    # Trusted-header auth mode delegates passwords to the reverse proxy
     if WEBUI_AUTH_TRUSTED_EMAIL_HEADER:
-        raise HTTPException(400, detail=ERROR_MESSAGES.ACTION_PROHIBITED)
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=ERROR_MESSAGES.ACTION_PROHIBITED)
     if session_user:
-        user = Auths.authenticate_user(
+        authenticated = await Auths.authenticate_user(
             session_user.email,
             lambda pw: verify_password(form_data.password, pw),
             db=db,
         )
+        user, auth = authenticated if authenticated else (None, None)
 
         if user:
             try:
                 validate_password(form_data.new_password)
             except Exception as e:
                 raise HTTPException(400, detail=str(e))
-            hashed = get_password_hash(form_data.new_password)
-            return Auths.update_user_password_by_id(user.id, hashed, db=db)
+            hashed = await get_password_hash(form_data.new_password)
+            try:
+                success = await Auths.update_user_password_by_id(user.id, hashed, current_auth=auth, db=db)
+            except ValueError:
+                raise HTTPException(409, 'Authentication changed. Please sign in again.') from None
+            if success:
+                from open_webui.socket.main import disconnect_user_sessions
+
+                await disconnect_user_sessions(user.id)
+                await publish_event(
+                    request,
+                    EVENTS.AUTH_PASSWORD_CHANGED,
+                    actor=user,
+                    subject_id=user.id,
+                    subject_type='user',
+                )
+            return success
         else:
             raise HTTPException(400, detail=ERROR_MESSAGES.INCORRECT_PASSWORD)
     else:
         raise HTTPException(400, detail=ERROR_MESSAGES.INVALID_CRED)
 
 
+def _unescape_ldap_dn_value(value: str) -> str:
+    """Resolve RFC 4514 escapes in a DN value, e.g. ``CN=Sales\\, EMEA`` -> ``Sales, EMEA``.
+
+    Consecutive ``\\XX`` hex escapes encode UTF-8 bytes and are decoded together.
+    """
+    hexdigits = '0123456789abcdefABCDEF'
+    result = []
+    pos = 0
+    length = len(value)
+    while pos < length:
+        char = value[pos]
+        if char == '\\' and pos + 1 < length:
+            if pos + 2 < length and value[pos + 1] in hexdigits and value[pos + 2] in hexdigits:
+                byte_values = bytearray()
+                while (
+                    pos + 2 < length
+                    and value[pos] == '\\'
+                    and value[pos + 1] in hexdigits
+                    and value[pos + 2] in hexdigits
+                ):
+                    byte_values.append(int(value[pos + 1 : pos + 3], 16))
+                    pos += 3
+                result.append(byte_values.decode('utf-8', errors='replace'))
+            else:
+                # Backslash escaping a literal special char, e.g. "\," or "\+".
+                result.append(value[pos + 1])
+                pos += 2
+        else:
+            result.append(char)
+            pos += 1
+    return ''.join(result)
+
+
+def extract_group_cn_from_dn(group_dn: str) -> str | None:
+    """Return the first CN component of an LDAP group DN, or None.
+
+    Uses ``parse_dn`` so escaped separators inside a value (e.g. a group whose
+    name contains a comma) are handled correctly instead of naively splitting
+    on ``,``.
+    """
+    for attr_type, attr_value, _ in parse_dn(group_dn):
+        if attr_type.upper() == 'CN':
+            return _unescape_ldap_dn_value(attr_value)
+    return None
+
+
 ############################
 # LDAP Authentication
 ############################
-@router.post('/ldap', response_model=SessionUserResponse)
+@router.post('/ldap', response_model=SigninResult)
 async def ldap_auth(
     request: Request,
     response: Response,
     form_data: LdapForm,
-    db: Session = Depends(get_session),
+    db: AsyncSession = Depends(get_async_session),
 ):
     # Security checks FIRST - before loading any config
-    if not request.app.state.config.ENABLE_LDAP:
+    if not await Config.get('ldap.enable'):
         raise HTTPException(400, detail='LDAP authentication is not enabled')
 
     if not ENABLE_PASSWORD_AUTH:
@@ -322,20 +422,28 @@ async def ldap_auth(
             detail=ERROR_MESSAGES.ACTION_PROHIBITED,
         )
 
+    # Reject empty passwords before attempting the LDAP bind.
+    # Per RFC 4513 §5.1.2, a Simple Bind with a non-empty DN but empty
+    # password is "unauthenticated simple authentication" — many LDAP
+    # servers (OpenLDAP default, some AD configs) return success for these,
+    # which would grant access without valid credentials.
+    if not form_data.password or not form_data.password.strip():
+        raise HTTPException(400, detail=ERROR_MESSAGES.INVALID_CRED)
+
     # NOW load LDAP config variables
-    LDAP_SERVER_LABEL = request.app.state.config.LDAP_SERVER_LABEL
-    LDAP_SERVER_HOST = request.app.state.config.LDAP_SERVER_HOST
-    LDAP_SERVER_PORT = request.app.state.config.LDAP_SERVER_PORT
-    LDAP_ATTRIBUTE_FOR_MAIL = request.app.state.config.LDAP_ATTRIBUTE_FOR_MAIL
-    LDAP_ATTRIBUTE_FOR_USERNAME = request.app.state.config.LDAP_ATTRIBUTE_FOR_USERNAME
-    LDAP_SEARCH_BASE = request.app.state.config.LDAP_SEARCH_BASE
-    LDAP_SEARCH_FILTERS = request.app.state.config.LDAP_SEARCH_FILTERS
-    LDAP_APP_DN = request.app.state.config.LDAP_APP_DN
-    LDAP_APP_PASSWORD = request.app.state.config.LDAP_APP_PASSWORD
-    LDAP_USE_TLS = request.app.state.config.LDAP_USE_TLS
-    LDAP_CA_CERT_FILE = request.app.state.config.LDAP_CA_CERT_FILE
-    LDAP_VALIDATE_CERT = CERT_REQUIRED if request.app.state.config.LDAP_VALIDATE_CERT else CERT_NONE
-    LDAP_CIPHERS = request.app.state.config.LDAP_CIPHERS if request.app.state.config.LDAP_CIPHERS else 'ALL'
+    LDAP_SERVER_LABEL = await Config.get('ldap.server.label')
+    LDAP_SERVER_HOST = await Config.get('ldap.server.host')
+    LDAP_SERVER_PORT = await Config.get('ldap.server.port')
+    LDAP_ATTRIBUTE_FOR_MAIL = await Config.get('ldap.server.attribute_for_mail')
+    LDAP_ATTRIBUTE_FOR_USERNAME = await Config.get('ldap.server.attribute_for_username')
+    LDAP_SEARCH_BASE = await Config.get('ldap.server.users_dn')
+    LDAP_SEARCH_FILTERS = await Config.get('ldap.server.search_filter')
+    LDAP_APP_DN = await Config.get('ldap.server.app_dn')
+    LDAP_APP_PASSWORD = await Config.get('ldap.server.app_password')
+    LDAP_USE_TLS = await Config.get('ldap.server.use_tls')
+    LDAP_CA_CERT_FILE = await Config.get('ldap.server.ca_cert_file')
+    LDAP_VALIDATE_CERT = CERT_REQUIRED if await Config.get('ldap.server.validate_cert') else CERT_NONE
+    LDAP_CIPHERS = await Config.get('ldap.server.ciphers') if await Config.get('ldap.server.ciphers') else 'ALL'
 
     try:
         tls = Tls(
@@ -366,9 +474,9 @@ async def ldap_auth(
         if not await asyncio.to_thread(connection_app.bind):
             raise HTTPException(400, detail='Application account bind failed')
 
-        ENABLE_LDAP_GROUP_MANAGEMENT = request.app.state.config.ENABLE_LDAP_GROUP_MANAGEMENT
-        ENABLE_LDAP_GROUP_CREATION = request.app.state.config.ENABLE_LDAP_GROUP_CREATION
-        LDAP_ATTRIBUTE_FOR_GROUPS = request.app.state.config.LDAP_ATTRIBUTE_FOR_GROUPS
+        ENABLE_LDAP_GROUP_MANAGEMENT = await Config.get('ldap.group.enable_management')
+        ENABLE_LDAP_GROUP_CREATION = await Config.get('ldap.group.enable_creation')
+        LDAP_ATTRIBUTE_FOR_GROUPS = await Config.get('ldap.server.attribute_for_groups')
 
         search_attributes = [
             f'{LDAP_ATTRIBUTE_FOR_USERNAME}',
@@ -377,8 +485,8 @@ async def ldap_auth(
         ]
         if ENABLE_LDAP_GROUP_MANAGEMENT:
             search_attributes.append(f'{LDAP_ATTRIBUTE_FOR_GROUPS}')
-            log.info(f'LDAP Group Management enabled. Adding {LDAP_ATTRIBUTE_FOR_GROUPS} to search attributes')
-        log.info(f'LDAP search attributes: {search_attributes}')
+            log.info('LDAP Group Management enabled. Adding %s to search attributes', LDAP_ATTRIBUTE_FOR_GROUPS)
+        log.info('LDAP search attributes: %s', search_attributes)
 
         search_success = await asyncio.to_thread(
             connection_app.search,
@@ -415,57 +523,54 @@ async def ldap_auth(
         user_groups = []
         if ENABLE_LDAP_GROUP_MANAGEMENT and LDAP_ATTRIBUTE_FOR_GROUPS in entry:
             group_dns = entry[LDAP_ATTRIBUTE_FOR_GROUPS]
-            log.info(f'LDAP raw group DNs for user {username_list}: {group_dns}')
+            log.info('LDAP raw group DNs for user %s: %s', username_list, group_dns)
 
             if group_dns:
-                log.info(f'LDAP group_dns original: {group_dns}')
-                log.info(f'LDAP group_dns type: {type(group_dns)}')
-                log.info(f'LDAP group_dns length: {len(group_dns)}')
+                log.info('LDAP group_dns original: %s', group_dns)
+                log.info('LDAP group_dns type: %s', type(group_dns))
+                log.info('LDAP group_dns length: %s', len(group_dns))
 
                 if hasattr(group_dns, 'value'):
                     group_dns = group_dns.value
-                    log.info(f'Extracted .value property: {group_dns}')
+                    log.info('Extracted .value property: %s', group_dns)
                 elif hasattr(group_dns, '__iter__') and not isinstance(group_dns, (str, bytes)):
                     group_dns = list(group_dns)
-                    log.info(f'Converted to list: {group_dns}')
+                    log.info('Converted to list: %s', group_dns)
 
                 if isinstance(group_dns, list):
                     group_dns = [str(item) for item in group_dns]
                 else:
                     group_dns = [str(group_dns)]
 
-                log.info(f'LDAP group_dns after processing - type: {type(group_dns)}, length: {len(group_dns)}')
+                log.info('LDAP group_dns after processing - type: %s, length: %s', type(group_dns), len(group_dns))
 
                 for group_idx, group_dn in enumerate(group_dns):
                     group_dn = str(group_dn)
-                    log.info(f'Processing group DN #{group_idx + 1}: {group_dn}')
+                    log.info('Processing group DN #%s: %s', group_idx + 1, group_dn)
 
                     try:
-                        group_cn = None
-
-                        for item in group_dn.split(','):
-                            item = item.strip()
-                            if item.upper().startswith('CN='):
-                                group_cn = item[3:]
-                                break
+                        group_cn = extract_group_cn_from_dn(group_dn)
 
                         if group_cn:
                             user_groups.append(group_cn)
-
                         else:
                             log.warning(f'Could not extract CN from group DN: {group_dn}')
                     except Exception as e:
                         log.warning(f'Failed to extract group name from DN {group_dn}: {e}')
 
-                log.info(f'LDAP groups for user {username_list}: {user_groups} (total: {len(user_groups)})')
+                log.info('LDAP groups for user %s: %s (total: %s)', username_list, user_groups, len(user_groups))
             else:
-                log.info(f'No groups found for user {username_list}')
+                log.info('No groups found for user %s', username_list)
         elif ENABLE_LDAP_GROUP_MANAGEMENT:
             log.warning(
                 f'LDAP Group Management enabled but {LDAP_ATTRIBUTE_FOR_GROUPS} attribute not found in user entry'
             )
 
         if username_list and form_data.user.lower() in username_list:
+            if (await get_mfa_config()).ENABLE_MFA:
+                existing = await Users.get_user_by_email(email, db=db)
+                if existing:
+                    await limit_account(existing.id, 'password')
             connection_user = Connection(
                 server,
                 user_dn,
@@ -476,26 +581,41 @@ async def ldap_auth(
             if not await asyncio.to_thread(connection_user.bind):
                 raise HTTPException(400, 'Authentication failed.')
 
-            user = Users.get_user_by_email(email, db=db)
+            user = await Users.get_user_by_email(email, db=db)
             if not user:
                 try:
-                    role = 'admin' if not Users.has_users(db=db) else request.app.state.config.DEFAULT_USER_ROLE
-
-                    user = Auths.insert_new_auth(
+                    # Insert with default role first to avoid TOCTOU race on
+                    # first-user registration.  Matches signup_handler pattern.
+                    user = await Auths.insert_new_auth(
                         email=email,
                         password=str(uuid.uuid4()),
                         name=cn,
-                        role=role,
+                        role=await Config.get('ui.default_user_role'),
                         db=db,
                     )
 
                     if not user:
                         raise HTTPException(500, detail=ERROR_MESSAGES.CREATE_USER_ERROR)
 
-                    apply_default_group_assignment(
-                        request.app.state.config.DEFAULT_GROUP_ID,
+                    # Atomically check if this is the only user *after* the
+                    # insert.  Only the single user present should become admin.
+                    if await Users.get_num_users(db=db) == 1:
+                        await Users.update_user_role_by_id(user.id, 'admin', db=db)
+                        user = await Users.get_user_by_id(user.id, db=db)
+
+                    await apply_default_group_assignment(
+                        await Config.get('ui.default_group_id'),
                         user.id,
                         db=db,
+                    )
+
+                    await publish_event(
+                        request,
+                        EVENTS.USER_CREATED,
+                        actor=user,
+                        subject_id=user.id,
+                        source='ldap',
+                        data={'role': user.role},
                     )
 
                 except HTTPException:
@@ -504,23 +624,25 @@ async def ldap_auth(
                     log.error(f'LDAP user creation error: {str(err)}')
                     raise HTTPException(500, detail='Internal error occurred during LDAP user creation.')
 
-            user = Auths.authenticate_user_by_email(email, db=db)
+            user = await Auths.authenticate_user_by_email(email, db=db)
 
             if user:
                 if ENABLE_LDAP_GROUP_MANAGEMENT and user_groups:
-                    if ENABLE_LDAP_GROUP_CREATION:
-                        Groups.create_groups_by_group_names(user.id, user_groups, db=db)
                     try:
-                        Groups.sync_groups_by_group_names(user.id, user_groups, db=db)
-                        log.info(f'Successfully synced groups for user {user.id}: {user_groups}')
+                        if ENABLE_LDAP_GROUP_CREATION:
+                            await Groups.create_groups_by_group_names(user.id, user_groups, db=db)
+                        await Groups.sync_groups_by_group_names(user.id, user_groups, db=db)
+                        log.info('Successfully synced groups for user %s: %s', user.id, user_groups)
                     except Exception as e:
                         log.error(f'Failed to sync groups for user {user.id}: {e}')
 
-                return create_session_response(request, user, db, response, set_cookie=True)
+                return await create_signin_response(request, user, db, response, set_cookie=True, source='ldap')
             else:
                 raise HTTPException(400, detail=ERROR_MESSAGES.INVALID_CRED)
         else:
             raise HTTPException(400, 'User record mismatch.')
+    except HTTPException:
+        raise
     except Exception as e:
         log.error(f'LDAP authentication error: {str(e)}')
         raise HTTPException(400, detail='LDAP authentication failed.')
@@ -531,12 +653,12 @@ async def ldap_auth(
 ############################
 
 
-@router.post('/signin', response_model=SessionUserResponse)
+@router.post('/signin', response_model=SigninResult)
 async def signin(
     request: Request,
     response: Response,
     form_data: SigninForm,
-    db: Session = Depends(get_session),
+    db: AsyncSession = Depends(get_async_session),
 ):
     if not ENABLE_PASSWORD_AUTH:
         raise HTTPException(
@@ -544,9 +666,13 @@ async def signin(
             detail=ERROR_MESSAGES.ACTION_PROHIBITED,
         )
 
+    auth_source = 'password'
+    auth = None
+
     if WEBUI_AUTH_TRUSTED_EMAIL_HEADER:
+        auth_source = 'trusted_header'
         if WEBUI_AUTH_TRUSTED_EMAIL_HEADER not in request.headers:
-            raise HTTPException(400, detail=ERROR_MESSAGES.INVALID_TRUSTED_HEADER)
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=ERROR_MESSAGES.INVALID_TRUSTED_HEADER)
 
         email = request.headers[WEBUI_AUTH_TRUSTED_EMAIL_HEADER].lower()
         name = email
@@ -558,44 +684,61 @@ async def signin(
             except Exception as e:
                 pass
 
-        if not Users.get_user_by_email(email.lower(), db=db):
-            await signup_handler(
-                request,
-                email,
-                str(uuid.uuid4()),
-                name,
-                db=db,
-            )
+        if not await Users.get_user_by_email(email.lower(), db=db):
+            try:
+                await signup_handler(
+                    request,
+                    email,
+                    str(uuid.uuid4()),
+                    name,
+                    db=db,
+                    source='trusted_header',
+                )
+            except IntegrityError:
+                if not await Users.get_user_by_email(email.lower(), db=db):
+                    raise
 
-        user = Auths.authenticate_user_by_email(email, db=db)
+        user = await Auths.authenticate_user_by_email(email, db=db)
         if user:
             if WEBUI_AUTH_TRUSTED_GROUPS_HEADER:
                 group_names = request.headers.get(WEBUI_AUTH_TRUSTED_GROUPS_HEADER, '').split(',')
                 group_names = [name.strip() for name in group_names if name.strip()]
 
                 if group_names:
-                    Groups.sync_groups_by_group_names(user.id, group_names, db=db)
+                    await Groups.sync_groups_by_group_names(user.id, group_names, db=db)
 
             if WEBUI_AUTH_TRUSTED_ROLE_HEADER:
                 trusted_role = request.headers.get(WEBUI_AUTH_TRUSTED_ROLE_HEADER, '').lower().strip()
                 if trusted_role in {'admin', 'user', 'pending'}:
                     if user.role != trusted_role:
-                        Users.update_user_role_by_id(user.id, trusted_role, db=db)
+                        updated_user = await Users.update_user_role_by_id(user.id, trusted_role, db=db)
+                        if updated_user:
+                            user = updated_user
+                            await publish_event(
+                                request,
+                                EVENTS.USER_ROLE_UPDATED,
+                                actor=updated_user,
+                                subject_id=updated_user.id,
+                                source='trusted_header',
+                                data={'role': updated_user.role},
+                            )
                 elif trusted_role:
                     log.warning(f'Ignoring invalid trusted role header value: {trusted_role}')
 
     elif WEBUI_AUTH == False:
+        auth_source = 'system'
         admin_email = 'admin@localhost'
         admin_password = 'admin'
 
-        if Users.get_user_by_email(admin_email.lower(), db=db):
-            user = Auths.authenticate_user(
+        if await Users.get_user_by_email(admin_email.lower(), db=db):
+            authenticated = await Auths.authenticate_user(
                 admin_email.lower(),
                 lambda pw: verify_password(admin_password, pw),
                 db=db,
             )
+            user, auth = authenticated if authenticated else (None, None)
         else:
-            if Users.has_users(db=db):
+            if await Users.has_users(db=db):
                 raise HTTPException(400, detail=ERROR_MESSAGES.EXISTING_USERS)
 
             await signup_handler(
@@ -604,37 +747,36 @@ async def signin(
                 admin_password,
                 'User',
                 db=db,
+                source='system',
             )
 
-            user = Auths.authenticate_user(
+            authenticated = await Auths.authenticate_user(
                 admin_email.lower(),
                 lambda pw: verify_password(admin_password, pw),
                 db=db,
             )
+            user, auth = authenticated if authenticated else (None, None)
     else:
-        if signin_rate_limiter.is_limited(form_data.email.lower()):
+        if await signin_rate_limiter.is_limited(request.app.state.redis, form_data.email.lower()):
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=ERROR_MESSAGES.RATE_LIMIT_EXCEEDED,
             )
 
-        password_bytes = form_data.password.encode('utf-8')
-        if len(password_bytes) > 72:
-            # TODO: Implement other hashing algorithms that support longer passwords
-            log.info('Password too long, truncating to 72 bytes for bcrypt')
-            password_bytes = password_bytes[:72]
+        if (await get_mfa_config()).ENABLE_MFA:
+            existing = await Users.get_user_by_email(form_data.email.lower(), db=db)
+            if existing:
+                await limit_account(existing.id, 'password')
 
-            # decode safely — ignore incomplete UTF-8 sequences
-            form_data.password = password_bytes.decode('utf-8', errors='ignore')
-
-        user = Auths.authenticate_user(
+        authenticated = await Auths.authenticate_user(
             form_data.email.lower(),
             lambda pw: verify_password(form_data.password, pw),
             db=db,
         )
+        user, auth = authenticated if authenticated else (None, None)
 
     if user:
-        return create_session_response(request, user, db, response, set_cookie=True)
+        return await create_signin_response(request, user, db, response, set_cookie=True, source=auth_source, auth=auth)
     else:
         raise HTTPException(400, detail=ERROR_MESSAGES.INVALID_CRED)
 
@@ -651,7 +793,8 @@ async def signup_handler(
     name: str,
     profile_image_url: str = '/user.png',
     *,
-    db: Session,
+    db: AsyncSession,
+    source: str = 'api',
 ) -> UserModel:
     """
     Core user-creation logic shared by the signup endpoint and
@@ -663,14 +806,14 @@ async def signup_handler(
     # Insert with default role first to avoid TOCTOU race on first signup.
     # If has_users() is checked before insert, concurrent requests during
     # first-user registration can all see an empty table and each get admin.
-    hashed = get_password_hash(password)
+    hashed = await get_password_hash(password)
 
-    user = Auths.insert_new_auth(
+    user = await Auths.insert_new_auth(
         email=email.lower(),
         password=hashed,
         name=name,
         profile_image_url=profile_image_url,
-        role=request.app.state.config.DEFAULT_USER_ROLE,
+        role=await Config.get('ui.default_user_role'),
         db=db,
     )
     if not user:
@@ -678,45 +821,45 @@ async def signup_handler(
 
     # Atomically check if this is the only user *after* the insert.
     # Only the single user present at this point should become admin.
-    if Users.get_num_users(db=db) == 1:
-        Users.update_user_role_by_id(user.id, 'admin', db=db)
-        user = Users.get_user_by_id(user.id, db=db)
-        request.app.state.config.ENABLE_SIGNUP = False
+    if await Users.get_num_users(db=db) == 1:
+        await Users.update_user_role_by_id(user.id, 'admin', db=db)
+        user = await Users.get_user_by_id(user.id, db=db)
+        await Config.upsert({'ui.enable_signup': False})
 
-    if request.app.state.config.WEBHOOK_URL:
-        await post_webhook(
-            request.app.state.WEBUI_NAME,
-            request.app.state.config.WEBHOOK_URL,
-            WEBHOOK_MESSAGES.USER_SIGNUP(user.name),
-            {
-                'action': 'signup',
-                'message': WEBHOOK_MESSAGES.USER_SIGNUP(user.name),
-                'user': user.model_dump_json(exclude_none=True),
-            },
-        )
-
-    apply_default_group_assignment(
-        request.app.state.config.DEFAULT_GROUP_ID,
+    await apply_default_group_assignment(
+        await Config.get('ui.default_group_id'),
         user.id,
         db=db,
+    )
+
+    await publish_event(
+        request,
+        EVENTS.USER_CREATED,
+        actor=user,
+        subject_id=user.id,
+        source=source,
+        data={'role': user.role},
     )
 
     return user
 
 
-@router.post('/signup', response_model=SessionUserResponse)
+@router.post('/signup', response_model=SigninResult)
 async def signup(
     request: Request,
     response: Response,
     form_data: SignupForm,
-    db: Session = Depends(get_session),
+    db: AsyncSession = Depends(get_async_session),
 ):
-    has_users = Users.has_users(db=db)
+    has_users = await Users.has_users(db=db)
 
     if WEBUI_AUTH:
-        if not request.app.state.config.ENABLE_SIGNUP or not request.app.state.config.ENABLE_LOGIN_FORM:
-            if has_users or not ENABLE_INITIAL_ADMIN_SIGNUP:
+        if has_users:
+            if not await Config.get('ui.enable_signup') or not await Config.get('ui.enable_login_form'):
                 raise HTTPException(status.HTTP_403_FORBIDDEN, detail=ERROR_MESSAGES.ACCESS_PROHIBITED)
+        # Don't gate the first admin on ENABLE_SIGNUP: it auto-disables and can persist stale across a DB reset.
+        elif not await Config.get('ui.enable_login_form') and not ENABLE_INITIAL_ADMIN_SIGNUP:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, detail=ERROR_MESSAGES.ACCESS_PROHIBITED)
     else:
         if has_users:
             raise HTTPException(status.HTTP_403_FORBIDDEN, detail=ERROR_MESSAGES.ACCESS_PROHIBITED)
@@ -724,7 +867,7 @@ async def signup(
     if not validate_email_format(form_data.email.lower()):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=ERROR_MESSAGES.INVALID_EMAIL_FORMAT)
 
-    if Users.get_user_by_email(form_data.email.lower(), db=db):
+    if await Users.get_user_by_email(form_data.email.lower(), db=db):
         raise HTTPException(400, detail=ERROR_MESSAGES.EMAIL_TAKEN)
 
     try:
@@ -741,7 +884,15 @@ async def signup(
             form_data.profile_image_url,
             db=db,
         )
-        return create_session_response(request, user, db, response, set_cookie=True)
+        await publish_event(
+            request,
+            EVENTS.AUTH_SIGNUP,
+            actor=user,
+            subject_id=user.id,
+            subject_type='user',
+            data={'email': user.email},
+        )
+        return await create_signin_response(request, user, db, response, set_cookie=True, source='password')
     except HTTPException:
         raise
     except Exception as err:
@@ -749,51 +900,71 @@ async def signup(
         raise HTTPException(500, detail='An internal error occurred during signup.')
 
 
-@router.get('/signout')
-async def signout(request: Request, response: Response, db: Session = Depends(get_session)):
+@router.post('/signout')
+async def signout(request: Request, response: Response, db: AsyncSession = Depends(get_async_session)):
     # get auth token from headers or cookies
     token = None
     auth_header = request.headers.get('Authorization')
     if auth_header:
         auth_cred = get_http_authorization_cred(auth_header)
-        token = auth_cred.credentials
-    else:
+        if auth_cred is not None:
+            token = auth_cred.credentials
+    if token is None:
         token = request.cookies.get('token')
 
+    oauth_session_id = request.cookies.get('oauth_session_id')
+    session = await OAuthSessions.get_session_by_id(oauth_session_id, db=db) if oauth_session_id else None
+
     if token:
+        actor = None
+        data = decode_token(token)
+        if data and data.get('id'):
+            actor = await Users.get_user_by_id(data['id'], db=db)
         await invalidate_token(request, token)
+        await publish_event(
+            request,
+            EVENTS.AUTH_LOGOUT,
+            actor=actor,
+            subject_id=actor.id if actor else None,
+            subject_type='user' if actor else None,
+            **({'source': 'oauth', 'data': {'auth_method': 'oauth', 'provider': session.provider}} if session else {}),
+        )
 
     response.delete_cookie('token')
+    try:
+        request.session.clear()
+    except Exception:
+        pass
+    response.delete_cookie('owui-session')
     response.delete_cookie('oui-session')
     response.delete_cookie('oauth_id_token')
 
-    oauth_session_id = request.cookies.get('oauth_session_id')
     if oauth_session_id:
         response.delete_cookie('oauth_session_id')
 
-        session = OAuthSessions.get_session_by_id(oauth_session_id, db=db)
-
         # If a custom end_session_endpoint is configured (e.g. AWS Cognito), redirect
         # there directly instead of attempting OIDC discovery.
-        if OPENID_END_SESSION_ENDPOINT.value:
+        openid_end_session_endpoint = await Config.get('oauth.end_session_endpoint')
+        if openid_end_session_endpoint:
             return JSONResponse(
                 status_code=200,
                 content={
                     'status': True,
-                    'redirect_url': OPENID_END_SESSION_ENDPOINT.value,
+                    'redirect_url': openid_end_session_endpoint,
                 },
                 headers=response.headers,
             )
 
+        openid_provider_url = await Config.get('oauth.provider_url')
         oauth_server_metadata_url = (
             request.app.state.oauth_manager.get_server_metadata_url(session.provider) if session else None
-        ) or OPENID_PROVIDER_URL.value
+        ) or openid_provider_url
 
         if session and oauth_server_metadata_url:
             oauth_id_token = session.token.get('id_token')
             try:
                 async with ClientSession(trust_env=True) as session:
-                    async with session.get(oauth_server_metadata_url) as r:
+                    async with session.get(oauth_server_metadata_url, ssl=AIOHTTP_CLIENT_SESSION_SSL) as r:
                         if r.status == 200:
                             openid_data = await r.json()
                             logout_url = openid_data.get('end_session_endpoint')
@@ -837,21 +1008,56 @@ async def signout(request: Request, response: Response, db: Session = Depends(ge
 
 
 ############################
+# OAuth Session Management
+############################
+
+
+@router.delete('/oauth/sessions/{provider:path}', response_model=bool)
+async def delete_oauth_session_by_provider(
+    request: Request,
+    provider: str,
+    user=Depends(get_verified_user),
+    db: AsyncSession = Depends(get_async_session),
+):
+    """
+    Disconnect the current user's OAuth session for a specific provider.
+    The provider string matches the 'provider' field in the oauth_session table
+    (e.g. 'mcp:server-id' for MCP connections).
+    """
+    result = await OAuthSessions.delete_sessions_by_user_id_and_provider(user.id, provider, db=db)
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail='No OAuth session found for this provider',
+        )
+    await publish_event(
+        request,
+        EVENTS.AUTH_OAUTH_SESSION_DELETED,
+        actor=user,
+        subject_id=user.id,
+        subject_type='user',
+        data={'provider': provider},
+    )
+    return True
+
+
+############################
 # AddUser
 ############################
 
 
-@router.post('/add', response_model=SigninResponse)
+@router.post('/add', response_model=AddUserResponse, response_model_exclude_none=True)
 async def add_user(
     request: Request,
     form_data: AddUserForm,
     user=Depends(get_admin_user),
-    db: Session = Depends(get_session),
+    db: AsyncSession = Depends(get_async_session),
 ):
+    admin_user = user
     if not validate_email_format(form_data.email.lower()):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=ERROR_MESSAGES.INVALID_EMAIL_FORMAT)
 
-    if Users.get_user_by_email(form_data.email.lower(), db=db):
+    if await Users.get_user_by_email(form_data.email.lower(), db=db):
         raise HTTPException(400, detail=ERROR_MESSAGES.EMAIL_TAKEN)
 
     try:
@@ -860,8 +1066,8 @@ async def add_user(
         except Exception as e:
             raise HTTPException(400, detail=str(e))
 
-        hashed = get_password_hash(form_data.password)
-        user = Auths.insert_new_auth(
+        hashed = await get_password_hash(form_data.password)
+        user = await Auths.insert_new_auth(
             form_data.email.lower(),
             hashed,
             form_data.name,
@@ -871,13 +1077,27 @@ async def add_user(
         )
 
         if user:
-            apply_default_group_assignment(
-                request.app.state.config.DEFAULT_GROUP_ID,
+            await apply_default_group_assignment(
+                await Config.get('ui.default_group_id'),
                 user.id,
                 db=db,
             )
+            await publish_event(
+                request,
+                EVENTS.USER_CREATED,
+                actor=admin_user,
+                subject_id=user.id,
+                source='admin',
+                data={'role': user.role},
+            )
 
-            token = create_token(data={'id': user.id})
+            expires_delta = parse_duration(await Config.get('auth.jwt_expiry'))
+            if (await get_mfa_config()).ENABLE_MFA:
+                return user.model_dump()
+            auth = await Auths.get_auth_by_id(user.id, db=db)
+            token = create_token(
+                data={'id': user.id, 'typ': 'session', 'session_stamp': auth.session_stamp}, expires_delta=expires_delta
+            )
             return {
                 'token': token,
                 'token_type': 'Bearer',
@@ -902,19 +1122,21 @@ async def add_user(
 
 
 @router.get('/admin/details')
-async def get_admin_details(request: Request, user=Depends(get_current_user), db: Session = Depends(get_session)):
-    if request.app.state.config.SHOW_ADMIN_DETAILS:
-        admin_email = request.app.state.config.ADMIN_EMAIL
+async def get_admin_details(
+    request: Request, user=Depends(get_current_user), db: AsyncSession = Depends(get_async_session)
+):
+    if await Config.get('auth.admin.show'):
+        admin_email = await Config.get('auth.admin.email')
         admin_name = None
 
-        log.info(f'Admin details - Email: {admin_email}, Name: {admin_name}')
+        log.info('Admin details - Email: %s, Name: %s', admin_email, admin_name)
 
         if admin_email:
-            admin = Users.get_user_by_email(admin_email, db=db)
+            admin = await Users.get_user_by_email(admin_email, db=db)
             if admin:
                 admin_name = admin.name
         else:
-            admin = Users.get_first_user(db=db)
+            admin = await Users.get_first_user(db=db)
             if admin:
                 admin_email = admin.email
                 admin_name = admin.name
@@ -934,128 +1156,118 @@ async def get_admin_details(request: Request, user=Depends(get_current_user), db
 
 @router.get('/admin/config')
 async def get_admin_config(request: Request, user=Depends(get_admin_user)):
-    return {
-        'SHOW_ADMIN_DETAILS': request.app.state.config.SHOW_ADMIN_DETAILS,
-        'ADMIN_EMAIL': request.app.state.config.ADMIN_EMAIL,
-        'WEBUI_URL': request.app.state.config.WEBUI_URL,
-        'ENABLE_SIGNUP': request.app.state.config.ENABLE_SIGNUP,
-        'ENABLE_API_KEYS': request.app.state.config.ENABLE_API_KEYS,
-        'ENABLE_API_KEYS_ENDPOINT_RESTRICTIONS': request.app.state.config.ENABLE_API_KEYS_ENDPOINT_RESTRICTIONS,
-        'API_KEYS_ALLOWED_ENDPOINTS': request.app.state.config.API_KEYS_ALLOWED_ENDPOINTS,
-        'DEFAULT_USER_ROLE': request.app.state.config.DEFAULT_USER_ROLE,
-        'DEFAULT_GROUP_ID': request.app.state.config.DEFAULT_GROUP_ID,
-        'JWT_EXPIRES_IN': request.app.state.config.JWT_EXPIRES_IN,
-        'ENABLE_COMMUNITY_SHARING': request.app.state.config.ENABLE_COMMUNITY_SHARING,
-        'ENABLE_MESSAGE_RATING': request.app.state.config.ENABLE_MESSAGE_RATING,
-        'ENABLE_FOLDERS': request.app.state.config.ENABLE_FOLDERS,
-        'FOLDER_MAX_FILE_COUNT': request.app.state.config.FOLDER_MAX_FILE_COUNT,
-        'ENABLE_CHANNELS': request.app.state.config.ENABLE_CHANNELS,
-        'ENABLE_MEMORIES': request.app.state.config.ENABLE_MEMORIES,
-        'ENABLE_NOTES': request.app.state.config.ENABLE_NOTES,
-        'ENABLE_USER_WEBHOOKS': request.app.state.config.ENABLE_USER_WEBHOOKS,
-        'ENABLE_USER_STATUS': request.app.state.config.ENABLE_USER_STATUS,
-        'PENDING_USER_OVERLAY_TITLE': request.app.state.config.PENDING_USER_OVERLAY_TITLE,
-        'PENDING_USER_OVERLAY_CONTENT': request.app.state.config.PENDING_USER_OVERLAY_CONTENT,
-        'RESPONSE_WATERMARK': request.app.state.config.RESPONSE_WATERMARK,
-    }
+    return await get_config_values(ADMIN_CONFIG_KEYS)
 
 
-class AdminConfig(BaseModel):
+class AdminConfig(MfaConfigForm):
     SHOW_ADMIN_DETAILS: bool
-    ADMIN_EMAIL: Optional[str] = None
+    ADMIN_EMAIL: str | None = None
     WEBUI_URL: str
+    ENABLE_LOGIN_FORM: bool = True
     ENABLE_SIGNUP: bool
     ENABLE_API_KEYS: bool
     ENABLE_API_KEYS_ENDPOINT_RESTRICTIONS: bool
     API_KEYS_ALLOWED_ENDPOINTS: str
     DEFAULT_USER_ROLE: str
     DEFAULT_GROUP_ID: str
+    DEFAULT_INTERFACE_SETTINGS: dict | None = None
+    I18N: dict[str, dict[str, StrictStr]] | None = None
     JWT_EXPIRES_IN: str
     ENABLE_COMMUNITY_SHARING: bool
     ENABLE_MESSAGE_RATING: bool
     ENABLE_FOLDERS: bool
-    FOLDER_MAX_FILE_COUNT: Optional[int | str] = None
+    FOLDER_MAX_FILE_COUNT: int | str | None = None
+    AUTOMATION_MAX_COUNT: int | str | None = None
+    AUTOMATION_MIN_INTERVAL: int | str | None = None
+    ENABLE_AUTOMATIONS: bool
     ENABLE_CHANNELS: bool
+    ENABLE_ENCRYPTED_CHANNELS: bool = False
+    ENABLE_APPS: bool = False
+    CHANNEL_MODEL_RESPONSE_MODE: str = 'thread'
+    ENABLE_CALENDAR: bool
     ENABLE_MEMORIES: bool
+    ENABLE_MEMORY_SYSTEM_CONTEXT: bool
+    SKILL_CONTENT_MAX_CHARS: int | None = Field(default=None, gt=0, strict=True)
+    SKILL_PREVIEW_MAX_CHARS: int | None = Field(default=None, gt=0, strict=True)
     ENABLE_NOTES: bool
     ENABLE_USER_WEBHOOKS: bool
     ENABLE_USER_STATUS: bool
-    PENDING_USER_OVERLAY_TITLE: Optional[str] = None
-    PENDING_USER_OVERLAY_CONTENT: Optional[str] = None
-    RESPONSE_WATERMARK: Optional[str] = None
+    PENDING_USER_OVERLAY_TITLE: str | None = None
+    PENDING_USER_OVERLAY_CONTENT: str | None = None
+    RESPONSE_WATERMARK: str | None = None
+
+    @field_validator('I18N')
+    @classmethod
+    def validate_i18n(cls, value):
+        if value is None:
+            raise ValueError('I18N must be a dictionary')
+        unsafe_keys = {'__proto__', 'prototype', 'constructor'}
+
+        def placeholders(text):
+            return {match.strip() for match in re.findall(r'\{\{\s*-?\s*([^},]+)(?:,[^}]+)?\s*\}\}', text)}
+
+        cleaned = {}
+        for locale, entries in value.items():
+            if not locale.strip() or locale in unsafe_keys:
+                raise ValueError(f'Invalid language: {locale}')
+            translations = {}
+            for key, text in entries.items():
+                if not key.strip() or key in unsafe_keys:
+                    raise ValueError(f'Invalid translation key: {key}')
+                if text.strip():
+                    if placeholders(key) != placeholders(text):
+                        raise ValueError(f'Interpolation placeholders do not match: {locale}: {key}')
+                    translations[key] = text
+            if translations:
+                cleaned[locale] = translations
+        return cleaned
 
 
 @router.post('/admin/config')
 async def update_admin_config(request: Request, form_data: AdminConfig, user=Depends(get_admin_user)):
-    request.app.state.config.SHOW_ADMIN_DETAILS = form_data.SHOW_ADMIN_DETAILS
-    request.app.state.config.ADMIN_EMAIL = form_data.ADMIN_EMAIL
-    request.app.state.config.WEBUI_URL = form_data.WEBUI_URL
-    request.app.state.config.ENABLE_SIGNUP = form_data.ENABLE_SIGNUP
-
-    request.app.state.config.ENABLE_API_KEYS = form_data.ENABLE_API_KEYS
-    request.app.state.config.ENABLE_API_KEYS_ENDPOINT_RESTRICTIONS = form_data.ENABLE_API_KEYS_ENDPOINT_RESTRICTIONS
-    request.app.state.config.API_KEYS_ALLOWED_ENDPOINTS = form_data.API_KEYS_ALLOWED_ENDPOINTS
-
-    request.app.state.config.ENABLE_FOLDERS = form_data.ENABLE_FOLDERS
-    request.app.state.config.FOLDER_MAX_FILE_COUNT = (
-        int(form_data.FOLDER_MAX_FILE_COUNT) if form_data.FOLDER_MAX_FILE_COUNT else ''
+    updates = config_updates(form_data.model_dump(), ADMIN_CONFIG_KEYS)
+    for field, key in MFA_CONFIG_KEYS.items():
+        if field not in form_data.model_fields_set:
+            updates.pop(key, None)
+    if 'ENABLE_LOGIN_FORM' not in form_data.model_fields_set:
+        updates.pop('ui.enable_login_form', None)
+    if 'ENABLE_ENCRYPTED_CHANNELS' not in form_data.model_fields_set:
+        updates.pop('channels.encryption.enable', None)
+    if 'ENABLE_APPS' not in form_data.model_fields_set:
+        updates.pop('apps.enable', None)
+    if 'I18N' not in form_data.model_fields_set:
+        updates.pop('ui.i18n', None)
+    if 'SKILL_CONTENT_MAX_CHARS' not in form_data.model_fields_set:
+        updates.pop('skills.content_max_chars', None)
+    if 'SKILL_PREVIEW_MAX_CHARS' not in form_data.model_fields_set:
+        updates.pop('skills.preview_max_chars', None)
+    updates['ui.default_interface_settings'] = form_data.DEFAULT_INTERFACE_SETTINGS or {}
+    updates['folders.max_file_count'] = int(form_data.FOLDER_MAX_FILE_COUNT) if form_data.FOLDER_MAX_FILE_COUNT else ''
+    updates['automations.max_count'] = int(form_data.AUTOMATION_MAX_COUNT) if form_data.AUTOMATION_MAX_COUNT else ''
+    updates['automations.min_interval'] = (
+        int(form_data.AUTOMATION_MIN_INTERVAL) if form_data.AUTOMATION_MIN_INTERVAL else ''
     )
-    request.app.state.config.ENABLE_CHANNELS = form_data.ENABLE_CHANNELS
-    request.app.state.config.ENABLE_MEMORIES = form_data.ENABLE_MEMORIES
-    request.app.state.config.ENABLE_NOTES = form_data.ENABLE_NOTES
 
-    if form_data.DEFAULT_USER_ROLE in ['pending', 'user', 'admin']:
-        request.app.state.config.DEFAULT_USER_ROLE = form_data.DEFAULT_USER_ROLE
+    if form_data.DEFAULT_USER_ROLE not in ['pending', 'user', 'admin']:
+        updates.pop('ui.default_user_role', None)
 
-    request.app.state.config.DEFAULT_GROUP_ID = form_data.DEFAULT_GROUP_ID
+    if form_data.CHANNEL_MODEL_RESPONSE_MODE not in ['thread', 'channel']:
+        updates.pop('channels.model_response_mode', None)
 
     pattern = r'^(-1|0|(-?\d+(\.\d+)?)(ms|s|m|h|d|w))$'
 
     # Check if the input string matches the pattern
-    if re.match(pattern, form_data.JWT_EXPIRES_IN):
-        request.app.state.config.JWT_EXPIRES_IN = form_data.JWT_EXPIRES_IN
+    if not re.match(pattern, form_data.JWT_EXPIRES_IN):
+        updates.pop('auth.jwt_expiry', None)
 
-    request.app.state.config.ENABLE_COMMUNITY_SHARING = form_data.ENABLE_COMMUNITY_SHARING
-    request.app.state.config.ENABLE_MESSAGE_RATING = form_data.ENABLE_MESSAGE_RATING
-
-    request.app.state.config.ENABLE_USER_WEBHOOKS = form_data.ENABLE_USER_WEBHOOKS
-    request.app.state.config.ENABLE_USER_STATUS = form_data.ENABLE_USER_STATUS
-
-    request.app.state.config.PENDING_USER_OVERLAY_TITLE = form_data.PENDING_USER_OVERLAY_TITLE
-    request.app.state.config.PENDING_USER_OVERLAY_CONTENT = form_data.PENDING_USER_OVERLAY_CONTENT
-
-    request.app.state.config.RESPONSE_WATERMARK = form_data.RESPONSE_WATERMARK
-
-    return {
-        'SHOW_ADMIN_DETAILS': request.app.state.config.SHOW_ADMIN_DETAILS,
-        'ADMIN_EMAIL': request.app.state.config.ADMIN_EMAIL,
-        'WEBUI_URL': request.app.state.config.WEBUI_URL,
-        'ENABLE_SIGNUP': request.app.state.config.ENABLE_SIGNUP,
-        'ENABLE_API_KEYS': request.app.state.config.ENABLE_API_KEYS,
-        'ENABLE_API_KEYS_ENDPOINT_RESTRICTIONS': request.app.state.config.ENABLE_API_KEYS_ENDPOINT_RESTRICTIONS,
-        'API_KEYS_ALLOWED_ENDPOINTS': request.app.state.config.API_KEYS_ALLOWED_ENDPOINTS,
-        'DEFAULT_USER_ROLE': request.app.state.config.DEFAULT_USER_ROLE,
-        'DEFAULT_GROUP_ID': request.app.state.config.DEFAULT_GROUP_ID,
-        'JWT_EXPIRES_IN': request.app.state.config.JWT_EXPIRES_IN,
-        'ENABLE_COMMUNITY_SHARING': request.app.state.config.ENABLE_COMMUNITY_SHARING,
-        'ENABLE_MESSAGE_RATING': request.app.state.config.ENABLE_MESSAGE_RATING,
-        'ENABLE_FOLDERS': request.app.state.config.ENABLE_FOLDERS,
-        'FOLDER_MAX_FILE_COUNT': request.app.state.config.FOLDER_MAX_FILE_COUNT,
-        'ENABLE_CHANNELS': request.app.state.config.ENABLE_CHANNELS,
-        'ENABLE_MEMORIES': request.app.state.config.ENABLE_MEMORIES,
-        'ENABLE_NOTES': request.app.state.config.ENABLE_NOTES,
-        'ENABLE_USER_WEBHOOKS': request.app.state.config.ENABLE_USER_WEBHOOKS,
-        'ENABLE_USER_STATUS': request.app.state.config.ENABLE_USER_STATUS,
-        'PENDING_USER_OVERLAY_TITLE': request.app.state.config.PENDING_USER_OVERLAY_TITLE,
-        'PENDING_USER_OVERLAY_CONTENT': request.app.state.config.PENDING_USER_OVERLAY_CONTENT,
-        'RESPONSE_WATERMARK': request.app.state.config.RESPONSE_WATERMARK,
-    }
+    changed = await update_mfa_config(request, updates)
+    return {**(await get_config_values(ADMIN_CONFIG_KEYS)), 'sessions_revoked': changed}
 
 
 class LdapServerConfig(BaseModel):
     label: str
     host: str
-    port: Optional[int] = None
+    port: int | None = None
     attribute_for_mail: str = 'mail'
     attribute_for_username: str = 'uid'
     app_dn: str
@@ -1063,28 +1275,17 @@ class LdapServerConfig(BaseModel):
     search_base: str
     search_filters: str = ''
     use_tls: bool = True
-    certificate_path: Optional[str] = None
+    certificate_path: str | None = None
     validate_cert: bool = True
-    ciphers: Optional[str] = 'ALL'
+    ciphers: str | None = 'ALL'
+    enable_group_management: bool = False
+    enable_group_creation: bool = False
+    attribute_for_groups: str = 'memberOf'
 
 
 @router.get('/admin/config/ldap/server', response_model=LdapServerConfig)
 async def get_ldap_server(request: Request, user=Depends(get_admin_user)):
-    return {
-        'label': request.app.state.config.LDAP_SERVER_LABEL,
-        'host': request.app.state.config.LDAP_SERVER_HOST,
-        'port': request.app.state.config.LDAP_SERVER_PORT,
-        'attribute_for_mail': request.app.state.config.LDAP_ATTRIBUTE_FOR_MAIL,
-        'attribute_for_username': request.app.state.config.LDAP_ATTRIBUTE_FOR_USERNAME,
-        'app_dn': request.app.state.config.LDAP_APP_DN,
-        'app_dn_password': request.app.state.config.LDAP_APP_PASSWORD,
-        'search_base': request.app.state.config.LDAP_SEARCH_BASE,
-        'search_filters': request.app.state.config.LDAP_SEARCH_FILTERS,
-        'use_tls': request.app.state.config.LDAP_USE_TLS,
-        'certificate_path': request.app.state.config.LDAP_CA_CERT_FILE,
-        'validate_cert': request.app.state.config.LDAP_VALIDATE_CERT,
-        'ciphers': request.app.state.config.LDAP_CIPHERS,
-    }
+    return await get_config_values(LDAP_SERVER_CONFIG_KEYS)
 
 
 @router.post('/admin/config/ldap/server')
@@ -1099,52 +1300,33 @@ async def update_ldap_server(request: Request, form_data: LdapServerConfig, user
     for key in required_fields:
         value = getattr(form_data, key)
         if not value:
-            raise HTTPException(400, detail=f'Required field {key} is empty')
+            raise HTTPException(400, detail=ERROR_MESSAGES.REQUIRED_FIELD_EMPTY(key))
 
-    request.app.state.config.LDAP_SERVER_LABEL = form_data.label
-    request.app.state.config.LDAP_SERVER_HOST = form_data.host
-    request.app.state.config.LDAP_SERVER_PORT = form_data.port
-    request.app.state.config.LDAP_ATTRIBUTE_FOR_MAIL = form_data.attribute_for_mail
-    request.app.state.config.LDAP_ATTRIBUTE_FOR_USERNAME = form_data.attribute_for_username
-    request.app.state.config.LDAP_APP_DN = form_data.app_dn or ''
-    request.app.state.config.LDAP_APP_PASSWORD = form_data.app_dn_password or ''
-    request.app.state.config.LDAP_SEARCH_BASE = form_data.search_base
-    request.app.state.config.LDAP_SEARCH_FILTERS = form_data.search_filters
-    request.app.state.config.LDAP_USE_TLS = form_data.use_tls
-    request.app.state.config.LDAP_CA_CERT_FILE = form_data.certificate_path
-    request.app.state.config.LDAP_VALIDATE_CERT = form_data.validate_cert
-    request.app.state.config.LDAP_CIPHERS = form_data.ciphers
+    # The group attribute is what group management reads from the directory
+    # entry; an empty value would make group sync silently do nothing.
+    if form_data.enable_group_management and not (form_data.attribute_for_groups or '').strip():
+        raise HTTPException(400, detail=ERROR_MESSAGES.REQUIRED_FIELD_EMPTY('attribute_for_groups'))
 
-    return {
-        'label': request.app.state.config.LDAP_SERVER_LABEL,
-        'host': request.app.state.config.LDAP_SERVER_HOST,
-        'port': request.app.state.config.LDAP_SERVER_PORT,
-        'attribute_for_mail': request.app.state.config.LDAP_ATTRIBUTE_FOR_MAIL,
-        'attribute_for_username': request.app.state.config.LDAP_ATTRIBUTE_FOR_USERNAME,
-        'app_dn': request.app.state.config.LDAP_APP_DN,
-        'app_dn_password': request.app.state.config.LDAP_APP_PASSWORD,
-        'search_base': request.app.state.config.LDAP_SEARCH_BASE,
-        'search_filters': request.app.state.config.LDAP_SEARCH_FILTERS,
-        'use_tls': request.app.state.config.LDAP_USE_TLS,
-        'certificate_path': request.app.state.config.LDAP_CA_CERT_FILE,
-        'validate_cert': request.app.state.config.LDAP_VALIDATE_CERT,
-        'ciphers': request.app.state.config.LDAP_CIPHERS,
-    }
+    updates = config_updates(form_data.model_dump(), LDAP_SERVER_CONFIG_KEYS)
+    updates['ldap.server.app_dn'] = form_data.app_dn or ''
+    updates['ldap.server.app_password'] = form_data.app_dn_password or ''
+    await Config.upsert(updates)
+    return await get_config_values(LDAP_SERVER_CONFIG_KEYS)
 
 
 @router.get('/admin/config/ldap')
 async def get_ldap_config(request: Request, user=Depends(get_admin_user)):
-    return {'ENABLE_LDAP': request.app.state.config.ENABLE_LDAP}
+    return {'ENABLE_LDAP': await Config.get('ldap.enable')}
 
 
 class LdapConfigForm(BaseModel):
-    enable_ldap: Optional[bool] = None
+    enable_ldap: bool | None = None
 
 
 @router.post('/admin/config/ldap')
 async def update_ldap_config(request: Request, form_data: LdapConfigForm, user=Depends(get_admin_user)):
-    request.app.state.config.ENABLE_LDAP = form_data.enable_ldap
-    return {'ENABLE_LDAP': request.app.state.config.ENABLE_LDAP}
+    await Config.upsert({'ldap.enable': form_data.enable_ldap})
+    return {'ENABLE_LDAP': await Config.get('ldap.enable')}
 
 
 ############################
@@ -1152,22 +1334,183 @@ async def update_ldap_config(request: Request, form_data: LdapConfigForm, user=D
 ############################
 
 
-# create api key
-@router.post('/api_key', response_model=ApiKey)
-async def generate_api_key(request: Request, user=Depends(get_current_user), db: Session = Depends(get_session)):
-    if not request.app.state.config.ENABLE_API_KEYS or (
+class OAuthConfigForm(BaseModel):
+    """All OAuth/OIDC settings exposed to the admin panel."""
+
+    # General OAuth
+    ENABLE_OAUTH: bool | None = None
+    ENABLE_OAUTH_SIGNUP: bool | None = None
+    OAUTH_MERGE_ACCOUNTS_BY_EMAIL: bool | None = None
+    OAUTH_AUTO_REDIRECT: bool | None = None
+    OAUTH_ALLOWED_DOMAINS: str | None = None
+    OAUTH_BLOCKED_GROUPS: str | None = None
+
+    # Role management
+    ENABLE_OAUTH_ROLE_MANAGEMENT: bool | None = None
+    OAUTH_ROLES_CLAIM: str | None = None
+    OAUTH_ADMIN_ROLES: str | None = None
+    OAUTH_ALLOWED_ROLES: str | None = None
+
+    # Group management
+    ENABLE_OAUTH_GROUP_MANAGEMENT: bool | None = None
+    ENABLE_OAUTH_GROUP_CREATION: bool | None = None
+    OAUTH_GROUP_CLAIM: str | None = None
+    OAUTH_GROUP_DEFAULT_SHARE: bool | str | None = None
+
+    # OIDC provider settings
+    OAUTH_PROVIDER_NAME: str | None = None
+    OPENID_PROVIDER_URL: str | None = None
+    OAUTH_CLIENT_ID: str | None = None
+    OAUTH_CLIENT_SECRET: str | None = None
+    OPENID_REDIRECT_URI: str | None = None
+    OAUTH_SCOPES: str | None = None
+    OAUTH_CODE_CHALLENGE_METHOD: str | None = None
+    OAUTH_TOKEN_ENDPOINT_AUTH_METHOD: str | None = None
+    OPENID_END_SESSION_ENDPOINT: str | None = None
+    OAUTH_TIMEOUT: int | str | None = None
+    OAUTH_CLIENT_TIMEOUT: int | str | None = None
+
+    # Claims
+    OAUTH_EMAIL_CLAIM: str | None = None
+    OAUTH_USERNAME_CLAIM: str | None = None
+    OAUTH_PICTURE_CLAIM: str | None = None
+    OAUTH_SUB_CLAIM: str | None = None
+    OAUTH_AUDIENCE: str | None = None
+
+    # Profile update toggles
+    OAUTH_UPDATE_EMAIL_ON_LOGIN: bool | None = None
+    OAUTH_UPDATE_NAME_ON_LOGIN: bool | None = None
+    OAUTH_UPDATE_PICTURE_ON_LOGIN: bool | None = None
+
+    # Token
+    OAUTH_REFRESH_TOKEN_INCLUDE_SCOPE: bool | None = None
+
+
+OAUTH_COMMA_LIST_FIELDS = {
+    'OAUTH_ALLOWED_DOMAINS',
+    'OAUTH_ADMIN_ROLES',
+    'OAUTH_ALLOWED_ROLES',
+}
+
+
+OAUTH_CONFIG_KEYS = {
+    'ENABLE_OAUTH': 'oauth.enable',
+    'ENABLE_OAUTH_SIGNUP': 'oauth.enable_signup',
+    'OAUTH_MERGE_ACCOUNTS_BY_EMAIL': 'oauth.merge_accounts_by_email',
+    'OAUTH_AUTO_REDIRECT': 'oauth.auto_redirect',
+    'OAUTH_ALLOWED_DOMAINS': 'oauth.allowed_domains',
+    'OAUTH_BLOCKED_GROUPS': 'oauth.blocked_groups',
+    'ENABLE_OAUTH_ROLE_MANAGEMENT': 'oauth.enable_role_mapping',
+    'OAUTH_ROLES_CLAIM': 'oauth.roles_claim',
+    'OAUTH_ADMIN_ROLES': 'oauth.admin_roles',
+    'OAUTH_ALLOWED_ROLES': 'oauth.allowed_roles',
+    'ENABLE_OAUTH_GROUP_MANAGEMENT': 'oauth.enable_group_mapping',
+    'ENABLE_OAUTH_GROUP_CREATION': 'oauth.enable_group_creation',
+    'OAUTH_GROUP_CLAIM': 'oauth.group_claim',
+    'OAUTH_GROUP_DEFAULT_SHARE': 'oauth.group_default_share',
+    'OAUTH_PROVIDER_NAME': 'oauth.provider_name',
+    'OPENID_PROVIDER_URL': 'oauth.provider_url',
+    'OAUTH_CLIENT_ID': 'oauth.client_id',
+    'OAUTH_CLIENT_SECRET': 'oauth.client_secret',
+    'OPENID_REDIRECT_URI': 'oauth.redirect_uri',
+    'OAUTH_SCOPES': 'oauth.scopes',
+    'OAUTH_CODE_CHALLENGE_METHOD': 'oauth.code_challenge_method',
+    'OAUTH_TOKEN_ENDPOINT_AUTH_METHOD': 'oauth.token_endpoint_auth_method',
+    'OPENID_END_SESSION_ENDPOINT': 'oauth.end_session_endpoint',
+    'OAUTH_TIMEOUT': 'oauth.timeout',
+    'OAUTH_CLIENT_TIMEOUT': 'oauth.client.timeout',
+    'OAUTH_EMAIL_CLAIM': 'oauth.email_claim',
+    'OAUTH_USERNAME_CLAIM': 'oauth.username_claim',
+    'OAUTH_PICTURE_CLAIM': 'oauth.picture_claim',
+    'OAUTH_SUB_CLAIM': 'oauth.sub_claim',
+    'OAUTH_AUDIENCE': 'oauth.audience',
+    'OAUTH_UPDATE_EMAIL_ON_LOGIN': 'oauth.update_email_on_login',
+    'OAUTH_UPDATE_NAME_ON_LOGIN': 'oauth.update_name_on_login',
+    'OAUTH_UPDATE_PICTURE_ON_LOGIN': 'oauth.update_picture_on_login',
+    'OAUTH_REFRESH_TOKEN_INCLUDE_SCOPE': 'oauth.refresh_token.include_scope',
+}
+
+
+def _format_oauth_form_value(field: str, value):
+    if field == 'OAUTH_BLOCKED_GROUPS' and isinstance(value, list):
+        # Preserve commas in group names and regex patterns when the form is saved.
+        return JSONCodec.dumps(value)
+    if field in OAUTH_COMMA_LIST_FIELDS and isinstance(value, list):
+        return ','.join(str(item) for item in value)
+    return value
+
+
+def _parse_oauth_update_value(field: str, value):
+    if field in OAUTH_COMMA_LIST_FIELDS and isinstance(value, str):
+        return [item.strip() for item in value.split(',') if item.strip()]
+    if field in {'OAUTH_TIMEOUT', 'OAUTH_CLIENT_TIMEOUT'} and value == '':
+        return ''
+    return value
+
+
+async def get_oauth_config_values() -> dict:
+    values = await Config.get_many(*OAUTH_CONFIG_KEYS.values())
+    form_values = {
+        field: _format_oauth_form_value(field, values[storage_key])
+        for field, storage_key in OAUTH_CONFIG_KEYS.items()
+        if storage_key in values
+    }
+    form_values['ENABLE_OAUTH_PERSISTENT_CONFIG'] = Config.OAUTH_PERSISTENT_ENABLED
+    return form_values
+
+
+def oauth_config_updates(data: dict) -> dict:
+    return {
+        OAUTH_CONFIG_KEYS[field]: _parse_oauth_update_value(field, value)
+        for field, value in data.items()
+        if field in OAUTH_CONFIG_KEYS
+    }
+
+
+class OAuthConfigResponse(OAuthConfigForm):
+    ENABLE_OAUTH_PERSISTENT_CONFIG: bool
+
+
+@router.get('/admin/config/oauth', response_model=OAuthConfigResponse)
+async def get_oauth_config(request: Request, user=Depends(get_admin_user)):
+    return await get_oauth_config_values()
+
+
+@router.post('/admin/config/oauth', response_model=OAuthConfigResponse)
+async def update_oauth_config(request: Request, form_data: OAuthConfigForm, user=Depends(get_admin_user)):
+    await Config.upsert(oauth_config_updates(form_data.model_dump(exclude_none=True)))
+    return await get_oauth_config_values()
+
+
+async def _check_api_key_permission(request: Request, user, db: AsyncSession):
+    if not await Config.get('auth.enable_api_keys') or (
         user.role != 'admin'
-        and not has_permission(user.id, 'features.api_keys', request.app.state.config.USER_PERMISSIONS)
+        and not await has_permission(user.id, 'features.api_keys', await Config.get('user.permissions'), db=db)
     ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=ERROR_MESSAGES.API_KEY_CREATION_NOT_ALLOWED,
         )
 
+
+# create api key
+@router.post('/api_key', response_model=ApiKey)
+async def generate_api_key(
+    request: Request, user=Depends(get_current_user), db: AsyncSession = Depends(get_async_session)
+):
+    await _check_api_key_permission(request, user, db)
+
     api_key = create_api_key()
-    success = Users.update_user_api_key_by_id(user.id, api_key, db=db)
+    success = await Users.update_user_api_key_by_id(user.id, api_key, db=db)
 
     if success:
+        await publish_event(
+            request,
+            EVENTS.AUTH_API_KEY_CREATED,
+            actor=user,
+            subject_id=user.id,
+            subject_type='user',
+        )
         return {
             'api_key': api_key,
         }
@@ -1177,14 +1520,27 @@ async def generate_api_key(request: Request, user=Depends(get_current_user), db:
 
 # delete api key
 @router.delete('/api_key', response_model=bool)
-async def delete_api_key(user=Depends(get_current_user), db: Session = Depends(get_session)):
-    return Users.delete_user_api_key_by_id(user.id, db=db)
+async def delete_api_key(
+    request: Request, user=Depends(get_current_user), db: AsyncSession = Depends(get_async_session)
+):
+    await _check_api_key_permission(request, user, db)
+    success = await Users.delete_user_api_key_by_id(user.id, db=db)
+    if success:
+        await publish_event(
+            request,
+            EVENTS.AUTH_API_KEY_DELETED,
+            actor=user,
+            subject_id=user.id,
+            subject_type='user',
+        )
+    return success
 
 
 # get api key
 @router.get('/api_key', response_model=ApiKey)
-async def get_api_key(user=Depends(get_current_user), db: Session = Depends(get_session)):
-    api_key = Users.get_user_api_key_by_id(user.id, db=db)
+async def get_api_key(request: Request, user=Depends(get_current_user), db: AsyncSession = Depends(get_async_session)):
+    await _check_api_key_permission(request, user, db)
+    api_key = await Users.get_user_api_key_by_id(user.id, db=db)
     if api_key:
         return {
             'api_key': api_key,
@@ -1202,13 +1558,44 @@ class TokenExchangeForm(BaseModel):
     token: str  # OAuth access token from external provider
 
 
-@router.post('/oauth/{provider}/token/exchange', response_model=SessionUserResponse)
+async def get_token_client_id(client, token: str) -> str | None:
+    """Return the OAuth client_id a token was minted for, when the provider supports introspection."""
+    try:
+        metadata = await client.load_server_metadata()
+        introspection_endpoint = metadata.get('introspection_endpoint')
+        if not introspection_endpoint:
+            log.warning('Token exchange trusted-client check requires an introspection_endpoint')
+            return None
+
+        async with ClientSession(trust_env=True) as session:
+            async with session.post(
+                introspection_endpoint,
+                data={'token': token, 'token_type_hint': 'access_token'},
+                auth=BasicAuth(client.client_id, client.client_secret or ''),
+                ssl=AIOHTTP_CLIENT_SESSION_SSL,
+            ) as r:
+                if r.status != 200:
+                    log.warning(f'Token introspection returned {r.status}')
+                    return None
+                introspection = await r.json()
+
+        if not introspection.get('active'):
+            log.warning('Token introspection reports the token is inactive')
+            return None
+
+        return introspection.get('client_id')
+    except Exception as e:
+        log.warning(f'Token introspection failed: {e}')
+        return None
+
+
+@router.post('/oauth/{provider}/token/exchange', response_model=SigninResult)
 async def token_exchange(
     request: Request,
     response: Response,
     provider: str,
     form_data: TokenExchangeForm,
-    db: Session = Depends(get_session),
+    db: AsyncSession = Depends(get_async_session),
 ):
     """
     Exchange an external OAuth provider token for an OpenWebUI JWT.
@@ -1220,13 +1607,21 @@ async def token_exchange(
             detail='Token exchange is disabled',
         )
 
+    if token_exchange_rate_limiter and await token_exchange_rate_limiter.is_limited(
+        request.app.state.redis, request.client.host if request.client else 'unknown'
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=ERROR_MESSAGES.RATE_LIMIT_EXCEEDED,
+        )
+
     provider = provider.lower()
 
     # Check if provider is configured
     if provider not in OAUTH_PROVIDERS:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Provider '{provider}' is not configured",
+            detail=ERROR_MESSAGES.OAUTH_NOT_CONFIGURED(provider),
         )
     # Get the OAuth client for this provider
     oauth_manager = request.app.state.oauth_manager
@@ -1234,8 +1629,22 @@ async def token_exchange(
     if not client:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"OAuth client for '{provider}' not found",
+            detail=ERROR_MESSAGES.OAUTH_NOT_CONFIGURED(provider),
         )
+
+    if OAUTH_TOKEN_EXCHANGE_TRUSTED_CLIENT_IDS:
+        token_client_id = await get_token_client_id(client, form_data.token)
+        if not token_client_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail='Unable to determine which client the token was issued to',
+            )
+        if token_client_id not in OAUTH_TOKEN_EXCHANGE_TRUSTED_CLIENT_IDS:
+            log.warning('Token exchange denied: token was issued to an untrusted client for %s', provider)
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
+            )
 
     # Validate the token by calling the userinfo endpoint
     try:
@@ -1255,17 +1664,18 @@ async def token_exchange(
         )
 
     # Extract user information from the token claims
-    email_claim = request.app.state.config.OAUTH_EMAIL_CLAIM
-    username_claim = request.app.state.config.OAUTH_USERNAME_CLAIM
+    email_claim = await Config.get('oauth.email_claim', 'email')
 
     # Get sub claim
-    sub = user_data.get(request.app.state.config.OAUTH_SUB_CLAIM or OAUTH_PROVIDERS[provider].get('sub_claim', 'sub'))
+    sub_claim = await Config.get('oauth.sub_claim')
+    sub = user_data.get(sub_claim or OAUTH_PROVIDERS[provider].get('sub_claim', 'sub'))
     if not sub:
         log.warning(f'Token exchange failed: sub claim missing from user data')
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Token missing required 'sub' claim",
         )
+    sub = str(sub)
 
     email = user_data.get(email_claim, '')
     if not email:
@@ -1276,15 +1686,32 @@ async def token_exchange(
         )
     email = email.lower()
 
-    # Try to find the user by OAuth sub
-    user = Users.get_user_by_oauth_sub(provider, sub, db=db)
+    # Enforce domain allowlist — same check as the normal OAuth callback
+    oauth_allowed_domains = await Config.get('oauth.allowed_domains', [])
+    if isinstance(oauth_allowed_domains, str):
+        oauth_allowed_domains = [domain.strip() for domain in oauth_allowed_domains.split(',') if domain.strip()]
+    if '*' not in oauth_allowed_domains and email.split('@')[-1] not in oauth_allowed_domains:
+        log.warning(f'Token exchange denied: email domain not in allowed domains list')
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
+        )
 
-    if not user and OAUTH_MERGE_ACCOUNTS_BY_EMAIL.value:
+    # Try to find the user by OAuth sub
+    user = await Users.get_user_by_oauth_sub(provider, sub, db=db)
+
+    if not user and await Config.get('oauth.merge_accounts_by_email'):
         # Try to find by email if merge is enabled
-        user = Users.get_user_by_email(email, db=db)
+        user = await Users.get_user_by_email(email, db=db)
         if user:
             # Link the OAuth sub to this user
-            Users.update_user_oauth_by_id(user.id, provider, sub, db=db)
+            user = await Users.update_user_oauth_by_id(user.id, provider, sub, db=db) or user
+
+    if user:
+        provider_oauth = (user.oauth or {}).get(provider) if isinstance(user.oauth, dict) else None
+        # Lazy repair for legacy rows that stored numeric provider ids as JSON numbers.
+        if isinstance(provider_oauth, dict) and provider_oauth.get('sub') != sub:
+            user = await Users.update_user_oauth_by_id(user.id, provider, sub, db=db) or user
 
     if not user:
         raise HTTPException(
@@ -1292,4 +1719,30 @@ async def token_exchange(
             detail='User not found. Please sign in via the web interface first.',
         )
 
-    return create_session_response(request, user, db)
+    # The provider's userinfo endpoint has already accepted this token.
+    # Keep an empty dict for opaque tokens so exchange role checks still apply.
+    token_claims = {}
+    try:
+        token_claims = jwt.decode(form_data.token, options={'verify_signature': False})
+    except jwt.PyJWTError as e:
+        log.debug('Token exchange: cannot decode token claims: %s', e)
+
+    user = await oauth_manager.update_user_role_from_oauth(
+        request=request,
+        user=user,
+        user_data=user_data,
+        provider=provider,
+        token_claims=token_claims,
+        db=db,
+    )
+    if await Config.get('oauth.enable_group_mapping'):
+        await oauth_manager.update_user_groups(
+            request=request,
+            user=user,
+            user_data=user_data,
+            default_permissions=await Config.get('user.permissions'),
+            token_claims=token_claims,
+            db=db,
+        )
+
+    return await create_signin_response(request, user, db, source='oauth')

@@ -1,16 +1,36 @@
 <script lang="ts">
 	import { decode } from 'html-entities';
 	import { onMount, getContext } from 'svelte';
+	import type { Readable } from 'svelte/store';
+	import type { Action } from 'svelte/action';
 	const i18n = getContext('i18n');
+	const markdown = getContext<
+		| {
+				document?: boolean;
+				taskEnabled?: Readable<boolean>;
+				onTaskClick?: (event: {
+					item: Tokens.ListItem;
+					checked: boolean;
+					input: HTMLInputElement;
+				}) => void;
+				lexer?: (source: string) => Token[];
+				renderHtml?: Action<HTMLElement, { id: string; tokens: Token[]; top: boolean }>;
+		  }
+		| undefined
+	>('markdown');
+
+	const taskEnabled = markdown?.taskEnabled;
 
 	import fileSaver from 'file-saver';
 	const { saveAs } = fileSaver;
 
-	import { marked, type Token } from 'marked';
+	import { type Token, type Tokens } from 'marked';
 	import { copyToClipboard, unescapeHtml } from '$lib/utils';
+	import { resolveChatMessageToolCall } from '$lib/apis/chats';
 
 	import { WEBUI_BASE_URL } from '$lib/constants';
 	import { settings } from '$lib/stores';
+	import { toast } from 'svelte-sonner';
 
 	import CodeBlock from '$lib/components/chat/Messages/CodeBlock.svelte';
 	import MarkdownInlineTokens from '$lib/components/chat/Messages/Markdown/MarkdownInlineTokens.svelte';
@@ -27,6 +47,8 @@
 	import ColonFenceBlock from './ColonFenceBlock.svelte';
 
 	export let id: string;
+	export let chatId = '';
+	export let messageId = '';
 	export let tokens: Token[];
 	export let top = true;
 	export let attributes = {};
@@ -36,11 +58,13 @@
 
 	export let save = false;
 	export let preview = false;
+	export let compactPreview = false;
 
 	export let paragraphTag = 'p';
 
 	export let editCodeBlock = true;
 	export let topPadding = false;
+	export let allowEmbeds = false;
 
 	export let onSave: Function = () => {};
 	export let onUpdate: Function = () => {};
@@ -48,6 +72,7 @@
 
 	export let onTaskClick: Function = () => {};
 	export let onSourceClick: Function = () => {};
+	export let onToolCallResolved: Function = () => {};
 
 	const headerComponent = (depth: number) => {
 		return 'h' + depth;
@@ -96,11 +121,41 @@
 			.trim();
 	};
 
+	let resolvingCallId = '';
+
+	const resolveToolCall = async (callId: string, approved: boolean) => {
+		if (!chatId || !messageId || !callId || resolvingCallId) {
+			return;
+		}
+
+		resolvingCallId = callId;
+		try {
+			const res = await resolveChatMessageToolCall(
+				localStorage.token,
+				chatId,
+				messageId,
+				callId,
+				approved ? 'approve' : 'reject'
+			);
+			onToolCallResolved(res);
+		} catch (err) {
+			toast.error(String(err));
+		} finally {
+			resolvingCallId = '';
+		}
+	};
+
+	$: detailButtonClassName = `py-0.5 ${
+		compactPreview ? 'text-xs' : 'text-[0.9375rem]'
+	} text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition`;
+
 	$: displayTokens = getDisplayTokens(tokens);
+	$: renderHtml = tokens.some((token) => token.type === 'html') ? markdown?.renderHtml : undefined;
+	$: singlePlainBlock =
+		displayTokens.length === 1 &&
+		(displayTokens[0]?.type === 'paragraph' || displayTokens[0]?.type === 'text');
 
 	const exportTableToCSVHandler = (token, tokenIdx = 0) => {
-		console.log('Exporting table to CSV');
-
 		// Extract header row text, decode HTML entities, and escape for CSV.
 		const header = token.header.map(
 			(headerCell) => `"${decode(headerCell.text).replace(/"/g, '""')}"`
@@ -122,10 +177,6 @@
 		// Join the rows using commas (,) as the separator and rows using newline (\n).
 		const csvContent = csvData.map((row) => row.join(',')).join('\n');
 
-		// Log rows and CSV content to ensure everything is correct.
-		console.log(csvData);
-		console.log(csvContent);
-
 		// To handle Unicode characters, you need to prefix the data with a BOM:
 		const bom = '\uFEFF'; // BOM for UTF-8
 
@@ -138,9 +189,12 @@
 </script>
 
 <!-- {JSON.stringify(tokens)} -->
-{#each displayTokens as token, tokenIdx (tokenIdx)}
+{#if renderHtml}
+	<div class="contents" use:renderHtml={{ id, tokens, top }}></div>
+{/if}
+{#each renderHtml ? [] : displayTokens as token, tokenIdx (tokenIdx)}
 	{#if token.type === 'hr'}
-		<hr class=" border-gray-100/30 dark:border-gray-850/30" />
+		<hr class="border-gray-50 dark:border-gray-850/30" />
 	{:else if token.type === 'heading'}
 		<svelte:element this={headerComponent(token.depth)} dir="auto">
 			<MarkdownInlineTokens
@@ -152,17 +206,19 @@
 			/>
 		</svelte:element>
 	{:else if token.type === 'code'}
-		{#if token.raw.includes('```')}
+		{#if markdown?.document || token.codeBlockStyle !== 'indented'}
 			<CodeBlock
 				id={`${id}-${tokenIdx}`}
-				collapsed={$settings?.collapseCodeBlocks ?? false}
+				className={markdown?.document ? 'document-code-block' : ''}
+				collapsed={markdown?.document ? false : ($settings?.collapseCodeBlocks ?? false)}
 				{token}
 				lang={token?.lang ?? ''}
 				code={token?.text ?? ''}
 				{attributes}
-				{save}
-				{preview}
-				edit={editCodeBlock}
+				save={save && !markdown?.document}
+				preview={preview && !markdown?.document}
+				run={!markdown?.document}
+				edit={editCodeBlock && !markdown?.document}
 				stickyButtonsClassName={topPadding ? 'top-10' : 'top-0'}
 				onSave={(value) => {
 					onSave({
@@ -184,9 +240,7 @@
 					class=" w-full text-sm text-start text-gray-500 dark:text-gray-400 max-w-full rounded-xl"
 					dir="auto"
 				>
-					<thead
-						class="text-xs text-gray-700 uppercase bg-white dark:bg-gray-900 dark:text-gray-400 border-none"
-					>
+					<thead class="text-xs text-gray-700 uppercase dark:text-gray-400 border-none">
 						<tr class="">
 							{#each token.header as header, headerIdx}
 								<th
@@ -211,7 +265,7 @@
 					</thead>
 					<tbody>
 						{#each token.rows as row, rowIdx}
-							<tr class="bg-white dark:bg-gray-900 text-xs">
+							<tr class="text-xs">
 								{#each row ?? [] as cell, cellIdx}
 									<td
 										class="px-3! py-2! text-gray-900 dark:text-white w-max {token.rows.length -
@@ -238,7 +292,7 @@
 				</table>
 			</div>
 
-			<div class=" absolute top-1 right-1.5 z-20 invisible group-hover:visible flex gap-0.5">
+			<div class=" absolute top-1 right-1.5 z-20 hover-reveal flex gap-0.5">
 				<Tooltip content={$i18n.t('Copy')}>
 					<button
 						class="p-1 rounded-lg bg-transparent transition"
@@ -265,19 +319,26 @@
 			</div>
 		</div>
 	{:else if token.type === 'blockquote'}
-		{@const alert = alertComponent(token)}
+		{@const alert = alertComponent(token, markdown?.lexer)}
 		{#if alert}
-			<AlertRenderer {token} {alert} />
+			<AlertRenderer {token} {alert} {allowEmbeds} />
 		{:else}
 			<blockquote dir="auto">
 				<svelte:self
 					id={`${id}-${tokenIdx}`}
+					{chatId}
+					{messageId}
 					tokens={token.tokens}
 					{done}
+					{allowEmbeds}
+					{save}
+					{preview}
+					{compactPreview}
 					{editCodeBlock}
 					{onTaskClick}
 					{sourceIds}
 					{onSourceClick}
+					{onToolCallResolved}
 				/>
 			</blockquote>
 		{/if}
@@ -285,20 +346,22 @@
 		{#if token.ordered}
 			<ol start={token.start || 1} dir="auto">
 				{#each token.items as item, itemIdx}
-					<li class="text-start">
+					<li dir="auto" class="text-start">
 						{#if item?.task}
 							<input
-								class=" translate-y-[1px] -translate-x-1 flex-shrink-0"
+								class="task-checkbox translate-y-[1px] -translate-x-1 [&:dir(rtl)]:translate-x-1 flex-shrink-0"
 								type="checkbox"
+								disabled={markdown?.document && !$taskEnabled}
 								checked={item.checked}
 								on:change={(e) => {
-									onTaskClick({
+									(markdown?.onTaskClick ?? onTaskClick)({
 										id: id,
 										token: token,
 										tokenIdx: tokenIdx,
 										item: item,
 										itemIdx: itemIdx,
-										checked: e.target.checked
+										input: e.currentTarget,
+										checked: e.currentTarget.checked
 									});
 								}}
 							/>
@@ -306,9 +369,15 @@
 
 						<svelte:self
 							id={`${id}-${tokenIdx}-${itemIdx}`}
+							{chatId}
+							{messageId}
 							tokens={item.tokens}
-							top={token.loose}
+							top={item.task || token.loose}
 							{done}
+							{allowEmbeds}
+							{save}
+							{preview}
+							{compactPreview}
 							{editCodeBlock}
 							{onTaskClick}
 							{sourceIds}
@@ -320,30 +389,38 @@
 		{:else}
 			<ul dir="auto" class="">
 				{#each token.items as item, itemIdx}
-					<li class="text-start {item?.task ? 'flex -translate-x-6.5 gap-3 ' : ''}">
+					<li dir="auto" class="text-start {item?.task ? 'relative list-none' : ''}">
 						{#if item?.task}
 							<input
-								class="flex-shrink-0"
+								class="task-checkbox"
 								type="checkbox"
+								disabled={markdown?.document && !$taskEnabled}
 								checked={item.checked}
 								on:change={(e) => {
-									onTaskClick({
+									(markdown?.onTaskClick ?? onTaskClick)({
 										id: id,
 										token: token,
 										tokenIdx: tokenIdx,
 										item: item,
 										itemIdx: itemIdx,
-										checked: e.target.checked
+										input: e.currentTarget,
+										checked: e.currentTarget.checked
 									});
 								}}
 							/>
 
-							<div>
+							<div class="task-content">
 								<svelte:self
 									id={`${id}-${tokenIdx}-${itemIdx}`}
+									{chatId}
+									{messageId}
 									tokens={item.tokens}
-									top={token.loose}
+									top={item.task || token.loose}
 									{done}
+									{allowEmbeds}
+									{save}
+									{preview}
+									{compactPreview}
 									{editCodeBlock}
 									{onTaskClick}
 									{sourceIds}
@@ -353,9 +430,15 @@
 						{:else}
 							<svelte:self
 								id={`${id}-${tokenIdx}-${itemIdx}`}
+								{chatId}
+								{messageId}
 								tokens={item.tokens}
-								top={token.loose}
+								top={item.task || token.loose}
 								{done}
+								{allowEmbeds}
+								{save}
+								{preview}
+								{compactPreview}
 								{editCodeBlock}
 								{onTaskClick}
 								{sourceIds}
@@ -371,8 +454,13 @@
 			id={`${id}-${tokenIdx}-detail-group`}
 			tokens={token.items}
 			messageDone={done}
+			{compactPreview}
+			{allowEmbeds}
+			resolvable={!!chatId && !!messageId && save}
+			{resolvingCallId}
+			onResolve={resolveToolCall}
 		>
-			<div slot="content" class="space-y-1">
+			<div slot="content">
 				{#each token.items as detailToken, detailIdx}
 					{@const textContent = getDetailTextContent(detailToken)}
 
@@ -380,9 +468,14 @@
 						<ToolCallDisplay
 							id={`${id}-${tokenIdx}-${detailIdx}-tc`}
 							attributes={detailToken.attributes}
+							resultContent={getDetailTextContent(detailToken)}
 							grouped={true}
-							open={false}
-							className="w-full space-y-1"
+							resolvable={!!chatId && !!messageId && save}
+							resolving={resolvingCallId === detailToken.attributes?.id}
+							onResolve={(approved) => resolveToolCall(detailToken.attributes?.id ?? '', approved)}
+							open={$settings?.expandDetails ?? false}
+							className="w-full"
+							buttonClassName={detailButtonClassName}
 						/>
 					{:else if textContent.length > 0}
 						<Collapsible
@@ -390,15 +483,22 @@
 							open={$settings?.expandDetails ?? false}
 							attributes={detailToken?.attributes}
 							messageDone={done}
-							className="w-full space-y-1"
+							className="w-full"
+							buttonClassName={detailButtonClassName}
 							dir="auto"
 						>
 							<div class="mb-1.5" slot="content">
 								<svelte:self
 									id={`${id}-${tokenIdx}-${detailIdx}-d`}
-									tokens={marked.lexer(decode(detailToken.text))}
+									{chatId}
+									{messageId}
+									tokens={detailToken.tokens ?? []}
 									attributes={detailToken?.attributes}
 									{done}
+									{allowEmbeds}
+									{save}
+									{preview}
+									{compactPreview}
 									{editCodeBlock}
 									{onTaskClick}
 									{sourceIds}
@@ -413,7 +513,8 @@
 							disabled={true}
 							attributes={detailToken?.attributes}
 							messageDone={done}
-							className="w-full space-y-1"
+							className="w-full"
+							buttonClassName={detailButtonClassName}
 							dir="auto"
 						/>
 					{/if}
@@ -428,8 +529,14 @@
 			<ToolCallDisplay
 				id={`${id}-${tokenIdx}-tc`}
 				attributes={token.attributes}
-				open={false}
-				className="w-full space-y-1"
+				resultContent={getDetailTextContent(token)}
+				{allowEmbeds}
+				resolvable={!!chatId && !!messageId && save}
+				resolving={resolvingCallId === token.attributes?.id}
+				onResolve={(approved) => resolveToolCall(token.attributes?.id ?? '', approved)}
+				open={$settings?.expandDetails ?? false}
+				className="w-full space-y-2"
+				buttonClassName={detailButtonClassName}
 			/>
 		{:else if textContent.length > 0}
 			<Collapsible
@@ -437,15 +544,22 @@
 				open={$settings?.expandDetails ?? false}
 				attributes={token?.attributes}
 				messageDone={done}
-				className="w-full space-y-1"
+				className="w-full space-y-2"
+				buttonClassName={detailButtonClassName}
 				dir="auto"
 			>
 				<div class=" mb-1.5" slot="content">
 					<svelte:self
 						id={`${id}-${tokenIdx}-d`}
-						tokens={marked.lexer(decode(token.text))}
+						{chatId}
+						{messageId}
+						tokens={token.tokens ?? []}
 						attributes={token?.attributes}
 						{done}
+						{allowEmbeds}
+						{save}
+						{preview}
+						{compactPreview}
 						{editCodeBlock}
 						{onTaskClick}
 						{sourceIds}
@@ -460,7 +574,8 @@
 				disabled={true}
 				attributes={token?.attributes}
 				messageDone={done}
-				className="w-full space-y-1"
+				className="w-full space-y-2"
+				buttonClassName={detailButtonClassName}
 				dir="auto"
 			/>
 		{/if}
@@ -491,7 +606,7 @@
 				/>
 			</span>
 		{:else}
-			<p dir="auto">
+			<p dir="auto" class={singlePlainBlock ? '!my-0' : ''}>
 				<MarkdownInlineTokens
 					id={`${id}-${tokenIdx}-p`}
 					tokens={token.tokens ?? []}
@@ -503,7 +618,7 @@
 		{/if}
 	{:else if token.type === 'text'}
 		{#if top}
-			<p>
+			<p class={singlePlainBlock ? '!my-0' : ''}>
 				{#if token.tokens}
 					<MarkdownInlineTokens
 						id={`${id}-${tokenIdx}-t`}
@@ -541,14 +656,51 @@
 			{token}
 			{tokenIdx}
 			{done}
+			{allowEmbeds}
 			{editCodeBlock}
 			{sourceIds}
 			{onTaskClick}
 			{onSourceClick}
 		/>
 	{:else if token.type === 'space'}
-		<div class="my-2" />
+		<!-- skip -->
 	{:else}
 		{console.log('Unknown token', token)}
 	{/if}
 {/each}
+
+<style>
+	/* Reserve marker space on each item's start side, independently of the list's direction. */
+	ul,
+	ol {
+		padding-inline: 0;
+	}
+
+	li {
+		margin-inline-start: 1.5em;
+	}
+
+	ul > li > input.task-checkbox {
+		position: absolute;
+		inset-inline-start: -1.5em;
+		top: calc((1lh - 0.875rem) / 2);
+		margin: 0;
+	}
+
+	input.task-checkbox::after {
+		inset: 0;
+		width: auto;
+		height: auto;
+		background-size: 100% 100%;
+	}
+
+	input.task-checkbox:checked ~ :global(p),
+	input.task-checkbox:checked ~ .task-content > :global(p) {
+		opacity: 0.55;
+		text-decoration-line: line-through;
+	}
+
+	.task-content > :global(p:first-child) {
+		margin-top: 0;
+	}
+</style>

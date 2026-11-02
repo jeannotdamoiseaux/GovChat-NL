@@ -1,0 +1,79 @@
+<script lang="ts">
+	import { createEventDispatcher, getContext } from 'svelte';
+	import { toast } from 'svelte-sonner';
+
+	import Modal from '$lib/components/common/Modal.svelte';
+	import XMark from '$lib/components/icons/XMark.svelte';
+
+	const i18n = getContext('i18n');
+	const dispatch = createEventDispatcher();
+
+	export let show = false;
+
+	let name = '';
+
+	$: if (show) {
+		name = '';
+	}
+
+	const submitHandler = () => {
+		if (!name.trim()) {
+			toast.error($i18n.t('Name is required'));
+			return;
+		}
+
+		dispatch('submit', { name: name.trim() });
+		show = false;
+		name = '';
+	};
+</script>
+
+<Modal size="sm" bind:show>
+	<div>
+		<!-- Header -->
+		<div class="flex justify-between items-center dark:text-gray-100 px-4 pt-3 pb-1">
+			<h3 class="text-base font-normal">{$i18n.t('New Directory')}</h3>
+			<button
+				class="self-center shrink-0 ml-2"
+				aria-label={$i18n.t('Close')}
+				on:click={() => (show = false)}
+			>
+				<XMark className="size-4" />
+			</button>
+		</div>
+
+		<!-- Form -->
+		<div class="px-4 pb-2 flex flex-col gap-3">
+			<div>
+				<div class="mb-1 text-xs text-gray-500">{$i18n.t('Name')}</div>
+				<input
+					class="w-full text-sm bg-transparent outline-hidden placeholder:text-gray-300 dark:placeholder:text-gray-700"
+					type="text"
+					bind:value={name}
+					placeholder={$i18n.t('Directory name')}
+					on:keydown={(e) => {
+						if (e.key === 'Enter') submitHandler();
+					}}
+				/>
+			</div>
+		</div>
+
+		<!-- Bottom toolbar -->
+		<div class="flex items-center justify-end px-4 pb-3.5 pt-2 gap-2">
+			<button
+				class="flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-lg px-2.5 text-xs font-normal text-gray-600 transition hover:bg-gray-100 hover:text-gray-900 disabled:opacity-60 dark:text-gray-400 dark:hover:bg-gray-850 dark:hover:text-white"
+				type="button"
+				on:click={() => (show = false)}
+			>
+				{$i18n.t('Cancel')}
+			</button>
+			<button
+				class="flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-gray-900 px-2.5 text-xs font-normal text-white transition hover:bg-black disabled:opacity-60 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
+				on:click={submitHandler}
+				type="button"
+			>
+				{$i18n.t('Create')}
+			</button>
+		</div>
+	</div>
+</Modal>

@@ -25,7 +25,7 @@ export function getSuggestionRenderer(Component: any, ComponentProps = {}) {
 						char: props?.text?.charAt(0),
 						query: props?.query,
 						command: (item) => {
-							props.command({ id: item.id, label: item.label });
+							props.command(item);
 						},
 						...ComponentProps
 					},
@@ -88,7 +88,7 @@ export function getSuggestionRenderer(Component: any, ComponentProps = {}) {
 				component.$set({
 					query: props.query,
 					command: (item) => {
-						props.command({ id: item.id, label: item.label });
+						props.command(item);
 					}
 				});
 
@@ -109,7 +109,7 @@ export function getSuggestionRenderer(Component: any, ComponentProps = {}) {
 				popup = null;
 
 				try {
-					component.$destroy();
+					component?.$destroy();
 				} catch (e) {
 					console.error('Error unmounting component:', e);
 				}

@@ -1,7 +1,77 @@
 import { WEBUI_API_BASE_URL } from '$lib/constants';
 import { getTimeRange } from '$lib/utils';
 
-export const createNewChat = async (token: string, chat: object, folderId: string | null) => {
+const getErrorDetail = (err: any) => {
+	if (Array.isArray(err?.detail)) {
+		return err.detail.map((e: { msg?: string }) => e.msg || JSON.stringify(e)).join(', ');
+	}
+
+	return err?.detail ?? err;
+};
+
+export const getChatConfig = async (token: string) => {
+	let error = null;
+
+	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/config`, {
+		method: 'GET',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			...(token && { authorization: `Bearer ${token}` })
+		}
+	})
+		.then(async (res) => {
+			if (!res.ok) throw await res.json();
+			return res.json();
+		})
+		.catch((err) => {
+			error = getErrorDetail(err);
+			console.error(err);
+			return null;
+		});
+
+	if (error) {
+		throw error;
+	}
+
+	return res;
+};
+
+export const updateChatConfig = async (token: string, config: object) => {
+	let error = null;
+
+	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/config`, {
+		method: 'POST',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			...(token && { authorization: `Bearer ${token}` })
+		},
+		body: JSON.stringify(config)
+	})
+		.then(async (res) => {
+			if (!res.ok) throw await res.json();
+			return res.json();
+		})
+		.catch((err) => {
+			error = getErrorDetail(err);
+			console.error(err);
+			return null;
+		});
+
+	if (error) {
+		throw error;
+	}
+
+	return res;
+};
+
+export const createNewChat = async (
+	token: string,
+	chat: object,
+	folderId: string | null,
+	variables: object | null = null
+) => {
 	let error = null;
 
 	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/new`, {
@@ -13,6 +83,7 @@ export const createNewChat = async (token: string, chat: object, folderId: strin
 		},
 		body: JSON.stringify({
 			chat: chat,
+			...(variables !== null ? { variables } : {}),
 			folder_id: folderId ?? null
 		})
 	})
@@ -21,7 +92,7 @@ export const createNewChat = async (token: string, chat: object, folderId: strin
 			return res.json();
 		})
 		.catch((err) => {
-			error = err;
+			error = getErrorDetail(err);
 			console.error(err);
 			return null;
 		});
@@ -38,6 +109,38 @@ export const unarchiveAllChats = async (token: string) => {
 
 	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/unarchive/all`, {
 		method: 'POST',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			...(token && { authorization: `Bearer ${token}` })
+		}
+	})
+		.then(async (res) => {
+			if (!res.ok) throw await res.json();
+			return res.json();
+		})
+		.then((json) => {
+			return json;
+		})
+		.catch((err) => {
+			error = err.detail;
+
+			console.error(err);
+			return null;
+		});
+
+	if (error) {
+		throw error;
+	}
+
+	return res;
+};
+
+export const unshareAllChats = async (token: string) => {
+	let error = null;
+
+	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/share/all`, {
+		method: 'DELETE',
 		headers: {
 			Accept: 'application/json',
 			'Content-Type': 'application/json',
@@ -84,7 +187,7 @@ export const importChats = async (token: string, chats: object[]) => {
 			return res.json();
 		})
 		.catch((err) => {
-			error = err;
+			error = getErrorDetail(err);
 			console.error(err);
 			return null;
 		});
@@ -133,7 +236,7 @@ export const getChatList = async (
 			return json;
 		})
 		.catch((err) => {
-			error = err;
+			error = getErrorDetail(err);
 			console.error(err);
 			return null;
 		});
@@ -191,7 +294,7 @@ export const getChatListByUserId = async (
 			return json;
 		})
 		.catch((err) => {
-			error = err;
+			error = getErrorDetail(err);
 			console.error(err);
 			return null;
 		});
@@ -240,7 +343,7 @@ export const getArchivedChatList = async (
 			return json;
 		})
 		.catch((err) => {
-			error = err;
+			error = getErrorDetail(err);
 			console.error(err);
 			return null;
 		});
@@ -253,6 +356,34 @@ export const getArchivedChatList = async (
 		...chat,
 		time_range: getTimeRange(chat.updated_at)
 	}));
+};
+
+export const getArchivedChatCount = async (token: string = '') => {
+	let error = null;
+
+	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/archived/count`, {
+		method: 'GET',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			...(token && { authorization: `Bearer ${token}` })
+		}
+	})
+		.then(async (res) => {
+			if (!res.ok) throw await res.json();
+			return res.json();
+		})
+		.catch((err) => {
+			error = getErrorDetail(err);
+			console.error(err);
+			return null;
+		});
+
+	if (error) {
+		throw error;
+	}
+
+	return res;
 };
 
 export const getSharedChatList = async (token: string = '', page: number = 1, filter?: object) => {
@@ -285,7 +416,7 @@ export const getSharedChatList = async (token: string = '', page: number = 1, fi
 			return json;
 		})
 		.catch((err) => {
-			error = err;
+			error = getErrorDetail(err);
 			console.error(err);
 			return null;
 		});
@@ -301,34 +432,53 @@ export const getSharedChatList = async (token: string = '', page: number = 1, fi
 };
 
 export const getAllChats = async (token: string) => {
-	let error = null;
-
 	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/all`, {
 		method: 'GET',
 		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/json',
+			Accept: 'application/x-ndjson',
 			...(token && { authorization: `Bearer ${token}` })
 		}
-	})
-		.then(async (res) => {
-			if (!res.ok) throw await res.json();
-			return res.json();
-		})
-		.then((json) => {
-			return json;
-		})
-		.catch((err) => {
-			error = err;
-			console.error(err);
-			return null;
-		});
+	});
 
-	if (error) {
-		throw error;
+	if (!res.ok) {
+		const err = await res.json();
+		console.error(err);
+		throw err;
 	}
 
-	return res;
+	const reader = res.body?.getReader();
+	if (!reader) {
+		throw new Error('Response body is not readable');
+	}
+
+	const decoder = new TextDecoder();
+	const chats: object[] = [];
+	let buffer = '';
+
+	while (true) {
+		const { done, value } = await reader.read();
+		if (done) break;
+
+		buffer += decoder.decode(value, { stream: true });
+		const lines = buffer.split('\n');
+		// Keep the last potentially incomplete line in the buffer
+		buffer = lines.pop() ?? '';
+
+		for (const line of lines) {
+			const trimmed = line.trim();
+			if (trimmed) {
+				chats.push(JSON.parse(trimmed));
+			}
+		}
+	}
+
+	// Process any remaining data in the buffer
+	const remaining = buffer.trim();
+	if (remaining) {
+		chats.push(JSON.parse(remaining));
+	}
+
+	return chats;
 };
 
 export const getChatListBySearchText = async (token: string, text: string, page: number = 1) => {
@@ -354,7 +504,7 @@ export const getChatListBySearchText = async (token: string, text: string, page:
 			return json;
 		})
 		.catch((err) => {
-			error = err;
+			error = getErrorDetail(err);
 			console.error(err);
 			return null;
 		});
@@ -388,7 +538,7 @@ export const getChatsByFolderId = async (token: string, folderId: string) => {
 			return json;
 		})
 		.catch((err) => {
-			error = err;
+			error = getErrorDetail(err);
 			console.error(err);
 			return null;
 		});
@@ -427,7 +577,7 @@ export const getChatListByFolderId = async (token: string, folderId: string, pag
 			return json;
 		})
 		.catch((err) => {
-			error = err;
+			error = getErrorDetail(err);
 			console.error(err);
 			return null;
 		});
@@ -458,7 +608,7 @@ export const getAllArchivedChats = async (token: string) => {
 			return json;
 		})
 		.catch((err) => {
-			error = err;
+			error = getErrorDetail(err);
 			console.error(err);
 			return null;
 		});
@@ -489,7 +639,7 @@ export const getAllUserChats = async (token: string) => {
 			return json;
 		})
 		.catch((err) => {
-			error = err;
+			error = getErrorDetail(err);
 			console.error(err);
 			return null;
 		});
@@ -520,7 +670,7 @@ export const getAllTags = async (token: string) => {
 			return json;
 		})
 		.catch((err) => {
-			error = err;
+			error = getErrorDetail(err);
 			console.error(err);
 			return null;
 		});
@@ -551,7 +701,7 @@ export const getPinnedChatList = async (token: string = '') => {
 			return json;
 		})
 		.catch((err) => {
-			error = err;
+			error = getErrorDetail(err);
 			console.error(err);
 			return null;
 		});
@@ -588,7 +738,7 @@ export const getChatListByTagName = async (token: string = '', tagName: string) 
 			return json;
 		})
 		.catch((err) => {
-			error = err;
+			error = getErrorDetail(err);
 			console.error(err);
 			return null;
 		});
@@ -654,7 +804,7 @@ export const getChatByShareId = async (token: string, share_id: string) => {
 			return json;
 		})
 		.catch((err) => {
-			error = err;
+			error = getErrorDetail(err);
 
 			console.error(err);
 			return null;
@@ -743,6 +893,62 @@ export const toggleChatPinnedStatusById = async (token: string, id: string) => {
 	return res;
 };
 
+export const markChatUnreadById = async (token: string, id: string) => {
+	let error = null;
+
+	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/${id}/unread`, {
+		method: 'POST',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			...(token && { authorization: `Bearer ${token}` })
+		}
+	})
+		.then(async (res) => {
+			if (!res.ok) throw await res.json();
+			return res.json();
+		})
+		.catch((err) => {
+			error = 'detail' in err ? err.detail : err;
+			console.error(err);
+			return null;
+		});
+
+	if (error) {
+		throw error;
+	}
+
+	return res;
+};
+
+export const markChatsRead = async (token: string) => {
+	let error = null;
+
+	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/read`, {
+		method: 'POST',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			...(token && { authorization: `Bearer ${token}` })
+		}
+	})
+		.then(async (res) => {
+			if (!res.ok) throw await res.json();
+			return res.json();
+		})
+		.catch((err) => {
+			error = 'detail' in err ? err.detail : err;
+			console.error(err);
+			return null;
+		});
+
+	if (error) {
+		throw error;
+	}
+
+	return res;
+};
+
 export const cloneChatById = async (token: string, id: string, title?: string) => {
 	let error = null;
 
@@ -755,6 +961,47 @@ export const cloneChatById = async (token: string, id: string, title?: string) =
 		},
 		body: JSON.stringify({
 			...(title && { title: title })
+		})
+	})
+		.then(async (res) => {
+			if (!res.ok) throw await res.json();
+			return res.json();
+		})
+		.then((json) => {
+			return json;
+		})
+		.catch((err) => {
+			error = err;
+
+			if ('detail' in err) {
+				error = err.detail;
+			} else {
+				error = err;
+			}
+
+			console.error(err);
+			return null;
+		});
+
+	if (error) {
+		throw error;
+	}
+
+	return res;
+};
+
+export const forkChatById = async (token: string, id: string, messageId?: string | null) => {
+	let error = null;
+
+	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/${id}/fork`, {
+		method: 'POST',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			...(token && { authorization: `Bearer ${token}` })
+		},
+		body: JSON.stringify({
+			message_id: messageId ?? null
 		})
 	})
 		.then(async (res) => {
@@ -822,7 +1069,7 @@ export const cloneSharedChatById = async (token: string, id: string) => {
 	return res;
 };
 
-export const shareChatById = async (token: string, id: string) => {
+export const shareChatById = async (token: string, id: string, shareMode?: 'continue' | null) => {
 	let error = null;
 
 	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/${id}/share`, {
@@ -831,7 +1078,8 @@ export const shareChatById = async (token: string, id: string) => {
 			Accept: 'application/json',
 			'Content-Type': 'application/json',
 			...(token && { authorization: `Bearer ${token}` })
-		}
+		},
+		body: JSON.stringify({ share_mode: shareMode })
 	})
 		.then(async (res) => {
 			if (!res.ok) throw await res.json();
@@ -841,7 +1089,7 @@ export const shareChatById = async (token: string, id: string) => {
 			return json;
 		})
 		.catch((err) => {
-			error = err;
+			error = getErrorDetail(err);
 
 			console.error(err);
 			return null;
@@ -876,7 +1124,7 @@ export const updateChatFolderIdById = async (token: string, id: string, folderId
 			return json;
 		})
 		.catch((err) => {
-			error = err;
+			error = getErrorDetail(err);
 
 			console.error(err);
 			return null;
@@ -908,7 +1156,7 @@ export const archiveChatById = async (token: string, id: string) => {
 			return json;
 		})
 		.catch((err) => {
-			error = err;
+			error = getErrorDetail(err);
 
 			console.error(err);
 			return null;
@@ -940,7 +1188,7 @@ export const deleteSharedChatById = async (token: string, id: string) => {
 			return json;
 		})
 		.catch((err) => {
-			error = err;
+			error = getErrorDetail(err);
 
 			console.error(err);
 			return null;
@@ -953,10 +1201,15 @@ export const deleteSharedChatById = async (token: string, id: string) => {
 	return res;
 };
 
-export const updateChatById = async (token: string, id: string, chat: object) => {
+export const updateChatAccessGrants = async (
+	token: string,
+	id: string,
+	accessGrants: object[],
+	shareMode?: 'continue' | null
+) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/${id}`, {
+	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/shared/${id}/access/update`, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
@@ -964,7 +1217,8 @@ export const updateChatById = async (token: string, id: string, chat: object) =>
 			...(token && { authorization: `Bearer ${token}` })
 		},
 		body: JSON.stringify({
-			chat: chat
+			access_grants: accessGrants,
+			share_mode: shareMode
 		})
 	})
 		.then(async (res) => {
@@ -975,8 +1229,182 @@ export const updateChatById = async (token: string, id: string, chat: object) =>
 			return json;
 		})
 		.catch((err) => {
-			error = err;
+			error = getErrorDetail(err);
 
+			console.error(err);
+			return null;
+		});
+
+	if (error) {
+		throw error;
+	}
+
+	return res;
+};
+
+export const getChatAccessGrants = async (token: string, id: string) => {
+	let error = null;
+
+	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/shared/${id}/access`, {
+		method: 'GET',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			...(token && { authorization: `Bearer ${token}` })
+		}
+	})
+		.then(async (res) => {
+			if (!res.ok) throw await res.json();
+			return res.json();
+		})
+		.then((json) => {
+			return json;
+		})
+		.catch((err) => {
+			error = getErrorDetail(err);
+
+			console.error(err);
+			return null;
+		});
+
+	if (error) {
+		throw error;
+	}
+
+	return res;
+};
+
+export const updateChatById = async (
+	token: string,
+	id: string,
+	chat: object,
+	variables: object | null = null
+) => {
+	let error = null;
+
+	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/${id}`, {
+		method: 'POST',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			...(token && { authorization: `Bearer ${token}` })
+		},
+		body: JSON.stringify({
+			chat: chat,
+			...(variables !== null ? { variables } : {})
+		})
+	})
+		.then(async (res) => {
+			if (!res.ok) throw await res.json();
+			return res.json();
+		})
+		.then((json) => {
+			return json;
+		})
+		.catch((err) => {
+			error = getErrorDetail(err);
+
+			console.error(err);
+			return null;
+		});
+
+	if (error) {
+		throw error;
+	}
+
+	return res;
+};
+
+export const compactChatById = async (token: string, id: string, model?: string | null) => {
+	let error = null;
+
+	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/${id}/compact`, {
+		method: 'POST',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			...(token && { authorization: `Bearer ${token}` })
+		},
+		body: JSON.stringify({ model })
+	})
+		.then(async (res) => {
+			if (!res.ok) throw await res.json();
+			return res.json();
+		})
+		.then((json) => {
+			return json;
+		})
+		.catch((err) => {
+			error = getErrorDetail(err);
+
+			console.error(err);
+			return null;
+		});
+
+	if (error) {
+		throw error;
+	}
+
+	return res;
+};
+
+export const deleteChatMessageById = async (token: string, id: string, messageId: string) => {
+	let error = null;
+
+	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/${id}/messages/${messageId}`, {
+		method: 'DELETE',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			...(token && { authorization: `Bearer ${token}` })
+		}
+	})
+		.then(async (res) => {
+			if (!res.ok) throw await res.json();
+			return res.json();
+		})
+		.catch((err) => {
+			error = getErrorDetail(err);
+			console.error(err);
+			return null;
+		});
+
+	if (error) {
+		throw error;
+	}
+
+	return res;
+};
+
+export const resolveChatMessageToolCall = async (
+	token: string,
+	id: string,
+	messageId: string,
+	callId: string,
+	action: 'approve' | 'reject' | 'answer',
+	options: { answers?: unknown; timed_out?: boolean } = {}
+) => {
+	let error = null;
+
+	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/${id}/messages/${messageId}/resolve`, {
+		method: 'POST',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			...(token && { authorization: `Bearer ${token}` })
+		},
+		body: JSON.stringify({
+			call_id: callId,
+			action,
+			...options
+		})
+	})
+		.then(async (res) => {
+			if (!res.ok) throw await res.json();
+			return res.json();
+		})
+		.catch((err) => {
+			error = getErrorDetail(err);
 			console.error(err);
 			return null;
 		});
@@ -1039,7 +1467,7 @@ export const getTagsById = async (token: string, id: string) => {
 			return json;
 		})
 		.catch((err) => {
-			error = err;
+			error = getErrorDetail(err);
 
 			console.error(err);
 			return null;
@@ -1108,38 +1536,7 @@ export const deleteTagById = async (token: string, id: string, tagName: string) 
 			return json;
 		})
 		.catch((err) => {
-			error = err;
-
-			console.error(err);
-			return null;
-		});
-
-	if (error) {
-		throw error;
-	}
-
-	return res;
-};
-export const deleteTagsById = async (token: string, id: string) => {
-	let error = null;
-
-	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/${id}/tags/all`, {
-		method: 'DELETE',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/json',
-			...(token && { authorization: `Bearer ${token}` })
-		}
-	})
-		.then(async (res) => {
-			if (!res.ok) throw await res.json();
-			return res.json();
-		})
-		.then((json) => {
-			return json;
-		})
-		.catch((err) => {
-			error = err;
+			error = getErrorDetail(err);
 
 			console.error(err);
 			return null;
@@ -1243,7 +1640,7 @@ export const exportChatStats = async (token: string, page: number = 1, params: o
 			return json;
 		})
 		.catch((err) => {
-			error = err;
+			error = getErrorDetail(err);
 			console.error(err);
 			return null;
 		});
@@ -1258,14 +1655,17 @@ export const exportChatStats = async (token: string, page: number = 1, params: o
 export const exportSingleChatStats = async (token: string, chatId: string) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/stats/export/${chatId}`, {
-		method: 'GET',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/json',
-			...(token && { authorization: `Bearer ${token}` })
+	const res = await fetch(
+		`${WEBUI_API_BASE_URL}/chats/stats/export/${encodeURIComponent(chatId)}`,
+		{
+			method: 'GET',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/json',
+				...(token && { authorization: `Bearer ${token}` })
+			}
 		}
-	})
+	)
 		.then(async (res) => {
 			if (!res.ok) throw await res.json();
 			return res.json();
@@ -1274,7 +1674,7 @@ export const exportSingleChatStats = async (token: string, chatId: string) => {
 			return json;
 		})
 		.catch((err) => {
-			error = err;
+			error = getErrorDetail(err);
 			console.error(err);
 			return null;
 		});
@@ -1305,7 +1705,7 @@ export const downloadChatStats = async (
 		}
 	}).catch((err) => {
 		console.error(err);
-		error = err;
+		error = getErrorDetail(err);
 		return null;
 	});
 

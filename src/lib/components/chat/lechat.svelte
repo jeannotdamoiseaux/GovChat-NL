@@ -12,7 +12,6 @@
 
 	import {
 		chatId,
-		chats,
 		config,
 		models,
 		settings,
@@ -21,22 +20,18 @@
 		user,
 		socket,
 		showControls,
-		currentChatPage,
 		temporaryChatEnabled,
 		mobile,
 		chatTitle
 	} from '$lib/stores';
-	
-	import {
-		copyToClipboard,
-		getMessageContentParts,
-		createMessagesList
-	} from '$lib/utils';
+
+	import { copyToClipboard, getMessageContentParts, createMessagesList } from '$lib/utils';
 
 	import { getChatById, getChatList, updateChatById } from '$lib/apis/chats';
 	import { getUserSettings } from '$lib/apis/users';
 
 	import Navbar from '$lib/components/chat/Navbar.svelte';
+	import ModelSelector from '$lib/components/chat/ModelSelector.svelte';
 	import Spinner from '../common/Spinner.svelte';
 
 	export let chatIdProp = '';
@@ -104,7 +99,7 @@
 				const userSettings = await getUserSettings(localStorage.token);
 				if (userSettings) {
 					await settings.set(userSettings.ui);
-				} 
+				}
 
 				await tick();
 				return true;
@@ -118,7 +113,7 @@
 		if (!$chatId) {
 			chatIdUnsubscriber = chatId.subscribe(async (value) => {
 				if (!value) {
-					await tick(); 
+					await tick();
 					await initNewChat();
 				}
 			});
@@ -145,7 +140,7 @@
 	const convertMessagesToHistory = (messages) => {
 		const messagesArray = Array.isArray(messages) ? messages : [];
 		const history = { messages: {}, currentId: null };
-		
+
 		messagesArray.forEach((message, index) => {
 			const messageId = message.id || `msg_${index}`;
 			history.messages[messageId] = message;
@@ -153,20 +148,20 @@
 				history.currentId = messageId;
 			}
 		});
-		
+
 		return history;
 	};
 
 	const initNewChat = async () => {
 		// Check if we're in any app launcher context (including main app launcher page)
 		const isAppLauncherContext = $page.route.id?.includes('/app-launcher');
-		
+
 		console.log('[Lechat DEBUG] Route check:', {
 			routeId: $page.route.id,
 			isAppLauncherContext,
 			selectedModels
 		});
-		
+
 		// FORCE empty models for app launcher contexts - no exceptions
 		if (isAppLauncherContext) {
 			selectedModels = [''];
@@ -195,48 +190,55 @@
 </svelte:head>
 
 <div
-    class="h-screen max-h-[100dvh] transition-width duration-200 ease-in-out {$showSidebar
-        ? '  md:max-w-[calc(100%-260px)]'
-        : ' '} w-full max-w-full flex flex-col"
-    id="chat-container"
+	class="h-screen max-h-[100dvh] transition-width duration-200 ease-in-out {$showSidebar
+		? '  md:max-w-[calc(100%-260px)]'
+		: ' '} w-full max-w-full flex flex-col"
+	id="chat-container"
 >
-    {#if !loading}
-        {#if $settings?.backgroundImageUrl ?? null}
-            <div
-                class="absolute {$showSidebar ? 'md:max-w-[calc(100%-260px)] md:translate-x-[260px]' : ''} top-0 left-0 w-full h-full bg-cover bg-center bg-no-repeat"
-                style="background-image: url({$settings.backgroundImageUrl})  "
-            />
+	{#if !loading}
+		{#if $settings?.backgroundImageUrl ?? null}
+			<div
+				class="absolute {$showSidebar
+					? 'md:max-w-[calc(100%-260px)] md:translate-x-[260px]'
+					: ''} top-0 left-0 w-full h-full bg-cover bg-center bg-no-repeat"
+				style="background-image: url({$settings.backgroundImageUrl})  "
+			/>
 
-            <div
-                class="absolute top-0 left-0 w-full h-full bg-linear-to-t from-white to-white/85 dark:from-gray-900 dark:to-gray-900/90 z-0"
-            />
-        {/if}
+			<div
+				class="absolute top-0 left-0 w-full h-full bg-linear-to-t from-white to-white/85 dark:from-gray-900 dark:to-gray-900/90 z-0"
+			/>
+		{/if}
 
-        <Navbar
-            bind:this={navbarElement}
-            chat={{
-                id: $chatId,
-                chat: {
-                    title: $chatTitle,
-                    models: selectedModels,
-                    system: $settings.system ?? undefined,
-                    history: history,
-                    timestamp: Date.now()
-                }
-            }}
-            {history}
-            title={$chatTitle}
-            bind:selectedModels
-            shareEnabled={!!history.currentId}
-            {initNewChat}
-        />
-        <slot name="content" {selectedModels}></slot>
-
-    {:else if loading}
-        <div class="flex items-center justify-center h-full w-full">
-            <div class="m-auto">
-                <Spinner />
-            </div>
-        </div>
-    {/if}
+		<Navbar
+			bind:this={navbarElement}
+			chat={{
+				id: $chatId,
+				chat: {
+					title: $chatTitle,
+					models: selectedModels,
+					system: $settings.system ?? undefined,
+					history: history,
+					timestamp: Date.now()
+				}
+			}}
+			{history}
+			title={$chatTitle}
+			shareEnabled={!!history.currentId}
+			{initNewChat}
+			archiveChatHandler={() => {}}
+			deleteChatHandler={() => {}}
+			moveChatHandler={() => {}}
+		/>
+		<!-- GovChat-NL: modelkeuze voor App Launcher-pagina's (de Navbar heeft geen selector meer sinds Open WebUI v0.11) -->
+		<div class="pt-14 px-4 flex justify-center z-10">
+			<ModelSelector bind:selectedModels useAppFilter={true} />
+		</div>
+		<slot name="content" {selectedModels}></slot>
+	{:else if loading}
+		<div class="flex items-center justify-center h-full w-full">
+			<div class="m-auto">
+				<Spinner />
+			</div>
+		</div>
+	{/if}
 </div>

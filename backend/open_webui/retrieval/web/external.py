@@ -1,14 +1,11 @@
 import logging
-from typing import Optional, List
+from typing import List, Optional
 
 import requests
-
 from fastapi import Request
-
-
+from open_webui.env import FORWARD_SESSION_INFO_HEADER_CHAT_ID
 from open_webui.retrieval.web.main import SearchResult, get_filtered_results
 from open_webui.utils.headers import include_user_info_headers
-from open_webui.env import FORWARD_SESSION_INFO_HEADER_CHAT_ID
 
 log = logging.getLogger(__name__)
 
@@ -24,6 +21,9 @@ def search_external(
 ) -> List[SearchResult]:
     try:
         headers = {
+            # LICENSE covers this Open WebUI user-agent identifier.
+            # Do not alter, remove, obscure, or replace it except as LICENSE permits:
+            # https://docs.openwebui.com/license.
             'User-Agent': 'Open WebUI (https://github.com/open-webui/open-webui) RAG Bot',
             'Authorization': f'Bearer {external_api_key}',
         }
@@ -53,7 +53,7 @@ def search_external(
             )
             for result in results[:count]
         ]
-        log.info(f'External search results: {results}')
+        log.info('External search results: %s', results)
         return results
     except Exception as e:
         log.error(f'Error in External search: {e}')

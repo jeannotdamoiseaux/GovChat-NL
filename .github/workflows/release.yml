@@ -1,0 +1,86 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Release — Create GitHub release from CHANGELOG, trigger Docker builds
+# Runs on pushes to main when package.json version changes
+# ─────────────────────────────────────────────────────────────────────────────
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ── Create release and trigger downstream workflows ──────────────────────
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Abort if package.json unchanged
+        run: |
+          git diff --cached --diff-filter=d package.json || {
+            echo "package.json not modified — skipping release"
+            exit 1
+          }
+
+      - name: Read version
+        id: pkg
+        run: echo "version=$(jq -r '.version' package.json)" >> $GITHUB_OUTPUT
+
+      - name: Extract release notes from CHANGELOG
+        run: |
+          VER="${{ steps.pkg.outputs.version }}"
+          awk "/^## \[${VER}\]/{found=1; next} /^## \[/{if(found) exit} found{print}" \
+            CHANGELOG.md > /tmp/release-notes.md
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          path = Path('/tmp/release-notes.md')
+          notes = path.read_text(encoding='utf-8')
+          # Leave room below GitHub's 125,000-character limit for the full-notes link.
+          if len(notes.encode('utf-8')) > 120000:
+              url = f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/blob/{os.environ['GITHUB_SHA']}/CHANGELOG.md"
+              notes = notes.encode('utf-8')[:120000].decode('utf-8', errors='ignore').rsplit('\n', 1)[0]
+              path.write_text(notes + f'\n\nRelease notes shortened. [Read the full changelog]({url}).\n', encoding='utf-8')
+          PY
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "v${{ steps.pkg.outputs.version }}" &>/dev/null; then
+            echo "Release v${{ steps.pkg.outputs.version }} already exists — skipping creation"
+          else
+            gh release create "v${{ steps.pkg.outputs.version }}" \
+              --title "v${{ steps.pkg.outputs.version }}" \
+              --notes-file /tmp/release-notes.md
+          fi
+
+      - name: Archive source
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-archive
+          path: |
+            .
+            !.git
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Trigger Docker build
+        uses: actions/github-script@v8
+        with:
+          script: |
+            github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'docker.yaml',
+              ref: 'v${{ steps.pkg.outputs.version }}',
+            })

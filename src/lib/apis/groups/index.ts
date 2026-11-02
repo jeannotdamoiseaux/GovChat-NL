@@ -267,3 +267,46 @@ export const removeUserFromGroup = async (token: string, id: string, userIds: st
 
 	return res;
 };
+
+export const getGroupPreview = async (token: string, id: string) => {
+	let error = null;
+
+	const res = await fetch(`${WEBUI_API_BASE_URL}/groups/id/${id}/preview`, {
+		method: 'GET',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			authorization: `Bearer ${token}`
+		}
+	})
+		.then(async (res) => {
+			if (!res.ok) throw await res.json();
+			return res.json();
+		})
+		.catch((err) => {
+			error = err.detail;
+			console.error(err);
+			return null;
+		});
+
+	if (error) {
+		throw error;
+	}
+
+	return res;
+};
+
+export const getGroupMembers = async (
+	token: string,
+	id: string,
+	membership: 'direct' | 'inherited' | 'effective' = 'effective',
+	query = '',
+	page = 1
+) => {
+	const params = new URLSearchParams({ membership, query, page: String(page) });
+	const res = await fetch(`${WEBUI_API_BASE_URL}/groups/id/${id}/members?${params}`, {
+		headers: { Authorization: `Bearer ${token}` }
+	});
+	if (!res.ok) throw (await res.json()).detail;
+	return res.json();
+};

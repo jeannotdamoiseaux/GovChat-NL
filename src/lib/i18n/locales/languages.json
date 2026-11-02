@@ -72,6 +72,10 @@
 		"title": "Finnish (Suomalainen)"
 	},
 	{
+		"code": "fo-FO",
+		"title": "Faroese (Faroe Islands)"
+	},
+	{
 		"code": "fr-CA",
 		"title": "French (Canada)"
 	},
@@ -184,12 +188,24 @@
 		"title": "Slovak (Slovenčina)"
 	},
 	{
+		"code": "sl-SI",
+		"title": "Slovenian (Slovenščina)"
+	},
+	{
 		"code": "es-ES",
 		"title": "Spanish (Español)"
 	},
 	{
 		"code": "sv-SE",
 		"title": "Swedish (Svenska)"
+	},
+	{
+		"code": "fil-PH",
+		"title": "Tagalog (Filipino)"
+	},
+	{
+		"code": "ta-IN",
+		"title": "தமிழ் (இந்தியா)"
 	},
 	{
 		"code": "th-TH",

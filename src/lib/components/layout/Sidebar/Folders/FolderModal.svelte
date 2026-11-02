@@ -1,19 +1,24 @@
 <script lang="ts">
 	import { getContext, createEventDispatcher, onMount, tick } from 'svelte';
+	import type { Writable } from 'svelte/store';
+	import type { i18n as I18n } from 'i18next';
 
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import Modal from '$lib/components/common/Modal.svelte';
-	import XMark from '$lib/components/icons/XMark.svelte';
+	import AccessButton from '$lib/components/common/AccessButton.svelte';
+	import FolderShareModal from './FolderShareModal.svelte';
+	import XMark from '../icons/XMark.svelte';
 
 	import { toast } from 'svelte-sonner';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { user, config } from '$lib/stores';
+	import { user, config, models } from '$lib/stores';
+	import ModelSelector from '$lib/components/chat/ModelSelector/Selector.svelte';
 
 	import Textarea from '$lib/components/common/Textarea.svelte';
 	import Knowledge from '$lib/components/workspace/Models/Knowledge.svelte';
 	import { getFolderById } from '$lib/apis/folders';
-	const i18n = getContext('i18n');
+	const i18n = getContext<Writable<I18n>>('i18n');
 
 	export let show = false;
 	export let onSubmit: Function = (e) => {};
@@ -28,11 +33,13 @@
 		background_image_url: null
 	};
 	let data = {
+		model_ids: [] as string[],
 		system_prompt: '',
 		files: []
 	};
 
 	let loading = false;
+	let showAccessModal = false;
 
 	const submitHandler = async () => {
 		loading = true;
@@ -56,7 +63,12 @@
 		await onSubmit({
 			name,
 			meta,
-			data,
+			// Sharing saves separately; do not overwrite its mode with the editor's snapshot.
+			data: {
+				model_ids: data.model_ids,
+				system_prompt: data.system_prompt,
+				files: data.files
+			},
 			parent_id: edit ? undefined : parentId
 		});
 		show = false;
@@ -64,19 +76,23 @@
 	};
 
 	const init = async () => {
+		folder = null;
 		if (folderId) {
 			folder = await getFolderById(localStorage.token, folderId).catch((error) => {
 				toast.error(`${error}`);
 				return null;
 			});
+			if (!folder) return;
 
 			name = folder.name;
 			meta = folder.meta || {
 				background_image_url: null
 			};
-			data = folder.data || {
+			data = {
 				system_prompt: '',
-				files: []
+				files: [],
+				...folder.data,
+				model_ids: folder.data?.model_ids ?? []
 			};
 		}
 
@@ -95,6 +111,7 @@
 	$: if (show) {
 		init();
 	}
+	$: if (!show) showAccessModal = false;
 
 	$: if (!show && !edit) {
 		name = '';
@@ -102,6 +119,7 @@
 			background_image_url: null
 		};
 		data = {
+			model_ids: [],
 			system_prompt: '',
 			files: []
 		};
@@ -110,25 +128,31 @@
 
 <Modal size="md" bind:show>
 	<div>
-		<div class=" flex justify-between dark:text-gray-300 px-5 pt-4 pb-1">
-			<div class=" text-lg font-medium self-center">
+		<div class=" flex justify-between dark:text-gray-300 px-4 pt-3 pb-1">
+			<div class=" text-sm self-center">
 				{#if edit}
 					{$i18n.t('Edit Folder')}
 				{:else}
 					{$i18n.t('Create Folder')}
 				{/if}
 			</div>
-			<button
-				class="self-center"
-				on:click={() => {
-					show = false;
-				}}
-			>
-				<XMark className={'size-5'} />
-			</button>
+			<div class="flex items-center gap-1">
+				{#if edit && folder && ($user?.role === 'admin' || folder.user_id === $user?.id)}
+					<AccessButton disabled={loading} on:click={() => (showAccessModal = true)} />
+				{/if}
+				<button
+					aria-label={$i18n.t('Close')}
+					class="self-center rounded-lg p-1 text-gray-500 transition hover:bg-gray-50 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+					on:click={() => {
+						show = false;
+					}}
+				>
+					<XMark className={'size-4'} />
+				</button>
+			</div>
 		</div>
 
-		<div class="flex flex-col md:flex-row w-full px-5 pb-4 md:space-x-4 dark:text-gray-200">
+		<div class="flex flex-col md:flex-row w-full px-4 pb-4 md:space-x-4 dark:text-gray-200">
 			<div class=" flex flex-col w-full sm:flex-row sm:justify-center sm:space-x-6">
 				<form
 					class="flex flex-col w-full"
@@ -212,6 +236,44 @@
 
 					<hr class=" border-gray-50 dark:border-gray-850/30 my-2.5 w-full" />
 
+					<div class="my-1 flex items-center justify-between gap-4">
+						<label
+							for="model-selector-folder-default-button"
+							class="shrink-0 text-xs text-gray-500"
+						>
+							{$i18n.t('Default Model')}
+						</label>
+						<div class="flex min-w-0 max-w-[65%] items-center gap-2">
+							<div class="min-w-0">
+								<ModelSelector
+									id="folder-default"
+									placeholder={$i18n.t('Use default')}
+									items={$models.map((model) => ({
+										value: model.id,
+										label: model.name,
+										model
+									}))}
+									triggerClassName="text-xs"
+									placement="auto"
+									align="end"
+									selectionOnly
+									value={data.model_ids[0] ?? ''}
+									bind:values={data.model_ids}
+								/>
+							</div>
+							{#if data.model_ids.length}
+								<button
+									type="button"
+									aria-label={$i18n.t('Reset')}
+									class="shrink-0 p-1 text-gray-500 hover:text-gray-700 dark:hover:text-gray-200"
+									on:click={() => (data.model_ids = [])}
+								>
+									<XMark className="size-3" />
+								</button>
+							{/if}
+						</div>
+					</div>
+
 					{#if $user?.role === 'admin' || ($user?.permissions.chat?.system_prompt ?? true)}
 						<div class="my-1">
 							<div class="mb-2 text-xs text-gray-500">{$i18n.t('System Prompt')}</div>
@@ -232,7 +294,7 @@
 						<Knowledge bind:selectedItems={data.files}>
 							<div slot="label">
 								<div class="flex w-full justify-between">
-									<div class=" mb-2 text-xs text-gray-500">
+									<div class=" text-xs text-gray-500">
 										{$i18n.t('Knowledge')}
 									</div>
 								</div>
@@ -240,19 +302,17 @@
 						</Knowledge>
 					</div>
 
-					<div class="flex justify-end pt-3 text-sm font-medium gap-1.5">
+					<div class="flex justify-end pt-3 text-sm font-normal gap-1.5">
 						<button
-							class="px-3.5 py-1.5 text-sm font-medium bg-black hover:bg-gray-950 text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-full flex flex-row space-x-1 items-center {loading
-								? ' cursor-not-allowed'
-								: ''}"
+							class="flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-gray-900 px-2.5 text-xs font-normal text-white transition hover:bg-black disabled:opacity-60 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white disabled:cursor-not-allowed"
 							type="submit"
 							disabled={loading}
 						>
 							{$i18n.t('Save')}
 
 							{#if loading}
-								<div class="ml-2 self-center">
-									<Spinner />
+								<div class="shrink-0">
+									<Spinner className="size-3" />
 								</div>
 							{/if}
 						</button>
@@ -262,3 +322,7 @@
 		</div>
 	</div>
 </Modal>
+
+{#if show && edit && folder && ($user?.role === 'admin' || folder.user_id === $user?.id)}
+	<FolderShareModal bind:show={showAccessModal} {folder} />
+{/if}

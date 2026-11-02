@@ -1,12 +1,14 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import { Pane, PaneGroup, PaneResizer } from 'paneforge';
 
 	import { onDestroy, onMount, tick } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
 	import { v4 as uuidv4 } from 'uuid';
+	import type { Socket } from 'socket.io-client';
 
 	import {
+		config,
 		chatId,
 		channels,
 		channelId as _channelId,
@@ -19,13 +21,67 @@
 	import Messages from './Messages.svelte';
 	import MessageInput from './MessageInput.svelte';
 	import Navbar from './Navbar.svelte';
+	import { canUseEncryption, connected, enter, request } from '$lib/encryption/client';
 	import Drawer from '../common/Drawer.svelte';
+	import ResizableSidePanel from '../common/ResizableSidePanel.svelte';
 	import EllipsisVertical from '../icons/EllipsisVertical.svelte';
 	import Thread from './Thread.svelte';
 	import i18n from '$lib/i18n';
 	import Spinner from '../common/Spinner.svelte';
 
 	export let id = '';
+
+	let mounted = false;
+	let invitationSession: string | null = null;
+	let stopInvitation = () => {};
+	$: watchInvitation(
+		$socket,
+		channel?.id === id ? id : null,
+		mounted && canUseEncryption($user, $config?.features)
+	);
+
+	function watchInvitation(
+		connection: Socket | null,
+		channelId: string | null,
+		enabled: boolean | undefined
+	) {
+		stopInvitation();
+		stopInvitation = () => {};
+		invitationSession = null;
+		if (!enabled || !connection || !channelId) return;
+		let alive = true;
+		let revision = 0;
+		const receive = (event: { channel: string; session: string | null }) => {
+			if (event.channel === channelId) {
+				revision++;
+				invitationSession = event.session;
+			}
+		};
+		const clear = () => {
+			revision++;
+			invitationSession = null;
+		};
+		const query = () => {
+			if (!connected(connection)) return;
+			const issued = revision;
+			void request(connection, 'status', { channel: channelId })
+				.then((result) => {
+					if (alive && revision === issued)
+						invitationSession = result.available ? result.session : null;
+				})
+				.catch(() => {});
+		};
+		connection.on('encryption:available', receive);
+		connection.on('disconnect', clear);
+		connection.on('connect', query);
+		query();
+		stopInvitation = () => {
+			alive = false;
+			connection.off('encryption:available', receive);
+			connection.off('disconnect', clear);
+			connection.off('connect', query);
+		};
+	}
 
 	let currentId = null;
 
@@ -35,11 +91,11 @@
 
 	let top = false;
 
-	let channel = null;
+	let channel: any = null;
 	let messages = null;
 
 	let replyToMessage = null;
-	let threadId = null;
+	let threadId: any = null;
 
 	let typingUsers = [];
 	let typingUsersTimeout = {};
@@ -48,9 +104,17 @@
 		initHandler();
 	}
 
+	$: if (channel && $page.url.searchParams.get('thread')) {
+		threadId = $page.url.searchParams.get('thread');
+		if (!$page.url.searchParams.has('message')) {
+			window.history.replaceState(history.state, '', `/channels/${id}`);
+		}
+	}
+
 	const scrollToBottom = () => {
 		if (messagesContainerElement) {
-			messagesContainerElement.scrollTop = messagesContainerElement.scrollHeight;
+			// The channel uses flex-col-reverse, whose bottom is scrollTop = 0.
+			messagesContainerElement.scrollTop = 0;
 		}
 	};
 
@@ -76,6 +140,27 @@
 		);
 	};
 
+	const pinHandler = (
+		messageId: string,
+		pinned: boolean,
+		pinnedBy: string | null = pinned ? ($user?.id ?? null) : null,
+		pinnedAt: number | null = pinned ? Date.now() * 1000000 : null
+	) => {
+		if (messages) {
+			messages = messages.map((message) => {
+				if (message.id === messageId) {
+					return {
+						...message,
+						is_pinned: pinned,
+						pinned_by: pinnedBy,
+						pinned_at: pinnedAt
+					};
+				}
+				return message;
+			});
+		}
+	};
+
 	const initHandler = async () => {
 		if (currentId) {
 			updateLastReadAt(currentId);
@@ -89,6 +174,7 @@
 		messages = null;
 		channel = null;
 		threadId = null;
+		replyToMessage = null;
 
 		typingUsers = [];
 		typingUsersTimeout = {};
@@ -119,18 +205,29 @@
 
 			if (type === 'message') {
 				if ((data?.parent_id ?? null) === null) {
-					const tempId = data?.temp_id ?? null;
-					messages = [
-						{ ...data, temp_id: null },
-						...messages.filter((m) => !tempId || m?.temp_id !== tempId)
-					];
+					const idx = (messages ?? []).findIndex(
+						(message) =>
+							message.id === data.id || (data.temp_id && message.temp_id === data.temp_id)
+					);
+					if (idx === -1) {
+						messages = [{ ...data, temp_id: null }, ...(messages ?? [])];
+					} else {
+						// Confirm the existing row without changing its position or render key.
+						const previous = messages[idx];
+						messages[idx] = {
+							...previous,
+							...data,
+							temp_id: null,
+							client_id: previous.client_id ?? previous.id
+						};
+					}
 
 					if (typingUsers.find((user) => user.id === event.user.id)) {
 						typingUsers = typingUsers.filter((user) => user.id !== event.user.id);
 					}
 
 					await tick();
-					if (scrollEnd) {
+					if (idx === -1 && scrollEnd) {
 						scrollToBottom();
 					}
 				}
@@ -138,10 +235,20 @@
 				const idx = messages.findIndex((message) => message.id === data.id);
 
 				if (idx !== -1) {
-					messages[idx] = data;
+					messages[idx] = { ...messages[idx], ...data };
 				}
 			} else if (type === 'message:delete') {
-				messages = messages.filter((message) => message.id !== data.id);
+				messages = messages
+					.filter((message) => message.id !== data.id)
+					.map((message) =>
+						message?.reply_to_message?.id === data.id
+							? { ...message, reply_to_message: null }
+							: message
+					);
+
+				if (replyToMessage?.id === data.id) {
+					replyToMessage = null;
+				}
 
 				if (threadId === data.id) {
 					threadId = null;
@@ -150,12 +257,12 @@
 				const idx = messages.findIndex((message) => message.id === data.id);
 
 				if (idx !== -1) {
-					messages[idx] = data;
+					messages[idx] = { ...messages[idx], ...data };
 				}
 			} else if (type.includes('message:reaction')) {
 				const idx = messages.findIndex((message) => message.id === data.id);
 				if (idx !== -1) {
-					messages[idx] = data;
+					messages[idx] = { ...messages[idx], ...data };
 				}
 			} else if (type === 'typing' && event.message_id === null) {
 				if (event.user.id === $user?.id) {
@@ -187,7 +294,17 @@
 		}
 	};
 
-	const submitHandler = async ({ content, data }) => {
+	const submitHandler = async ({
+		content,
+		data,
+		channel_id,
+		reply_to_message
+	}: {
+		content: string;
+		data: any;
+		channel_id: string;
+		reply_to_message: any;
+	}) => {
 		if (!content && (data?.files ?? []).length === 0) {
 			return;
 		}
@@ -198,7 +315,7 @@
 			temp_id: tempId,
 			content: content,
 			data: data,
-			reply_to_id: replyToMessage?.id ?? null
+			reply_to_id: reply_to_message?.id ?? null
 		};
 
 		const ts = Date.now() * 1000000; // nanoseconds
@@ -206,25 +323,23 @@
 			{
 				...message,
 				id: tempId,
+				client_id: tempId,
 				user_id: $user?.id,
 				user: $user,
-				reply_to_message: replyToMessage ?? null,
+				reply_to_message: reply_to_message ?? null,
 				created_at: ts,
 				updated_at: ts
 			},
 			...messages
 		];
 
-		const res = await sendMessage(localStorage.token, id, message).catch((error) => {
+		await tick();
+		if (id === channel_id) scrollToBottom();
+
+		await sendMessage(localStorage.token, channel_id, message).catch((error) => {
 			toast.error(`${error}`);
 			return null;
 		});
-
-		if (res) {
-			messagesContainerElement.scrollTop = messagesContainerElement.scrollHeight;
-		}
-
-		replyToMessage = null;
 	};
 
 	const onChange = async () => {
@@ -244,8 +359,14 @@
 
 	let mediaQuery;
 	let largeScreen = false;
+	let threadPanelWidth = 420;
+
+	const handleMediaQuery = (e) => {
+		largeScreen = e.matches;
+	};
 
 	onMount(() => {
+		mounted = true;
 		if ($chatId) {
 			chatId.set('');
 		}
@@ -254,27 +375,24 @@
 
 		mediaQuery = window.matchMedia('(min-width: 1024px)');
 
-		const handleMediaQuery = async (e) => {
-			if (e.matches) {
-				largeScreen = true;
-			} else {
-				largeScreen = false;
-			}
-		};
-
 		mediaQuery.addEventListener('change', handleMediaQuery);
 		handleMediaQuery(mediaQuery);
 	});
 
 	onDestroy(() => {
+		stopInvitation();
 		// last read at
 		updateLastReadAt(id);
 		_channelId.set(null);
 		$socket?.off('events:channel', channelEventHandler);
+		mediaQuery?.removeEventListener('change', handleMediaQuery);
 	});
 </script>
 
 <svelte:head>
+	<!-- LICENSE covers this Open WebUI browser-title identifier.
+	Do not alter, remove, obscure, or replace it except as LICENSE permits:
+	https://docs.openwebui.com/license. -->
 	{#if channel?.type === 'dm'}
 		<title
 			>{channel?.name.trim() ||
@@ -288,10 +406,10 @@
 					} else {
 						return e.name;
 					}
-				}, '')} • Open WebUI</title
+				}, '')} / Open WebUI</title
 		>
 	{:else}
-		<title>#{channel?.name ?? 'Channel'} • Open WebUI</title>
+		<title>#{channel?.name ?? 'Channel'} / Open WebUI</title>
 	{/if}
 </svelte:head>
 
@@ -301,27 +419,40 @@
 		: ''} w-full max-w-full flex flex-col"
 	id="channel-container"
 >
-	<PaneGroup direction="horizontal" class="w-full h-full">
-		<Pane defaultSize={50} minSize={50} class="h-full flex flex-col w-full relative">
+	<div class="w-full h-full flex">
+		<div class="h-full flex flex-col min-w-0 flex-1 relative">
 			<Navbar
 				{channel}
-				onPin={(messageId, pinned) => {
-					messages = messages.map((message) => {
-						if (message.id === messageId) {
-							return {
-								...message,
-								is_pinned: pinned
-							};
-						}
-						return message;
-					});
-				}}
+				onPin={pinHandler}
 				onUpdate={async () => {
 					channel = await getChannelById(localStorage.token, id).catch((error) => {
 						return null;
 					});
 				}}
-			/>
+			>
+				<svelte:fragment slot="subtitle">
+					{#if invitationSession}
+						<div
+							class="flex flex-wrap items-center gap-x-1.5 text-[0.6875rem] font-normal text-gray-500 dark:text-gray-400"
+						>
+							<span>{$i18n.t('Encrypted chat in progress')}</span>
+							<span aria-hidden="true">·</span>
+							<button
+								type="button"
+								aria-label={$i18n.t('Join encrypted chat')}
+								class="text-[0.6875rem] font-normal text-gray-700 underline-offset-2 hover:underline dark:text-gray-200"
+								on:click={() => {
+									if (!invitationSession || !canUseEncryption($user, $config?.features)) return;
+									enter(id, { action: 'join', session: invitationSession });
+									void goto(`/channels/${encodeURIComponent(id)}/encrypted`);
+								}}
+							>
+								{$i18n.t('Join')}
+							</button>
+						</div>
+					{/if}
+				</svelte:fragment>
+			</Navbar>
 
 			{#if channel && messages !== null}
 				<div class="flex-1 overflow-y-auto">
@@ -337,7 +468,7 @@
 							<Messages
 								{channel}
 								{top}
-								{messages}
+								bind:messages
 								{replyToMessage}
 								onReply={async (message) => {
 									replyToMessage = message;
@@ -347,6 +478,7 @@
 								onThread={(id) => {
 									threadId = id;
 								}}
+								onPin={pinHandler}
 								onLoad={async () => {
 									const newMessages = await getChannelMessages(
 										localStorage.token,
@@ -366,9 +498,10 @@
 					</div>
 				</div>
 
-				<div class=" pb-[1rem] px-2.5">
+				<div class=" pb-3 px-3">
 					<MessageInput
 						id="root"
+						{messages}
 						bind:chatInputElement
 						bind:replyToMessage
 						{typingUsers}
@@ -392,7 +525,7 @@
 					</div>
 				</div>
 			{/if}
-		</Pane>
+		</div>
 
 		{#if !largeScreen}
 			{#if threadId !== null}
@@ -406,6 +539,7 @@
 						<Thread
 							{threadId}
 							{channel}
+							onPin={pinHandler}
 							onClose={() => {
 								threadId = null;
 							}}
@@ -414,26 +548,24 @@
 				</Drawer>
 			{/if}
 		{:else if threadId !== null}
-			<PaneResizer
-				class="relative flex items-center justify-center group border-l border-gray-50 dark:border-gray-850/30 hover:border-gray-200 dark:hover:border-gray-800  transition z-20"
-				id="controls-resizer"
+			<ResizableSidePanel
+				open={true}
+				bind:width={threadPanelWidth}
+				minWidth={320}
+				maxWidth={640}
+				className="h-full"
 			>
-				<div
-					class=" absolute -left-1.5 -right-1.5 -top-0 -bottom-0 z-20 cursor-col-resize bg-transparent"
-				/>
-			</PaneResizer>
-
-			<Pane defaultSize={50} minSize={30} class="h-full w-full">
-				<div class="h-full w-full shadow-xl">
+				<div class="h-full w-full border-l border-gray-100/60 dark:border-gray-800/40">
 					<Thread
 						{threadId}
 						{channel}
+						onPin={pinHandler}
 						onClose={() => {
 							threadId = null;
 						}}
 					/>
 				</div>
-			</Pane>
+			</ResizableSidePanel>
 		{/if}
-	</PaneGroup>
+	</div>
 </div>

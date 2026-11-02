@@ -7,7 +7,7 @@
 <Lechat>
 	<div slot="content" class="pt-16">
 		<div class="max-w-7xl mx-auto">
-            <AppGrid />
-        </div>
+			<AppGrid />
+		</div>
 	</div>
 </Lechat>

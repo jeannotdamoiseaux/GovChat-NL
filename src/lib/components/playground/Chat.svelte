@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { v4 as uuidv4 } from 'uuid';
 	import fileSaver from 'file-saver';
 	const { saveAs } = fileSaver;
 
@@ -17,22 +18,27 @@
 
 	import { chatCompletion } from '$lib/apis/openai';
 
-	import { splitStream } from '$lib/utils';
+	import { splitStream, resolveDefaultModelIds } from '$lib/utils';
 	import Collapsible from '../common/Collapsible.svelte';
 	import Dropdown from '../common/Dropdown.svelte';
+	import DropdownMenu from '../common/DropdownMenu.svelte';
 	import DropdownSub from '../common/DropdownSub.svelte';
 
 	import Messages from '$lib/components/playground/Chat/Messages.svelte';
+	import AdvancedParams from '$lib/components/chat/Settings/Advanced/AdvancedParams.svelte';
 	import ChevronUp from '../icons/ChevronUp.svelte';
 	import ChevronDown from '../icons/ChevronDown.svelte';
 	import Pencil from '../icons/Pencil.svelte';
 	import Cog6 from '../icons/Cog6.svelte';
+	import AdjustmentsHorizontal from '../icons/AdjustmentsHorizontal.svelte';
+	import Modal from '../common/Modal.svelte';
+	import XMark from '../icons/XMark.svelte';
 	import Sidebar from '../common/Sidebar.svelte';
 	import ArrowRight from '../icons/ArrowRight.svelte';
 	import Download from '../icons/Download.svelte';
 	import EllipsisHorizontal from '../icons/EllipsisHorizontal.svelte';
 
-	const i18n = getContext('i18n');
+	const i18n: any = getContext('i18n');
 
 	let loaded = false;
 
@@ -45,6 +51,9 @@
 
 	let showSystem = false;
 	let showSettings = false;
+	let showControls = false;
+
+	let params: Record<string, any> = {};
 
 	let system = '';
 
@@ -90,6 +99,11 @@
 			return;
 		}
 
+		// Build params object, filtering out null/undefined values
+		const activeParams = Object.fromEntries(
+			Object.entries(params).filter(([_, v]) => v !== null && v !== undefined)
+		);
+
 		const [res, controller] = await chatCompletion(
 			localStorage.token,
 			{
@@ -103,7 +117,8 @@
 							}
 						: undefined,
 					...messages
-				].filter((message) => message)
+				].filter((message) => message),
+				...(Object.keys(activeParams).length > 0 ? activeParams : {})
 			},
 			`${WEBUI_BASE_URL}/api`
 		);
@@ -210,7 +225,7 @@
 
 		// Add system message if present
 		if (system) {
-			const systemId = crypto.randomUUID();
+			const systemId = uuidv4();
 			messagesMap[systemId] = {
 				id: systemId,
 				parentId: null,
@@ -224,7 +239,7 @@
 
 		// Add conversation messages
 		for (const msg of messages) {
-			const msgId = crypto.randomUUID();
+			const msgId = uuidv4();
 
 			// Link parent to child
 			if (parentId && messagesMap[parentId]) {
@@ -247,7 +262,7 @@
 
 		const exportData = {
 			chat: {
-				title: 'Playground Chat',
+				title: $i18n.t('Playground Chat'),
 				models: [selectedModelId],
 				params: system ? { system } : {},
 				history: {
@@ -293,20 +308,36 @@
 			await goto('/');
 		}
 
-		if ($settings?.models) {
-			selectedModelId = $settings?.models[0];
-		} else if ($config?.default_models) {
-			selectedModelId = $config?.default_models.split(',')[0];
-		} else {
-			selectedModelId = '';
-		}
+		selectedModelId =
+			resolveDefaultModelIds($models, $settings?.models, $config?.default_models?.split(','))[0] ??
+			'';
 		loaded = true;
 	});
 </script>
 
+<Modal size="sm" bind:show={showControls}>
+	<div class="text-gray-700 dark:text-gray-100">
+		<div class="flex justify-between px-4 pt-3 pb-1">
+			<div class="text-sm font-medium self-center">{$i18n.t('Controls')}</div>
+			<button
+				class="self-center rounded-lg p-1 text-gray-500 transition hover:bg-gray-50 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+				aria-label={$i18n.t('Close')}
+				on:click={() => {
+					showControls = false;
+				}}
+			>
+				<XMark className="size-4" />
+			</button>
+		</div>
+		<div class="px-4.5 pb-5 overflow-y-auto max-h-[70vh]">
+			<AdvancedParams admin={$user?.role === 'admin'} custom={true} bind:params />
+		</div>
+	</div>
+</Modal>
+
 <div class=" flex flex-col justify-between w-full overflow-y-auto h-full">
 	<div class="mx-auto w-full md:px-0 h-full relative">
-		<div class=" flex flex-col h-full px-3.5">
+		<div class=" flex flex-col h-full px-2.5">
 			<div class="flex w-full items-center gap-1.5">
 				<Collapsible
 					className="w-full flex-1"
@@ -315,7 +346,7 @@
 					grow={true}
 				>
 					<div class="flex gap-2 justify-between items-center">
-						<div class=" shrink-0 font-medium ml-1.5">
+						<div class=" shrink-0 font-normal ml-1.5">
 							{$i18n.t('System Instructions')}
 						</div>
 
@@ -354,26 +385,24 @@
 
 				<Dropdown>
 					<button
-						class="p-1.5 text-sm font-medium bg-transparent hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 transition rounded-lg"
+						class="p-1.5 text-sm font-normal bg-transparent hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 transition rounded-lg"
 						aria-label={$i18n.t('More options')}
 					>
-						<EllipsisHorizontal className="size-4" />
+						<EllipsisHorizontal className="size-3.5" />
 					</button>
 
 					<div slot="content">
-						<div
-							class="min-w-[200px] rounded-2xl px-1 py-1 border border-gray-100 dark:border-gray-800 z-50 bg-white dark:bg-gray-850 dark:text-white shadow-lg"
-						>
-							<DropdownSub>
+						<DropdownMenu className="min-w-[12.5rem]">
+							<DropdownSub contentClass="select-none z-50">
 								<button
 									slot="trigger"
-									class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl select-none w-full"
+									class="flex h-[1.6875rem] w-full items-center gap-2 rounded-xl px-2 text-[0.8125rem] cursor-pointer select-none hover:bg-gray-50/40 dark:hover:bg-gray-800/40"
 								>
-									<Download strokeWidth="1.5" />
+									<Download className="size-3.5" strokeWidth="1.5" />
 									<div class="flex items-center">{$i18n.t('Download')}</div>
 								</button>
 								<button
-									class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl select-none w-full"
+									class="flex h-[1.6875rem] w-full items-center gap-2 rounded-xl px-2 text-[0.8125rem] cursor-pointer select-none hover:bg-gray-50/40 dark:hover:bg-gray-800/40"
 									disabled={messages.length === 0}
 									on:click={() => {
 										exportToJson();
@@ -384,7 +413,7 @@
 									</div>
 								</button>
 								<button
-									class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl select-none w-full"
+									class="flex h-[1.6875rem] w-full items-center gap-2 rounded-xl px-2 text-[0.8125rem] cursor-pointer select-none hover:bg-gray-50/40 dark:hover:bg-gray-800/40"
 									disabled={messages.length === 0}
 									on:click={() => {
 										downloadTxt();
@@ -393,7 +422,7 @@
 									<div class="flex items-center line-clamp-1">{$i18n.t('Plain text (.txt)')}</div>
 								</button>
 							</DropdownSub>
-						</div>
+						</DropdownMenu>
 					</div>
 				</Dropdown>
 			</div>
@@ -441,14 +470,14 @@
 						<div class="shrink-0">
 							<button
 								type="button"
-								class="px-3.5 py-1.5 text-sm font-medium bg-gray-50 hover:bg-gray-100 text-gray-900 dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-gray-200 transition rounded-lg shrink-0 {($settings?.highContrastMode ??
+								class="flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-2.5 text-xs font-normal text-gray-800 transition hover:bg-gray-100/70 disabled:opacity-60 dark:bg-gray-850 dark:text-white dark:hover:bg-gray-850/60 {($settings?.highContrastMode ??
 								false)
 									? ''
 									: 'outline-hidden'}"
 								aria-pressed={role === 'assistant'}
-								aria-label={$i18n.t(
-									role === 'user' ? 'Switch to Assistant role' : 'Switch to User role'
-								)}
+								aria-label={role === 'user'
+									? $i18n.t('Switch to Assistant role')
+									: $i18n.t('Switch to User role')}
 								on:click={() => {
 									role = role === 'user' ? 'assistant' : 'user';
 								}}
@@ -475,11 +504,24 @@
 								</select>
 							</div>
 
+							<button
+								class="p-1.5 text-sm font-normal bg-transparent hover:bg-gray-100 dark:hover:bg-gray-800 transition rounded-lg {showControls
+									? 'text-black dark:text-white'
+									: 'text-gray-500 dark:text-gray-400'}"
+								aria-label={$i18n.t('Controls')}
+								id="playground-controls-toggle"
+								on:click={() => {
+									showControls = !showControls;
+								}}
+							>
+								<AdjustmentsHorizontal className="size-3.5" />
+							</button>
+
 							<div class="flex gap-2 shrink-0">
 								{#if !loading}
 									<button
 										disabled={message === ''}
-										class="px-3.5 py-1.5 text-sm font-medium disabled:bg-gray-50 dark:disabled:hover:bg-gray-850 disabled:cursor-not-allowed bg-gray-50 hover:bg-gray-100 text-gray-900 dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-gray-200 transition rounded-lg"
+										class="flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-2.5 text-xs font-normal text-gray-800 transition hover:bg-gray-100/70 disabled:opacity-60 dark:bg-gray-850 dark:text-white dark:hover:bg-gray-850/60 disabled:cursor-not-allowed"
 										on:click={() => {
 											addHandler();
 											role = role === 'user' ? 'assistant' : 'user';
@@ -489,7 +531,7 @@
 									</button>
 
 									<button
-										class="px-3.5 py-1.5 text-sm font-medium bg-black hover:bg-gray-900 text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-lg"
+										class="flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-gray-900 px-2.5 text-xs font-normal text-white transition hover:bg-black disabled:opacity-60 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
 										on:click={() => {
 											submitHandler();
 										}}
@@ -498,7 +540,7 @@
 									</button>
 								{:else}
 									<button
-										class="px-3 py-1.5 text-sm font-medium bg-gray-300 text-black transition rounded-lg"
+										class="flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-lg px-2.5 text-xs font-normal text-gray-600 transition hover:bg-gray-100 hover:text-gray-900 disabled:opacity-60 dark:text-gray-400 dark:hover:bg-gray-850 dark:hover:text-white"
 										on:click={() => {
 											stopResponse();
 										}}

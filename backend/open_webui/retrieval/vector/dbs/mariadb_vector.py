@@ -5,7 +5,6 @@ NOTE: This vector database integration is community-supported and maintained on 
 from __future__ import annotations
 
 import array
-import json
 import logging
 import math
 import re
@@ -13,18 +12,15 @@ import sys
 from contextlib import contextmanager
 from typing import Any, Dict, List, Optional, Tuple
 
-from sqlalchemy import create_engine
-from sqlalchemy.pool import NullPool, QueuePool
-
 from open_webui.config import (
     MARIADB_VECTOR_DB_URL,
     MARIADB_VECTOR_DISTANCE_STRATEGY,
     MARIADB_VECTOR_INDEX_M,
     MARIADB_VECTOR_INITIALIZE_MAX_VECTOR_LENGTH,
-    MARIADB_VECTOR_POOL_SIZE,
     MARIADB_VECTOR_POOL_MAX_OVERFLOW,
-    MARIADB_VECTOR_POOL_TIMEOUT,
     MARIADB_VECTOR_POOL_RECYCLE,
+    MARIADB_VECTOR_POOL_SIZE,
+    MARIADB_VECTOR_POOL_TIMEOUT,
 )
 from open_webui.retrieval.vector.main import (
     GetResult,
@@ -33,6 +29,9 @@ from open_webui.retrieval.vector.main import (
     VectorItem,
 )
 from open_webui.retrieval.vector.utils import process_metadata
+from open_webui.utils.json_codec import JSONCodec
+from sqlalchemy import create_engine
+from sqlalchemy.pool import NullPool, QueuePool
 
 log = logging.getLogger(__name__)
 
@@ -73,7 +72,7 @@ def _safe_json(v: Any) -> Dict[str, Any]:
             return {}
     if isinstance(v, str):
         try:
-            j = json.loads(v)
+            j = JSONCodec.loads(v)
             return j if isinstance(j, dict) else {}
         except Exception:
             return {}
@@ -325,7 +324,7 @@ class MariaDBVectorClient(VectorDBBase):
                                 emb,
                                 collection_name,
                                 item.get('text'),
-                                json.dumps(meta),
+                                JSONCodec.dumps(meta),
                             )
                         )
                     cur.executemany(sql, params)
@@ -368,7 +367,7 @@ class MariaDBVectorClient(VectorDBBase):
                                 emb,
                                 collection_name,
                                 item.get('text'),
-                                json.dumps(meta),
+                                JSONCodec.dumps(meta),
                             )
                         )
                     cur.executemany(sql, params)

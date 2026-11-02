@@ -1,23 +1,25 @@
 import json
 import logging
 import sys
+import traceback
 from typing import TYPE_CHECKING
 
 from loguru import logger
-from opentelemetry import trace
 from open_webui.env import (
-    ENABLE_AUDIT_STDOUT,
-    ENABLE_AUDIT_LOGS_FILE,
-    AUDIT_LOGS_FILE_PATH,
+    _LEVEL_MAP,
     AUDIT_LOG_FILE_ROTATION_SIZE,
     AUDIT_LOG_LEVEL,
-    GLOBAL_LOG_LEVEL,
-    LOG_FORMAT,
+    AUDIT_LOGS_FILE_PATH,
     AUDIT_UVICORN_LOGGER_NAMES,
+    ENABLE_AUDIT_LOGS_FILE,
+    ENABLE_AUDIT_STDOUT,
     ENABLE_OTEL,
     ENABLE_OTEL_LOGS,
-    _LEVEL_MAP,
+    GLOBAL_LOG_LEVEL,
+    LOG_FORMAT,
+    LOGURU_DIAGNOSE,
 )
+from open_webui.utils.json_codec import JSONCodec
 
 if TYPE_CHECKING:
     from loguru import Message, Record
@@ -33,7 +35,7 @@ def stdout_format(record: 'Record') -> str:
     str: A formatted log string intended for stdout.
     """
     if record['extra']:
-        record['extra']['extra_json'] = json.dumps(record['extra'])
+        record['extra']['extra_json'] = JSONCodec.dumps(record['extra'])
         extra_format = ' - {extra[extra_json]}'
     else:
         extra_format = ''
@@ -50,22 +52,42 @@ def _json_sink(message: 'Message') -> None:
 
     Used as a Loguru sink when LOG_FORMAT is set to "json".
     """
-    record = message.record
-    log_entry = {
-        'ts': record['time'].strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z',
-        'level': _LEVEL_MAP.get(record['level'].name, record['level'].name.lower()),
-        'msg': record['message'],
-        'caller': f'{record["name"]}:{record["function"]}:{record["line"]}',
-    }
+    try:
+        record = message.record
+        log_entry = {
+            'ts': record['time'].isoformat(timespec='milliseconds'),
+            'level': _LEVEL_MAP.get(record['level'].name, record['level'].name.lower()),
+            'msg': record['message'],
+            'caller': f'{record["name"]}:{record["function"]}:{record["line"]}',
+        }
 
-    if record['extra']:
-        log_entry['extra'] = record['extra']
+        if record['extra']:
+            log_entry['extra'] = record['extra']
 
-    if record['exception'] is not None:
-        log_entry['error'] = ''.join(record['exception'].format_exception()).rstrip()
+        exc = record['exception']
+        if exc is not None:
+            log_entry['error'] = {
+                'type': exc.type.__name__ if exc.type else None,
+                'message': str(exc.value) if exc.value else None,
+                'stacktrace': ''.join(traceback.format_exception(exc.type, exc.value, exc.traceback)).rstrip(),
+            }
 
-    sys.stdout.write(json.dumps(log_entry, ensure_ascii=False, default=str) + '\n')
-    sys.stdout.flush()
+        sys.stdout.write(json.dumps(log_entry, ensure_ascii=False, default=str) + '\n')
+        sys.stdout.flush()
+    except Exception:
+        # Last-resort fallback: never let a logging failure crash the application.
+        # Emit a minimal valid JSON line so the structured logging pipeline stays intact.
+        try:
+            fallback = {
+                'ts': message.record['time'].isoformat(timespec='milliseconds'),
+                'level': 'error',
+                'msg': f'[logging error] failed to serialize log record: {message}',
+            }
+            sys.stdout.write(json.dumps(fallback, ensure_ascii=False, default=str) + '\n')
+            sys.stdout.flush()
+        except Exception:
+            sys.stderr.write(f'[logging error] _json_sink failed: {message}\n')
+            sys.stderr.flush()
 
 
 class InterceptHandler(logging.Handler):
@@ -90,15 +112,21 @@ class InterceptHandler(logging.Handler):
             frame = frame.f_back
             depth += 1
 
-        logger.opt(depth=depth, exception=record.exc_info).bind(**self._get_extras()).log(level, record.getMessage())
+        message = record.getMessage()
+        logger.opt(depth=depth, exception=record.exc_info).bind(**self._get_extras()).log(level, message)
         if ENABLE_OTEL and ENABLE_OTEL_LOGS:
             from open_webui.utils.telemetry.logs import otel_handler
 
+            # reuse the message we built so %-args format once; a non-str msg is left alone, otel exports it structured
+            if isinstance(record.msg, str):
+                record.msg, record.args = message, None
             otel_handler.emit(record)
 
     def _get_extras(self):
         if not ENABLE_OTEL:
             return {}
+
+        from opentelemetry import trace
 
         extras = {}
         context = trace.get_current_span().get_span_context()
@@ -128,6 +156,7 @@ def file_format(record: 'Record'):
         'response_status_code': record['extra'].get('response_status_code', 0),
         'source_ip': record['extra'].get('source_ip', ''),
         'user_agent': record['extra'].get('user_agent', ''),
+        'model_id': record['extra'].get('model_id', ''),
         'request_object': record['extra'].get('request_object', b''),
         'response_object': record['extra'].get('response_object', b''),
         'extra': record['extra'].get('extra', {}),
@@ -156,6 +185,7 @@ def start_logger():
             _json_sink,
             level=GLOBAL_LOG_LEVEL,
             filter=audit_filter,
+            diagnose=LOGURU_DIAGNOSE,
         )
     else:
         logger.add(
@@ -163,6 +193,7 @@ def start_logger():
             level=GLOBAL_LOG_LEVEL,
             format=stdout_format,
             filter=audit_filter,
+            diagnose=LOGURU_DIAGNOSE,
         )
     if AUDIT_LOG_LEVEL != 'NONE' and ENABLE_AUDIT_LOGS_FILE:
         try:
@@ -173,6 +204,7 @@ def start_logger():
                 compression='zip',
                 format=file_format,
                 filter=lambda record: record['extra'].get('auditable') is True,
+                diagnose=LOGURU_DIAGNOSE,
             )
         except Exception as e:
             logger.error(f'Failed to initialize audit log file handler: {str(e)}')

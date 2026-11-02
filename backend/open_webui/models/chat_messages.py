@@ -1,31 +1,42 @@
-import json
+from contextlib import nullcontext
 import time
 import uuid
+from collections import Counter
+from datetime import datetime, timedelta
 from typing import Any, Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy.orm import Session
-from open_webui.internal.db import Base, get_db_context
-
+from sqlalchemy import select, delete, func, cast, Integer, distinct
+from sqlalchemy.ext.asyncio import AsyncSession
+from open_webui.internal.db import Base, get_async_db_context
+from open_webui.utils.response import merge_usage, normalize_usage
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Boolean,
     Column,
     ForeignKey,
-    Text,
-    JSON,
     Index,
+    Integer,
+    Text,
+    cast,
+    delete,
     func,
+    select,
 )
+from sqlalchemy.ext.asyncio import AsyncSession
 
 ####################
 # Helpers
 ####################
 
 
-def _normalize_timestamp(timestamp: int) -> float:
+def _normalize_timestamp(timestamp: Optional[int]) -> float:
     """Normalize and validate timestamp. Returns current time if invalid."""
     now = time.time()
+    if timestamp is None:
+        return now
 
     # Convert milliseconds to seconds if needed
     if timestamp > 10_000_000_000:
@@ -39,6 +50,76 @@ def _normalize_timestamp(timestamp: int) -> float:
         return now
 
     return timestamp
+
+
+def _timezone(tz: Optional[str]) -> ZoneInfo:
+    try:
+        return ZoneInfo(tz or 'UTC')
+    except ZoneInfoNotFoundError:
+        return ZoneInfo('UTC')
+
+
+def _date_key(timestamp: int, tz: ZoneInfo) -> str:
+    return datetime.fromtimestamp(_normalize_timestamp(timestamp), tz=tz).strftime('%Y-%m-%d')
+
+
+def get_usage(data: dict) -> Optional[dict]:
+    """Extract and normalize usage from message data."""
+    usage = data.get('usage') or (data.get('info') or {}).get('usage')
+    return normalize_usage(usage) if usage else None
+
+
+def _token_columns(dialect: str):
+    """Return (input_tokens, output_tokens) SQL column expressions.
+
+    Falls back to OpenAI-style keys (prompt_tokens / completion_tokens)
+    when the normalized keys are absent.
+    """
+    if dialect == 'sqlite':
+        extract = lambda key: cast(func.json_extract(ChatMessage.usage, f'$.{key}'), Integer)
+    elif dialect == 'postgresql':
+        extract = lambda key: cast(func.json_extract_path_text(ChatMessage.usage, key), Integer)
+    else:
+        raise NotImplementedError(f'Unsupported dialect: {dialect}')
+
+    return (
+        func.coalesce(extract('input_tokens'), extract('prompt_tokens')),
+        func.coalesce(extract('output_tokens'), extract('completion_tokens')),
+    )
+
+
+def _extract_tool_names(value: Any) -> list[str]:
+    names: list[str] = []
+
+    def add(name: Any):
+        if isinstance(name, str):
+            cleaned = name.strip()
+            if cleaned and len(cleaned) <= 128:
+                names.append(cleaned)
+
+    def walk(item: Any):
+        if isinstance(item, list):
+            for child in item:
+                walk(child)
+            return
+
+        if not isinstance(item, dict):
+            return
+
+        item_type = str(item.get('type') or '')
+        looks_like_tool = 'tool' in item_type or item_type in {'function_call', 'function_call_output'}
+        if looks_like_tool:
+            add(item.get('name') or item.get('tool_name'))
+            function = item.get('function')
+            if isinstance(function, dict):
+                add(function.get('name'))
+
+        for key in ('tool_calls', 'tools', 'output', 'meta'):
+            if key in item:
+                walk(item.get(key))
+
+    walk(value)
+    return names
 
 
 ####################
@@ -69,6 +150,7 @@ class ChatMessage(Base):
     files = Column(JSON, nullable=True)
     sources = Column(JSON, nullable=True)
     embeds = Column(JSON, nullable=True)
+    meta = Column(JSON, nullable=True)
 
     # Status
     done = Column(Boolean, default=True)
@@ -78,6 +160,9 @@ class ChatMessage(Base):
     # Usage (tokens, timing, etc.)
     usage = Column(JSON, nullable=True)
 
+    # Context compaction checkpoint
+    context_summary = Column(Text, nullable=True)
+
     # Timestamps
     created_at = Column(BigInteger, index=True)
     updated_at = Column(BigInteger)
@@ -86,6 +171,7 @@ class ChatMessage(Base):
         Index('chat_message_chat_parent_idx', 'chat_id', 'parent_id'),
         Index('chat_message_model_created_idx', 'model_id', 'created_at'),
         Index('chat_message_user_created_idx', 'user_id', 'created_at'),
+        Index('chat_message_chat_role_done_idx', 'chat_id', 'role', 'done'),  # unfinished-assistant probe
     )
 
 
@@ -108,10 +194,12 @@ class ChatMessageModel(BaseModel):
     files: Optional[list] = None
     sources: Optional[list] = None
     embeds: Optional[list] = None
+    meta: Optional[dict] = None
     done: bool = True
     status_history: Optional[list] = None
     error: Optional[dict | str] = None
     usage: Optional[dict] = None
+    context_summary: Optional[str] = None
     created_at: int
     updated_at: int
 
@@ -122,234 +210,399 @@ class ChatMessageModel(BaseModel):
 
 
 class ChatMessageTable:
-    def upsert_message(
+    @staticmethod
+    def _apply_message_data(message: ChatMessage, data: dict, now: int) -> None:
+        """Overwrite only the fields the payload carries."""
+        if 'role' in data:
+            message.role = data['role']
+        if 'parent_id' in data or 'parentId' in data:
+            message.parent_id = data.get('parent_id') or data.get('parentId')
+        if 'content' in data:
+            message.content = data.get('content')
+        if 'output' in data:
+            message.output = data.get('output')
+        if 'model_id' in data or 'model' in data:
+            message.model_id = data.get('model_id') or data.get('model')
+        if 'files' in data:
+            message.files = data.get('files')
+        if 'sources' in data:
+            message.sources = data.get('sources')
+        if 'embeds' in data:
+            message.embeds = data.get('embeds')
+        if 'meta' in data:
+            message.meta = data.get('meta')
+        if 'done' in data:
+            message.done = data['done']
+        if 'status_history' in data or 'statusHistory' in data:
+            message.status_history = data.get('status_history') or data.get('statusHistory')
+        if 'error' in data:
+            message.error = data.get('error')
+        if 'context_summary' in data or 'contextSummary' in data:
+            message.context_summary = data.get('context_summary') or data.get('contextSummary')
+
+        usage = get_usage(data)
+        if usage:
+            existing_usage = normalize_usage(message.usage)
+            message.usage = existing_usage if usage == existing_usage else merge_usage(existing_usage, usage)
+        message.updated_at = now
+
+    @staticmethod
+    def _build_message(composite_id: str, chat_id: str, user_id: str, data: dict, now: int) -> ChatMessage:
+        return ChatMessage(
+            id=composite_id,
+            chat_id=chat_id,
+            user_id=user_id,
+            role=data.get('role', 'user'),
+            parent_id=data.get('parent_id') or data.get('parentId'),
+            content=data.get('content'),
+            output=data.get('output'),
+            model_id=data.get('model_id') or data.get('model'),
+            files=data.get('files'),
+            sources=data.get('sources'),
+            embeds=data.get('embeds'),
+            meta=data.get('meta'),
+            done=data.get('done', True),
+            status_history=data.get('status_history') or data.get('statusHistory'),
+            error=data.get('error'),
+            usage=get_usage(data),
+            context_summary=data.get('context_summary') or data.get('contextSummary'),
+            created_at=data.get('timestamp') or now,
+            updated_at=now,
+        )
+
+    async def upsert_message(
         self,
         message_id: str,
         chat_id: str,
         user_id: str,
         data: dict,
-        db: Optional[Session] = None,
+        db: Optional[AsyncSession] = None,
     ) -> Optional[ChatMessageModel]:
         """Insert or update a chat message."""
-        with get_db_context(db) as db:
+        async with nullcontext(db) if db is not None else get_async_db_context() as session:
             now = int(time.time())
-            timestamp = data.get('timestamp', now)
-
             # Use composite ID: {chat_id}-{message_id}
             composite_id = f'{chat_id}-{message_id}'
 
-            existing = db.get(ChatMessage, composite_id)
-            if existing:
-                # Update existing
-                if 'role' in data:
-                    existing.role = data['role']
-                if 'parent_id' in data:
-                    existing.parent_id = data.get('parent_id') or data.get('parentId')
-                if 'content' in data:
-                    existing.content = data.get('content')
-                if 'output' in data:
-                    existing.output = data.get('output')
-                if 'model_id' in data or 'model' in data:
-                    existing.model_id = data.get('model_id') or data.get('model')
-                if 'files' in data:
-                    existing.files = data.get('files')
-                if 'sources' in data:
-                    existing.sources = data.get('sources')
-                if 'embeds' in data:
-                    existing.embeds = data.get('embeds')
-                if 'done' in data:
-                    existing.done = data.get('done', True)
-                if 'status_history' in data or 'statusHistory' in data:
-                    existing.status_history = data.get('status_history') or data.get('statusHistory')
-                if 'error' in data:
-                    existing.error = data.get('error')
-                # Extract usage - check direct field first, then info.usage
-                usage = data.get('usage')
-                if not usage:
-                    info = data.get('info', {})
-                    usage = info.get('usage') if info else None
-                if usage:
-                    existing.usage = usage
-                existing.updated_at = now
-                db.commit()
-                db.refresh(existing)
-                return ChatMessageModel.model_validate(existing)
+            message = await session.get(ChatMessage, composite_id)
+            if message:
+                self._apply_message_data(message, data, now)
             else:
-                # Insert new
-                # Extract usage - check direct field first, then info.usage
-                usage = data.get('usage')
-                if not usage:
-                    info = data.get('info', {})
-                    usage = info.get('usage') if info else None
-                message = ChatMessage(
-                    id=composite_id,
-                    chat_id=chat_id,
-                    user_id=user_id,
-                    role=data.get('role', 'user'),
-                    parent_id=data.get('parent_id') or data.get('parentId'),
-                    content=data.get('content'),
-                    output=data.get('output'),
-                    model_id=data.get('model_id') or data.get('model'),
-                    files=data.get('files'),
-                    sources=data.get('sources'),
-                    embeds=data.get('embeds'),
-                    done=data.get('done', True),
-                    status_history=data.get('status_history') or data.get('statusHistory'),
-                    error=data.get('error'),
-                    usage=usage,
-                    created_at=timestamp,
-                    updated_at=now,
-                )
-                db.add(message)
-                db.commit()
-                db.refresh(message)
-                return ChatMessageModel.model_validate(message)
+                message = self._build_message(composite_id, chat_id, user_id, data, now)
+                session.add(message)
 
-    def get_message_by_id(self, id: str, db: Optional[Session] = None) -> Optional[ChatMessageModel]:
-        with get_db_context(db) as db:
-            message = db.get(ChatMessage, id)
+            if db is None:
+                await session.commit()
+            else:
+                await session.flush()
+            return ChatMessageModel.model_validate(message)
+
+    async def upsert_messages(
+        self, chat_id: str, user_id: str, messages: dict[str, dict], db: AsyncSession | None = None
+    ) -> None:
+        """Backfill missing rows without overwriting newer message data."""
+        from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+        if not messages:
+            return
+        async with get_async_db_context(db) as db:
+            insert = sqlite_insert if db.bind.dialect.name == 'sqlite' else pg_insert
+            rows = [
+                self._build_message(f'{chat_id}-{mid}', chat_id, data.get('user_id') or user_id, data, int(time.time()))
+                for mid, data in messages.items()
+            ]
+            await db.execute(
+                insert(ChatMessage).on_conflict_do_nothing(index_elements=['id']),
+                [{column.name: getattr(row, column.name) for column in ChatMessage.__table__.columns} for row in rows],
+            )
+            await db.commit()
+
+    async def get_message_by_id(self, id: str, db: Optional[AsyncSession] = None) -> Optional[ChatMessageModel]:
+        async with get_async_db_context(db) as db:
+            message = await db.get(ChatMessage, id)
             return ChatMessageModel.model_validate(message) if message else None
 
-    def get_messages_by_chat_id(self, chat_id: str, db: Optional[Session] = None) -> list[ChatMessageModel]:
-        with get_db_context(db) as db:
-            messages = db.query(ChatMessage).filter_by(chat_id=chat_id).order_by(ChatMessage.created_at.asc()).all()
+    async def has_unfinished_assistant_by_chat_id(
+        self,
+        chat_id: str,
+        db: Optional[AsyncSession] = None,
+    ) -> bool:
+        async with get_async_db_context(db) as db:
+            result = await db.execute(
+                select(ChatMessage.id)
+                .where(ChatMessage.chat_id == chat_id)
+                .where(ChatMessage.role == 'assistant')
+                .where(ChatMessage.done.is_(False))
+                .limit(1)
+            )
+            return result.scalar_one_or_none() is not None
+
+    async def get_messages_by_chat_id(self, chat_id: str, db: Optional[AsyncSession] = None) -> list[ChatMessageModel]:
+        async with get_async_db_context(db) as db:
+            result = await db.execute(
+                select(ChatMessage).filter_by(chat_id=chat_id).order_by(ChatMessage.created_at.asc())
+            )
+            messages = result.scalars().all()
             return [ChatMessageModel.model_validate(message) for message in messages]
 
-    def get_messages_by_user_id(
+    # DB column names that differ from the JSON message keys.
+    DB_TO_JSON_KEY_MAP = {
+        'parent_id': 'parentId',
+        'model_id': 'model',
+        'status_history': 'statusHistory',
+        'context_summary': 'contextSummary',
+        'created_at': 'timestamp',
+    }
+    # DB-internal columns excluded from the reconstructed message dict.
+    EXCLUDED_COLUMNS = frozenset({'id', 'chat_id', 'updated_at'})
+
+    async def get_messages_map_by_chat_id(self, chat_id: str, db: Optional[AsyncSession] = None) -> Optional[dict]:
+        """Build a {message_id: message_dict} map from chat_message rows.
+
+        Returns the same shape as chat.history.messages so callers
+        (get_message_list, middleware) work unchanged.  Returns None if
+        no rows exist for the chat (caller should fall back to the
+        embedded JSON blob for legacy chats).
+        """
+        async with get_async_db_context(db) as db:
+            result = await db.execute(select(ChatMessage).filter_by(chat_id=chat_id))
+            rows = result.scalars().all()
+
+        if not rows:
+            return None
+
+        # Strip the composite-id prefix ("{chat_id}-") to recover the
+        # original message_id used as map key.
+        prefix = f'{chat_id}-'
+        prefix_len = len(prefix)
+        col_keys = [c.key for c in ChatMessage.__table__.columns]
+
+        messages_map: dict[str, dict] = {}
+        for row in rows:
+            msg_id = row.id[prefix_len:] if row.id.startswith(prefix) else row.id
+
+            msg: dict = {'id': msg_id}
+            for key in col_keys:
+                if key in self.EXCLUDED_COLUMNS:
+                    continue
+                val = getattr(row, key)
+                if val is None:
+                    continue
+                json_key = self.DB_TO_JSON_KEY_MAP.get(key, key)
+                msg[json_key] = val
+
+            # Ensure content always has a value
+            msg.setdefault('content', '')
+
+            # Mirror usage into info.usage for callers that read it there
+            if 'usage' in msg:
+                msg['info'] = {'usage': msg['usage']}
+
+            messages_map[msg_id] = msg
+
+        # Reconstruct childrenIds from parentId links so that the map
+        # is fully navigable (callers like the frontend rely on this).
+        for msg_id, msg in messages_map.items():
+            parent_id = msg.get('parentId')
+            if parent_id and parent_id in messages_map:
+                parent = messages_map[parent_id]
+                children = parent.get('childrenIds')
+                if children is None:
+                    parent['childrenIds'] = [msg_id]
+                elif msg_id not in children:
+                    children.append(msg_id)
+
+        # Ensure every message has a childrenIds list (leaf nodes get [])
+        for msg in messages_map.values():
+            if 'childrenIds' not in msg:
+                msg['childrenIds'] = []
+
+        return messages_map
+
+    async def get_messages_by_user_id(
         self,
         user_id: str,
         skip: int = 0,
         limit: int = 50,
-        db: Optional[Session] = None,
+        db: Optional[AsyncSession] = None,
     ) -> list[ChatMessageModel]:
-        with get_db_context(db) as db:
-            messages = (
-                db.query(ChatMessage)
+        async with get_async_db_context(db) as db:
+            result = await db.execute(
+                select(ChatMessage)
                 .filter_by(user_id=user_id)
                 .order_by(ChatMessage.created_at.desc())
                 .offset(skip)
                 .limit(limit)
-                .all()
             )
+            messages = result.scalars().all()
             return [ChatMessageModel.model_validate(message) for message in messages]
 
-    def get_messages_by_model_id(
+    async def get_messages_by_model_id(
         self,
         model_id: str,
         start_date: Optional[int] = None,
         end_date: Optional[int] = None,
         skip: int = 0,
         limit: int = 100,
-        db: Optional[Session] = None,
+        db: Optional[AsyncSession] = None,
     ) -> list[ChatMessageModel]:
-        with get_db_context(db) as db:
-            query = db.query(ChatMessage).filter_by(model_id=model_id)
+        async with get_async_db_context(db) as db:
+            stmt = select(ChatMessage).filter_by(model_id=model_id)
             if start_date:
-                query = query.filter(ChatMessage.created_at >= start_date)
+                stmt = stmt.filter(ChatMessage.created_at >= start_date)
             if end_date:
-                query = query.filter(ChatMessage.created_at <= end_date)
-            messages = query.order_by(ChatMessage.created_at.desc()).offset(skip).limit(limit).all()
+                stmt = stmt.filter(ChatMessage.created_at <= end_date)
+            stmt = stmt.order_by(ChatMessage.created_at.desc()).offset(skip).limit(limit)
+            result = await db.execute(stmt)
+            messages = result.scalars().all()
             return [ChatMessageModel.model_validate(message) for message in messages]
 
-    def get_chat_ids_by_model_id(
+    async def get_chat_ids_by_model_id(
         self,
         model_id: str,
         start_date: Optional[int] = None,
         end_date: Optional[int] = None,
         skip: int = 0,
         limit: int = 50,
-        db: Optional[Session] = None,
+        db: Optional[AsyncSession] = None,
     ) -> list[str]:
         """Get distinct chat_ids that used a specific model."""
 
-        with get_db_context(db) as db:
-            query = db.query(
+        async with get_async_db_context(db) as db:
+            stmt = select(
                 ChatMessage.chat_id,
                 func.max(ChatMessage.created_at).label('last_message_at'),
             ).filter(ChatMessage.model_id == model_id)
             if start_date:
-                query = query.filter(ChatMessage.created_at >= start_date)
+                stmt = stmt.filter(ChatMessage.created_at >= start_date)
             if end_date:
-                query = query.filter(ChatMessage.created_at <= end_date)
+                stmt = stmt.filter(ChatMessage.created_at <= end_date)
 
             # Group by chat_id and order by most recent message in each chat
             # Secondary sort on chat_id ensures deterministic pagination
-            # (prevents duplicates across pages when timestamps tie)
-            chat_ids = (
-                query.group_by(ChatMessage.chat_id)
+            stmt = (
+                stmt.group_by(ChatMessage.chat_id)
                 .order_by(func.max(ChatMessage.created_at).desc(), ChatMessage.chat_id)
                 .offset(skip)
                 .limit(limit)
-                .all()
             )
+            result = await db.execute(stmt)
+            chat_ids = result.all()
             return [chat_id for chat_id, _ in chat_ids]
 
-    def delete_messages_by_chat_id(self, chat_id: str, db: Optional[Session] = None) -> bool:
-        with get_db_context(db) as db:
-            db.query(ChatMessage).filter_by(chat_id=chat_id).delete()
-            db.commit()
+    async def delete_messages_by_chat_id(self, chat_id: str, db: Optional[AsyncSession] = None) -> bool:
+        async with get_async_db_context(db) as db:
+            await db.execute(delete(ChatMessage).filter_by(chat_id=chat_id))
+            await db.commit()
+            return True
+
+    async def delete_message_ids_by_chat_id(
+        self,
+        chat_id: str,
+        message_ids: set[str],
+        db: Optional[AsyncSession] = None,
+    ) -> bool:
+        """Delete specific ``chat_message`` rows by their original message IDs."""
+        if not message_ids:
+            return True
+        async with nullcontext(db) if db is not None else get_async_db_context() as session:
+            await session.execute(
+                delete(ChatMessage)
+                .where(ChatMessage.chat_id == chat_id)
+                .where(ChatMessage.id.in_({f'{chat_id}-{mid}' for mid in message_ids}))
+            )
+            if db is None:
+                await session.commit()
+            else:
+                await session.flush()
             return True
 
     # Analytics methods
-    def get_message_count_by_model(
+    async def get_message_count_by_model(
         self,
         start_date: Optional[int] = None,
         end_date: Optional[int] = None,
         group_id: Optional[str] = None,
-        db: Optional[Session] = None,
+        db: Optional[AsyncSession] = None,
     ) -> dict[str, int]:
-        with get_db_context(db) as db:
-            from sqlalchemy import func
-            from open_webui.models.groups import GroupMember
+        async with get_async_db_context(db) as db:
+            from open_webui.models.groups import group_user_memberships
 
-            query = db.query(ChatMessage.model_id, func.count(ChatMessage.id).label('count')).filter(
+            stmt = select(ChatMessage.model_id, func.count(ChatMessage.id).label('count')).filter(
                 ChatMessage.role == 'assistant',
                 ChatMessage.model_id.isnot(None),
-                ~ChatMessage.user_id.like('shared-%'),
             )
 
             if start_date:
-                query = query.filter(ChatMessage.created_at >= start_date)
+                stmt = stmt.filter(ChatMessage.created_at >= start_date)
             if end_date:
-                query = query.filter(ChatMessage.created_at <= end_date)
+                stmt = stmt.filter(ChatMessage.created_at <= end_date)
             if group_id:
-                group_users = db.query(GroupMember.user_id).filter(GroupMember.group_id == group_id).subquery()
-                query = query.filter(ChatMessage.user_id.in_(group_users))
+                group_users = select(group_user_memberships([group_id], True).c.user_id).scalar_subquery()
+                stmt = stmt.filter(ChatMessage.user_id.in_(group_users))
 
-            results = query.group_by(ChatMessage.model_id).all()
-            return {row.model_id: row.count for row in results}
+            stmt = stmt.group_by(ChatMessage.model_id)
+            result = await db.execute(stmt)
+            return {row.model_id: row.count for row in result.all()}
 
-    def get_token_usage_by_model(
+    async def get_unique_counts_by_model(
         self,
         start_date: Optional[int] = None,
         end_date: Optional[int] = None,
         group_id: Optional[str] = None,
-        db: Optional[Session] = None,
+        db: Optional[AsyncSession] = None,
+    ) -> dict[str, dict]:
+        """Count distinct users and chats per model."""
+        async with get_async_db_context(db) as db:
+            from open_webui.models.groups import group_user_memberships
+
+            stmt = select(
+                ChatMessage.model_id,
+                func.count(distinct(ChatMessage.user_id)).label('unique_users'),
+                func.count(distinct(ChatMessage.chat_id)).label('unique_chats'),
+            ).filter(
+                ChatMessage.role == 'assistant',
+                ChatMessage.model_id.isnot(None),
+            )
+
+            if start_date:
+                stmt = stmt.filter(ChatMessage.created_at >= start_date)
+            if end_date:
+                stmt = stmt.filter(ChatMessage.created_at <= end_date)
+            if group_id:
+                group_users = select(group_user_memberships([group_id], True).c.user_id).scalar_subquery()
+                stmt = stmt.filter(ChatMessage.user_id.in_(group_users))
+
+            stmt = stmt.group_by(ChatMessage.model_id)
+            result = await db.execute(stmt)
+            return {
+                row.model_id: {
+                    'unique_users': row.unique_users,
+                    'unique_chats': row.unique_chats,
+                }
+                for row in result.all()
+            }
+
+    async def get_token_usage_by_model(
+        self,
+        start_date: Optional[int] = None,
+        end_date: Optional[int] = None,
+        group_id: Optional[str] = None,
+        db: Optional[AsyncSession] = None,
     ) -> dict[str, dict]:
         """Aggregate token usage by model using database-level aggregation."""
-        with get_db_context(db) as db:
-            from sqlalchemy import func, cast, Integer
-            from open_webui.models.groups import GroupMember
+        async with get_async_db_context(db) as db:
+            from open_webui.models.groups import group_user_memberships
 
-            dialect = db.bind.dialect.name
+            # We need the dialect to determine JSON extraction syntax
+            # For async sessions, access via get_bind()
+            bind = await db.connection()
+            dialect = bind.dialect.name
 
-            if dialect == 'sqlite':
-                input_tokens = cast(func.json_extract(ChatMessage.usage, '$.input_tokens'), Integer)
-                output_tokens = cast(func.json_extract(ChatMessage.usage, '$.output_tokens'), Integer)
-            elif dialect == 'postgresql':
-                # Use json_extract_path_text for PostgreSQL JSON columns
-                input_tokens = cast(
-                    func.json_extract_path_text(ChatMessage.usage, 'input_tokens'),
-                    Integer,
-                )
-                output_tokens = cast(
-                    func.json_extract_path_text(ChatMessage.usage, 'output_tokens'),
-                    Integer,
-                )
-            else:
-                raise NotImplementedError(f'Unsupported dialect: {dialect}')
+            input_tokens, output_tokens = _token_columns(dialect)
 
-            query = db.query(
+            stmt = select(
                 ChatMessage.model_id,
                 func.coalesce(func.sum(input_tokens), 0).label('input_tokens'),
                 func.coalesce(func.sum(output_tokens), 0).label('output_tokens'),
@@ -358,18 +611,18 @@ class ChatMessageTable:
                 ChatMessage.role == 'assistant',
                 ChatMessage.model_id.isnot(None),
                 ChatMessage.usage.isnot(None),
-                ~ChatMessage.user_id.like('shared-%'),
             )
 
             if start_date:
-                query = query.filter(ChatMessage.created_at >= start_date)
+                stmt = stmt.filter(ChatMessage.created_at >= start_date)
             if end_date:
-                query = query.filter(ChatMessage.created_at <= end_date)
+                stmt = stmt.filter(ChatMessage.created_at <= end_date)
             if group_id:
-                group_users = db.query(GroupMember.user_id).filter(GroupMember.group_id == group_id).subquery()
-                query = query.filter(ChatMessage.user_id.in_(group_users))
+                group_users = select(group_user_memberships([group_id], True).c.user_id).scalar_subquery()
+                stmt = stmt.filter(ChatMessage.user_id.in_(group_users))
 
-            results = query.group_by(ChatMessage.model_id).all()
+            stmt = stmt.group_by(ChatMessage.model_id)
+            result = await db.execute(stmt)
 
             return {
                 row.model_id: {
@@ -378,40 +631,26 @@ class ChatMessageTable:
                     'total_tokens': row.input_tokens + row.output_tokens,
                     'message_count': row.message_count,
                 }
-                for row in results
+                for row in result.all()
             }
 
-    def get_token_usage_by_user(
+    async def get_token_usage_by_user(
         self,
         start_date: Optional[int] = None,
         end_date: Optional[int] = None,
         group_id: Optional[str] = None,
-        db: Optional[Session] = None,
+        db: Optional[AsyncSession] = None,
     ) -> dict[str, dict]:
         """Aggregate token usage by user using database-level aggregation."""
-        with get_db_context(db) as db:
-            from sqlalchemy import func, cast, Integer
-            from open_webui.models.groups import GroupMember
+        async with get_async_db_context(db) as db:
+            from open_webui.models.groups import group_user_memberships
 
-            dialect = db.bind.dialect.name
+            bind = await db.connection()
+            dialect = bind.dialect.name
 
-            if dialect == 'sqlite':
-                input_tokens = cast(func.json_extract(ChatMessage.usage, '$.input_tokens'), Integer)
-                output_tokens = cast(func.json_extract(ChatMessage.usage, '$.output_tokens'), Integer)
-            elif dialect == 'postgresql':
-                # Use json_extract_path_text for PostgreSQL JSON columns
-                input_tokens = cast(
-                    func.json_extract_path_text(ChatMessage.usage, 'input_tokens'),
-                    Integer,
-                )
-                output_tokens = cast(
-                    func.json_extract_path_text(ChatMessage.usage, 'output_tokens'),
-                    Integer,
-                )
-            else:
-                raise NotImplementedError(f'Unsupported dialect: {dialect}')
+            input_tokens, output_tokens = _token_columns(dialect)
 
-            query = db.query(
+            stmt = select(
                 ChatMessage.user_id,
                 func.coalesce(func.sum(input_tokens), 0).label('input_tokens'),
                 func.coalesce(func.sum(output_tokens), 0).label('output_tokens'),
@@ -420,18 +659,18 @@ class ChatMessageTable:
                 ChatMessage.role == 'assistant',
                 ChatMessage.user_id.isnot(None),
                 ChatMessage.usage.isnot(None),
-                ~ChatMessage.user_id.like('shared-%'),
             )
 
             if start_date:
-                query = query.filter(ChatMessage.created_at >= start_date)
+                stmt = stmt.filter(ChatMessage.created_at >= start_date)
             if end_date:
-                query = query.filter(ChatMessage.created_at <= end_date)
+                stmt = stmt.filter(ChatMessage.created_at <= end_date)
             if group_id:
-                group_users = db.query(GroupMember.user_id).filter(GroupMember.group_id == group_id).subquery()
-                query = query.filter(ChatMessage.user_id.in_(group_users))
+                group_users = select(group_user_memberships([group_id], True).c.user_id).scalar_subquery()
+                stmt = stmt.filter(ChatMessage.user_id.in_(group_users))
 
-            results = query.group_by(ChatMessage.user_id).all()
+            stmt = stmt.group_by(ChatMessage.user_id)
+            result = await db.execute(stmt)
 
             return {
                 row.user_id: {
@@ -440,88 +679,316 @@ class ChatMessageTable:
                     'total_tokens': row.input_tokens + row.output_tokens,
                     'message_count': row.message_count,
                 }
-                for row in results
+                for row in result.all()
             }
 
-    def get_message_count_by_user(
+    async def get_user_usage_summary(
         self,
+        user_id: str,
         start_date: Optional[int] = None,
         end_date: Optional[int] = None,
-        group_id: Optional[str] = None,
-        db: Optional[Session] = None,
-    ) -> dict[str, int]:
-        with get_db_context(db) as db:
-            from sqlalchemy import func
-            from open_webui.models.groups import GroupMember
+        include_active_days: bool = True,
+        timezone: Optional[str] = None,
+        db: Optional[AsyncSession] = None,
+    ) -> dict:
+        async with get_async_db_context(db) as db:
+            bind = await db.connection()
+            dialect = bind.dialect.name
+            input_tokens, output_tokens = _token_columns(dialect)
 
-            query = db.query(ChatMessage.user_id, func.count(ChatMessage.id).label('count')).filter(
-                ~ChatMessage.user_id.like('shared-%')
+            messages_stmt = select(ChatMessage.role, func.count(ChatMessage.id).label('count')).filter(
+                ChatMessage.user_id == user_id,
             )
-
-            if start_date:
-                query = query.filter(ChatMessage.created_at >= start_date)
-            if end_date:
-                query = query.filter(ChatMessage.created_at <= end_date)
-            if group_id:
-                group_users = db.query(GroupMember.user_id).filter(GroupMember.group_id == group_id).subquery()
-                query = query.filter(ChatMessage.user_id.in_(group_users))
-
-            results = query.group_by(ChatMessage.user_id).all()
-            return {row.user_id: row.count for row in results}
-
-    def get_message_count_by_chat(
-        self,
-        start_date: Optional[int] = None,
-        end_date: Optional[int] = None,
-        group_id: Optional[str] = None,
-        db: Optional[Session] = None,
-    ) -> dict[str, int]:
-        with get_db_context(db) as db:
-            from sqlalchemy import func
-            from open_webui.models.groups import GroupMember
-
-            query = db.query(ChatMessage.chat_id, func.count(ChatMessage.id).label('count')).filter(
-                ~ChatMessage.user_id.like('shared-%')
+            token_stmt = select(
+                func.coalesce(func.sum(input_tokens), 0).label('input_tokens'),
+                func.coalesce(func.sum(output_tokens), 0).label('output_tokens'),
+            ).filter(
+                ChatMessage.user_id == user_id,
+                ChatMessage.role == 'assistant',
+                ChatMessage.usage.isnot(None),
             )
-
-            if start_date:
-                query = query.filter(ChatMessage.created_at >= start_date)
-            if end_date:
-                query = query.filter(ChatMessage.created_at <= end_date)
-            if group_id:
-                group_users = db.query(GroupMember.user_id).filter(GroupMember.group_id == group_id).subquery()
-                query = query.filter(ChatMessage.user_id.in_(group_users))
-
-            results = query.group_by(ChatMessage.chat_id).all()
-            return {row.chat_id: row.count for row in results}
-
-    def get_daily_message_counts_by_model(
-        self,
-        start_date: Optional[int] = None,
-        end_date: Optional[int] = None,
-        group_id: Optional[str] = None,
-        db: Optional[Session] = None,
-    ) -> dict[str, dict[str, int]]:
-        """Get message counts grouped by day and model."""
-        with get_db_context(db) as db:
-            from datetime import datetime, timedelta
-            from open_webui.models.groups import GroupMember
-
-            query = db.query(ChatMessage.created_at, ChatMessage.model_id).filter(
+            models_stmt = select(func.count(distinct(ChatMessage.model_id)).label('models_used')).filter(
+                ChatMessage.user_id == user_id,
                 ChatMessage.role == 'assistant',
                 ChatMessage.model_id.isnot(None),
-                ~ChatMessage.user_id.like('shared-%'),
+            )
+            if start_date:
+                messages_stmt = messages_stmt.filter(ChatMessage.created_at >= start_date)
+                token_stmt = token_stmt.filter(ChatMessage.created_at >= start_date)
+                models_stmt = models_stmt.filter(ChatMessage.created_at >= start_date)
+            if end_date:
+                messages_stmt = messages_stmt.filter(ChatMessage.created_at <= end_date)
+                token_stmt = token_stmt.filter(ChatMessage.created_at <= end_date)
+                models_stmt = models_stmt.filter(ChatMessage.created_at <= end_date)
+
+            messages_result = await db.execute(messages_stmt.group_by(ChatMessage.role))
+            message_counts = {row.role: row.count for row in messages_result.all()}
+
+            token_result = (await db.execute(token_stmt)).one()
+            models_used = (await db.execute(models_stmt)).scalar() or 0
+
+            active_days = set()
+            if include_active_days:
+                tz = _timezone(timezone)
+                day_stmt = select(ChatMessage.created_at).filter(ChatMessage.user_id == user_id)
+                if start_date:
+                    day_stmt = day_stmt.filter(ChatMessage.created_at >= start_date)
+                if end_date:
+                    day_stmt = day_stmt.filter(ChatMessage.created_at <= end_date)
+                day_result = await db.execute(day_stmt)
+                active_days = {_date_key(row.created_at, tz) for row in day_result.all()}
+
+            input_total = int(token_result.input_tokens or 0)
+            output_total = int(token_result.output_tokens or 0)
+
+            return {
+                'messages': sum(message_counts.values()),
+                'user_messages': message_counts.get('user', 0),
+                'assistant_messages': message_counts.get('assistant', 0),
+                'input_tokens': input_total,
+                'output_tokens': output_total,
+                'total_tokens': input_total + output_total,
+                'models_used': int(models_used),
+                'active_days': len(active_days),
+            }
+
+    async def get_user_first_message_created_at(
+        self,
+        user_id: str,
+        db: Optional[AsyncSession] = None,
+    ) -> Optional[int]:
+        async with get_async_db_context(db) as db:
+            result = await db.execute(
+                select(func.min(ChatMessage.created_at)).filter(
+                    ChatMessage.user_id == user_id,
+                    ChatMessage.created_at.isnot(None),
+                )
+            )
+            value = result.scalar()
+            return int(value) if value else None
+
+    async def get_user_daily_usage(
+        self,
+        user_id: str,
+        start_date: int,
+        end_date: int,
+        timezone: Optional[str] = None,
+        db: Optional[AsyncSession] = None,
+    ) -> list[dict]:
+        async with get_async_db_context(db) as db:
+            tz = _timezone(timezone)
+            bind = await db.connection()
+            dialect = bind.dialect.name
+            input_tokens, output_tokens = _token_columns(dialect)
+
+            stmt = select(
+                ChatMessage.created_at,
+                ChatMessage.chat_id,
+                ChatMessage.role,
+                ChatMessage.model_id,
+                ChatMessage.usage,
+                input_tokens.label('input_tokens'),
+                output_tokens.label('output_tokens'),
+            ).filter(
+                ChatMessage.user_id == user_id,
+                ChatMessage.created_at >= start_date,
+                ChatMessage.created_at <= end_date,
+            )
+
+            result = await db.execute(stmt)
+            daily: dict[str, dict] = {}
+            for row in result.all():
+                date = _date_key(row.created_at, tz)
+                entry = daily.setdefault(
+                    date,
+                    {
+                        'date': date,
+                        'messages': 0,
+                        'chat_ids': set(),
+                        'tokens': 0,
+                        'models': Counter(),
+                    },
+                )
+                entry['messages'] += 1
+                entry['chat_ids'].add(row.chat_id)
+                if row.role == 'assistant' and row.model_id:
+                    entry['models'][row.model_id] += 1
+                if row.usage:
+                    entry['tokens'] += int(row.input_tokens or 0) + int(row.output_tokens or 0)
+
+            current = datetime.fromtimestamp(_normalize_timestamp(start_date), tz=tz).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            end_dt = datetime.fromtimestamp(_normalize_timestamp(end_date), tz=tz).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            while current <= end_dt:
+                date = current.strftime('%Y-%m-%d')
+                daily.setdefault(
+                    date,
+                    {'date': date, 'messages': 0, 'chat_ids': set(), 'tokens': 0, 'models': Counter()},
+                )
+                current += timedelta(days=1)
+
+            return [
+                {
+                    'date': item['date'],
+                    'messages': item['messages'],
+                    'chats': len(item['chat_ids']),
+                    'tokens': item['tokens'],
+                    'models': dict(item['models']),
+                }
+                for item in sorted(daily.values(), key=lambda x: x['date'])
+            ]
+
+    async def get_user_top_models(
+        self,
+        user_id: str,
+        start_date: int,
+        end_date: int,
+        limit: int = 5,
+        db: Optional[AsyncSession] = None,
+    ) -> list[dict]:
+        async with get_async_db_context(db) as db:
+            bind = await db.connection()
+            dialect = bind.dialect.name
+            input_tokens, output_tokens = _token_columns(dialect)
+
+            stmt = (
+                select(
+                    ChatMessage.model_id,
+                    func.count(ChatMessage.id).label('messages'),
+                    func.coalesce(func.sum(input_tokens), 0).label('input_tokens'),
+                    func.coalesce(func.sum(output_tokens), 0).label('output_tokens'),
+                )
+                .filter(
+                    ChatMessage.user_id == user_id,
+                    ChatMessage.role == 'assistant',
+                    ChatMessage.model_id.isnot(None),
+                    ChatMessage.created_at >= start_date,
+                    ChatMessage.created_at <= end_date,
+                )
+                .group_by(ChatMessage.model_id)
+                .order_by(func.count(ChatMessage.id).desc())
+                .limit(limit)
+            )
+            result = await db.execute(stmt)
+            return [
+                {
+                    'model_id': row.model_id,
+                    'messages': row.messages,
+                    'input_tokens': int(row.input_tokens or 0),
+                    'output_tokens': int(row.output_tokens or 0),
+                    'total_tokens': int(row.input_tokens or 0) + int(row.output_tokens or 0),
+                }
+                for row in result.all()
+            ]
+
+    async def get_user_top_tools(
+        self,
+        user_id: str,
+        start_date: int,
+        end_date: int,
+        limit: int = 5,
+        db: Optional[AsyncSession] = None,
+    ) -> list[dict]:
+        async with get_async_db_context(db) as db:
+            stmt = select(ChatMessage.output, ChatMessage.meta).filter(
+                ChatMessage.user_id == user_id,
+                ChatMessage.created_at >= start_date,
+                ChatMessage.created_at <= end_date,
+            )
+            result = await db.execute(stmt)
+
+            counts: Counter[str] = Counter()
+            for output, meta in result.all():
+                for name in _extract_tool_names(output):
+                    counts[name] += 1
+                for name in _extract_tool_names(meta):
+                    counts[name] += 1
+
+            return [{'name': name, 'count': count} for name, count in counts.most_common(limit)]
+
+    async def get_message_count_by_user(
+        self,
+        start_date: Optional[int] = None,
+        end_date: Optional[int] = None,
+        group_id: Optional[str] = None,
+        db: Optional[AsyncSession] = None,
+    ) -> dict[str, int]:
+        async with get_async_db_context(db) as db:
+            from open_webui.models.groups import group_user_memberships
+
+            stmt = select(ChatMessage.user_id, func.count(ChatMessage.id).label('count')).filter(
+                ChatMessage.role == 'assistant',
             )
 
             if start_date:
-                query = query.filter(ChatMessage.created_at >= start_date)
+                stmt = stmt.filter(ChatMessage.created_at >= start_date)
             if end_date:
-                query = query.filter(ChatMessage.created_at <= end_date)
+                stmt = stmt.filter(ChatMessage.created_at <= end_date)
             if group_id:
-                group_users = db.query(GroupMember.user_id).filter(GroupMember.group_id == group_id).subquery()
-                query = query.filter(ChatMessage.user_id.in_(group_users))
+                group_users = select(group_user_memberships([group_id], True).c.user_id).scalar_subquery()
+                stmt = stmt.filter(ChatMessage.user_id.in_(group_users))
 
-            results = query.all()
+            stmt = stmt.group_by(ChatMessage.user_id)
+            result = await db.execute(stmt)
+            return {row.user_id: row.count for row in result.all()}
+
+    async def get_message_count_by_chat(
+        self,
+        start_date: Optional[int] = None,
+        end_date: Optional[int] = None,
+        group_id: Optional[str] = None,
+        db: Optional[AsyncSession] = None,
+    ) -> dict[str, int]:
+        async with get_async_db_context(db) as db:
+            from open_webui.models.groups import group_user_memberships
+
+            stmt = select(ChatMessage.chat_id, func.count(ChatMessage.id).label('count')).filter(
+                ChatMessage.role == 'assistant',
+            )
+
+            if start_date:
+                stmt = stmt.filter(ChatMessage.created_at >= start_date)
+            if end_date:
+                stmt = stmt.filter(ChatMessage.created_at <= end_date)
+            if group_id:
+                group_users = select(group_user_memberships([group_id], True).c.user_id).scalar_subquery()
+                stmt = stmt.filter(ChatMessage.user_id.in_(group_users))
+
+            stmt = stmt.group_by(ChatMessage.chat_id)
+            result = await db.execute(stmt)
+            return {row.chat_id: row.count for row in result.all()}
+
+    async def get_daily_message_counts_by_model(
+        self,
+        start_date: Optional[int] = None,
+        end_date: Optional[int] = None,
+        group_id: Optional[str] = None,
+        db: Optional[AsyncSession] = None,
+    ) -> dict[str, dict[str, int]]:
+        """Get message counts grouped by day and model."""
+        async with get_async_db_context(db) as db:
+            from datetime import datetime, timedelta
+
+            from open_webui.models.groups import group_user_memberships
+
+            stmt = select(ChatMessage.created_at, ChatMessage.model_id).filter(
+                ChatMessage.role == 'assistant',
+                ChatMessage.model_id.isnot(None),
+            )
+
+            if start_date:
+                stmt = stmt.filter(ChatMessage.created_at >= start_date)
+            if end_date:
+                stmt = stmt.filter(ChatMessage.created_at <= end_date)
+            if group_id:
+                group_users = select(group_user_memberships([group_id], True).c.user_id).scalar_subquery()
+                stmt = stmt.filter(ChatMessage.user_id.in_(group_users))
+
+            result = await db.execute(stmt)
+            results = result.all()
 
             # Group by date -> model -> count
             daily_counts: dict[str, dict[str, int]] = {}
@@ -543,28 +1010,34 @@ class ChatMessageTable:
 
             return daily_counts
 
-    def get_hourly_message_counts_by_model(
+    async def get_hourly_message_counts_by_model(
         self,
         start_date: Optional[int] = None,
         end_date: Optional[int] = None,
-        db: Optional[Session] = None,
+        group_id: Optional[str] = None,
+        db: Optional[AsyncSession] = None,
     ) -> dict[str, dict[str, int]]:
         """Get message counts grouped by hour and model."""
-        with get_db_context(db) as db:
+        async with get_async_db_context(db) as db:
             from datetime import datetime, timedelta
 
-            query = db.query(ChatMessage.created_at, ChatMessage.model_id).filter(
+            from open_webui.models.groups import group_user_memberships
+
+            stmt = select(ChatMessage.created_at, ChatMessage.model_id).filter(
                 ChatMessage.role == 'assistant',
                 ChatMessage.model_id.isnot(None),
-                ~ChatMessage.user_id.like('shared-%'),
             )
 
             if start_date:
-                query = query.filter(ChatMessage.created_at >= start_date)
+                stmt = stmt.filter(ChatMessage.created_at >= start_date)
             if end_date:
-                query = query.filter(ChatMessage.created_at <= end_date)
+                stmt = stmt.filter(ChatMessage.created_at <= end_date)
+            if group_id:
+                group_users = select(group_user_memberships([group_id], True).c.user_id).scalar_subquery()
+                stmt = stmt.filter(ChatMessage.user_id.in_(group_users))
 
-            results = query.all()
+            result = await db.execute(stmt)
+            results = result.all()
 
             # Group by hour -> model -> count
             hourly_counts: dict[str, dict[str, int]] = {}

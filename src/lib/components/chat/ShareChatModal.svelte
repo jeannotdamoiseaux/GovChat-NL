@@ -1,26 +1,38 @@
 <script lang="ts">
+	import type { Writable } from 'svelte/store';
+	import type { i18n as i18nType } from 'i18next';
 	import { getContext, onMount } from 'svelte';
-	import { models, config } from '$lib/stores';
+	import { models, config, user } from '$lib/stores';
 
 	import { toast } from 'svelte-sonner';
-	import { deleteSharedChatById, getChatById, shareChatById } from '$lib/apis/chats';
+	import {
+		deleteSharedChatById,
+		getChatById,
+		getChatByShareId,
+		shareChatById,
+		getChatAccessGrants,
+		updateChatAccessGrants
+	} from '$lib/apis/chats';
 	import { copyToClipboard } from '$lib/utils';
 
 	import Modal from '../common/Modal.svelte';
 	import Link from '../icons/Link.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
+	import AccessControl from '$lib/components/workspace/common/AccessControl.svelte';
 
 	export let chatId;
 
-	let chat = null;
+	let chat: any = null;
 	let shareUrl = null;
-	const i18n = getContext('i18n');
+	let shareMode: 'continue' | null = null;
+	let accessGrants: any[] = [];
+	const i18n = getContext<Writable<i18nType>>('i18n');
 
 	const shareLocalChat = async () => {
 		const _chat = chat;
 
-		const sharedChat = await shareChatById(localStorage.token, chatId);
-		shareUrl = `${window.location.origin}/s/${sharedChat.id}`;
+		const sharedChat = await shareChatById(localStorage.token, chatId, shareMode);
+		shareUrl = `${window.location.origin}/s/${sharedChat.share_id}`;
 		console.log(shareUrl);
 		chat = await getChatById(localStorage.token, chatId);
 
@@ -31,6 +43,9 @@
 		const _chat = chat.chat;
 		console.log('share', _chat);
 
+		// LICENSE covers this Open WebUI Community wordmark.
+		// Do not alter, remove, obscure, or replace it except as LICENSE permits:
+		// https://docs.openwebui.com/license.
 		toast.success($i18n.t('Redirecting you to Open WebUI Community'));
 		const url = 'https://openwebui.com';
 		// const url = 'http://localhost:5173';
@@ -54,6 +69,32 @@
 		);
 	};
 
+	const loadAccessGrants = async () => {
+		if (!chatId) return;
+		try {
+			accessGrants = (await getChatAccessGrants(localStorage.token, chatId)) ?? [];
+			shareMode = chat?.share_id
+				? ((await getChatByShareId(localStorage.token, chat.share_id))?.chat?.share_mode ?? null)
+				: null;
+		} catch (e) {
+			console.error('Failed to load access grants', e);
+			accessGrants = [];
+		}
+	};
+
+	const saveAccessGrants = async () => {
+		try {
+			if (!chat.share_id) {
+				await shareLocalChat();
+			}
+			await updateChatAccessGrants(localStorage.token, chatId, accessGrants, shareMode);
+			toast.success($i18n.t('Access updated'));
+		} catch (e) {
+			toast.error(`${e}`);
+			await loadAccessGrants();
+		}
+	};
+
 	export let show = false;
 
 	const isDifferentChat = (_chat) => {
@@ -73,9 +114,10 @@
 				if (isDifferentChat(_chat)) {
 					chat = _chat;
 				}
+				await loadAccessGrants();
 			} else {
 				chat = null;
-				console.log(chat);
+				accessGrants = [];
 			}
 		})();
 	}
@@ -83,22 +125,22 @@
 
 <Modal bind:show size="md">
 	<div>
-		<div class=" flex justify-between dark:text-gray-300 px-5 pt-4 pb-0.5">
-			<div class=" text-lg font-medium self-center">{$i18n.t('Share Chat')}</div>
+		<div class=" flex justify-between dark:text-gray-300 px-4 pt-3 pb-1">
+			<div class=" text-sm font-medium self-center">{$i18n.t('Share Chat')}</div>
 			<button
-				class="self-center"
+				class="self-center rounded-lg p-1 text-gray-500 transition hover:bg-gray-50 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
 				aria-label={$i18n.t('Close')}
 				on:click={() => {
 					show = false;
 				}}
 			>
-				<XMark className={'size-5'} />
+				<XMark className={'size-4'} />
 			</button>
 		</div>
 
 		{#if chat}
-			<div class="px-5 pt-4 pb-5 w-full flex flex-col justify-center">
-				<div class=" text-sm dark:text-gray-300 mb-1">
+			<div class="px-5 pt-4 pb-5 w-full flex flex-col">
+				<div class="text-sm dark:text-gray-300">
 					{#if chat.share_id}
 						<a href="/s/{chat.share_id}" target="_blank"
 							>{$i18n.t('You have shared this chat')}
@@ -112,82 +154,105 @@
 
 								if (res) {
 									chat = await getChatById(localStorage.token, chatId);
+									await loadAccessGrants();
 								}
 							}}
 							>{$i18n.t('delete this link')}
 						</button>
 						{$i18n.t('and create a new shared link.')}
 					{:else}
-						{$i18n.t(
-							"Messages you send after creating your link won't be shared. Users with the URL will be able to view the shared chat."
-						)}
+						{$i18n.t('Your link is private until you choose who can view it.')}
 					{/if}
 				</div>
 
-				<div class="flex justify-end">
-					<div class="flex flex-col items-end space-x-1 mt-3">
-						<div class="flex gap-1">
-							{#if $config?.features.enable_community_sharing}
-								<button
-									class="self-center flex items-center gap-1 px-3.5 py-2 text-sm font-medium bg-gray-100 hover:bg-gray-200 text-gray-800 dark:bg-gray-850 dark:text-white dark:hover:bg-gray-800 transition rounded-full"
-									type="button"
-									on:click={() => {
-										shareChat();
-										show = false;
-									}}
+				<div class="mt-3">
+					<AccessControl
+						bind:accessGrants
+						accessRoles={['read']}
+						sharePublic={$user?.permissions?.sharing?.public_chats || $user?.role === 'admin'}
+						shareOpen={$user?.permissions?.sharing?.open_chats || $user?.role === 'admin'}
+						shareUsers={($user?.permissions?.access_grants?.allow_users ?? true) ||
+							$user?.role === 'admin'}
+						allowGroups={($user?.permissions?.access_grants?.allow_groups ?? true) ||
+							$user?.role === 'admin'}
+						onChange={saveAccessGrants}
+					>
+						{#if accessGrants.length > 0}
+							<label class="flex w-full items-center justify-between mt-3 mb-1 text-xs">
+								<span>{$i18n.t('Sharing mode')}</span>
+								<select
+									class="bg-transparent text-xs outline-none"
+									bind:value={shareMode}
+									on:change={saveAccessGrants}
 								>
-									{$i18n.t('Share to Open WebUI Community')}
-								</button>
-							{/if}
+									<option value={null}>{$i18n.t('Clone only')}</option>
+									<option value="continue">{$i18n.t('Allow replies')}</option>
+								</select>
+							</label>
+						{/if}
+					</AccessControl>
+				</div>
 
-							<button
-								class="self-center flex items-center gap-1 px-3.5 py-2 text-sm font-medium bg-black hover:bg-gray-900 text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-full"
-								type="button"
-								id="copy-and-share-chat-button"
-								on:click={async () => {
-									const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+				<div class="flex justify-end gap-1 mt-3">
+					{#if $config?.features.enable_community_sharing}
+						<button
+							class="flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-lg px-2.5 text-xs font-normal transition disabled:opacity-60 bg-gray-100 hover:bg-gray-200 text-gray-800 dark:bg-gray-850 dark:text-white dark:hover:bg-gray-800"
+							type="button"
+							on:click={() => {
+								shareChat();
+							}}
+						>
+							<!-- LICENSE covers this Open WebUI Community wordmark.
+							Do not alter, remove, obscure, or replace it except as LICENSE permits:
+							https://docs.openwebui.com/license. -->
+							{$i18n.t('Share to Open WebUI Community')}
+						</button>
+					{/if}
 
-									if (isSafari) {
-										// Oh, Safari, you're so special, let's give you some extra love and attention
-										console.log('isSafari');
+					<button
+						class="flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-gray-900 px-2.5 text-xs font-normal text-white transition hover:bg-black disabled:opacity-60 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
+						type="button"
+						id="copy-and-share-chat-button"
+						on:click={async () => {
+							const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
 
-										const getUrlPromise = async () => {
-											const url = await shareLocalChat();
-											return new Blob([url], { type: 'text/plain' });
-										};
+							if (isSafari) {
+								console.log('isSafari');
 
-										navigator.clipboard
-											.write([
-												new ClipboardItem({
-													'text/plain': getUrlPromise()
-												})
-											])
-											.then(() => {
-												console.log('Async: Copying to clipboard was successful!');
-												return true;
-											})
-											.catch((error) => {
-												console.error('Async: Could not copy text: ', error);
-												return false;
-											});
-									} else {
-										copyToClipboard(await shareLocalChat());
-									}
+								const getUrlPromise = async () => {
+									const url = await shareLocalChat();
+									return new Blob([url], { type: 'text/plain' });
+								};
 
-									toast.success($i18n.t('Copied shared chat URL to clipboard!'));
-									show = false;
-								}}
-							>
-								<Link />
+								navigator.clipboard
+									.write([
+										new ClipboardItem({
+											'text/plain': getUrlPromise()
+										})
+									])
+									.then(() => {
+										console.log('Async: Copying to clipboard was successful!');
+										return true;
+									})
+									.catch((error) => {
+										console.error('Async: Could not copy text: ', error);
+										return false;
+									});
+							} else {
+								copyToClipboard(await shareLocalChat());
+							}
 
-								{#if chat.share_id}
-									{$i18n.t('Update and Copy Link')}
-								{:else}
-									{$i18n.t('Copy Link')}
-								{/if}
-							</button>
-						</div>
-					</div>
+							toast.success($i18n.t('Copied shared chat URL to clipboard!'));
+						}}
+					>
+						<Link />
+
+						{#if chat.share_id}
+							{$i18n.t('Update and Copy Link')}
+						{:else}
+							{$i18n.t('Copy Link')}
+						{/if}
+					</button>
 				</div>
 			</div>
 		{/if}
