@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="260" viewBox="0 0 1200 260">
+  <rect width="1200" height="260" rx="16" fill="#D1242F"/>
+  <text x="600" y="105" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="64" font-weight="800" fill="#FFFFFF">DEZE REPOSITORY IS VERHUISD</text>
+  <text x="600" y="165" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="32" font-weight="600" fill="#FFFFFF">Deze repo wordt niet meer bijgewerkt. GovChat-NL wordt nu onderhouden in:</text>
+  <text x="600" y="220" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="40" font-weight="800" fill="#FFFFFF" text-decoration="underline">github.com/GovChat-NL/GovChat-NL</text>
+</svg>
