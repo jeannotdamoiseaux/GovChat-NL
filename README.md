@@ -1,3 +1,11 @@
+<a href="https://github.com/GovChat-NL/GovChat-NL"><img alt="DEZE REPOSITORY IS VERHUISD naar github.com/GovChat-NL/GovChat-NL en wordt niet meer bijgewerkt" src="docs/verhuisd-banner.svg" width="100%" /></a>
+
+> [!CAUTION]
+> # ⚠️ Deze repository wordt NIET meer bijgewerkt
+> ## GovChat-NL wordt nu onderhouden in de **GovChat-NL organisatie**: 👉 [github.com/GovChat-NL/GovChat-NL](https://github.com/GovChat-NL/GovChat-NL)
+>
+> Issues, pull requests en nieuwe releases horen daar thuis. Code in deze repository is verouderd.
+
 <img alt="GovChat-NL Banner" src="docs\govchat-nl\GovChat-NL banner blauw 6000x350.jpg" />
 
 ## 1. Wat is GovChat-NL?
